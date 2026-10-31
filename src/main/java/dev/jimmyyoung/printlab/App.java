@@ -1,0 +1,68 @@
+package dev.jimmyyoung.printlab;
+
+import dev.jimmyyoung.printlab.input.HotFolderWatcher;
+import dev.jimmyyoung.printlab.testdata.StatementPdfGenerator;
+import dev.jimmyyoung.printlab.workflow.Job;
+import dev.jimmyyoung.printlab.workflow.StepRegistry;
+import dev.jimmyyoung.printlab.workflow.WorkflowDefinition;
+import dev.jimmyyoung.printlab.workflow.WorkflowEngine;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/**
+ * Entry point.
+ *
+ * <pre>
+ *   run [workflow.yaml]          watch ./hotfolder and process each PDF that lands there
+ *   generate &lt;count&gt; &lt;out.pdf&gt;   write a fake statement print run for testing
+ * </pre>
+ */
+public final class App {
+
+    public static void main(String[] args) throws Exception {
+        String command = args.length > 0 ? args[0] : "run";
+        switch (command) {
+            case "run" -> run(Path.of(args.length > 1 ? args[1] : "workflows/statements.yaml"));
+            case "generate" -> {
+                if (args.length < 3) {
+                    usage();
+                    return;
+                }
+                Path out = Path.of(args[2]);
+                new StatementPdfGenerator(System.currentTimeMillis())
+                        .generate(Integer.parseInt(args[1]), out);
+                System.out.println("Wrote " + out.toAbsolutePath());
+            }
+            default -> usage();
+        }
+    }
+
+    private static void run(Path workflowFile) throws Exception {
+        WorkflowDefinition definition = WorkflowDefinition.load(workflowFile);
+        WorkflowEngine engine = new WorkflowEngine(definition, StepRegistry.withBuiltIns());
+        Path workRoot = Path.of("work");
+
+        // One job at a time for now; the watcher thread never blocks on processing.
+        ExecutorService jobs = Executors.newSingleThreadExecutor();
+        new HotFolderWatcher(Path.of("hotfolder"), "*.pdf", file -> jobs.submit(() -> {
+            try {
+                // Move the file out of the hot folder first so it is never picked up twice.
+                String id = Job.newId();
+                Path workDir = Files.createDirectories(workRoot.resolve(id));
+                Path input = Files.move(file, workDir.resolve(file.getFileName()));
+                engine.run(new Job(id, input, workDir));
+            } catch (Exception e) {
+                System.err.println("Could not start job for " + file + ": " + e.getMessage());
+            }
+        })).watch();
+    }
+
+    private static void usage() {
+        System.out.println("""
+                Usage:
+                  run [workflow.yaml]          watch ./hotfolder and process PDFs
+                  generate <count> <out.pdf>   write a fake statement print run""");
+    }
+}

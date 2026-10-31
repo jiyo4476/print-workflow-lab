@@ -1,0 +1,9 @@
+target/
+hotfolder/
+work/
+output/
+*.pdf
+!docs/**/*.pdf
+.idea/
+.vscode/
+*.iml

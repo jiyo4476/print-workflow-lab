@@ -1,0 +1,36 @@
+# Statement run: split a billing print file into one PDF per customer,
+# index each statement, presort by zip, and write the results out.
+name: statements
+description: Split, index, and presort a customer statement print run
+
+steps:
+  - name: split-and-index
+    type: SplitPdf
+    params:
+      # A new statement starts whenever the account number in the page header changes.
+      splitOn: accountNumber
+      # [x, y, width, height] in points from the top-left of the page.
+      # These match the layout written by StatementPdfGenerator.
+      regions:
+        accountNumber: [395, 28, 130, 18]
+        name:          [70, 108, 260, 16]
+        street:        [70, 122, 260, 16]
+        cityStateZip:  [70, 136, 260, 16]
+        zip:           [495, 138, 70, 14]
+
+  - name: presort
+    type: SortDocuments
+    params:
+      by: zip
+
+  # Example external step (runs in the job's work directory):
+  # - name: notify
+  #   type: RunExternalProgram
+  #   params:
+  #     command: ["bash", "-c", "echo processed ${jobId} > done.txt"]
+  #     timeoutSeconds: 30
+
+  - name: write-output
+    type: WriteOutput
+    params:
+      outputDir: output
