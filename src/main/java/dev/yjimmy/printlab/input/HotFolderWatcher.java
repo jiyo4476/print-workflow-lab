@@ -1,4 +1,4 @@
-package dev.jimmyyoung.printlab.input;
+package dev.yjimmy.printlab.input;
 
 import java.io.IOException;
 import java.nio.file.DirectoryStream;

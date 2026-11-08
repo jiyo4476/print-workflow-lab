@@ -1,4 +1,4 @@
-package dev.jimmyyoung.printlab.workflow;
+package dev.yjimmy.printlab.workflow;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;

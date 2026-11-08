@@ -1,11 +1,11 @@
-package dev.jimmyyoung.printlab;
+package dev.yjimmy.printlab;
 
-import dev.jimmyyoung.printlab.input.HotFolderWatcher;
-import dev.jimmyyoung.printlab.testdata.StatementPdfGenerator;
-import dev.jimmyyoung.printlab.workflow.Job;
-import dev.jimmyyoung.printlab.workflow.StepRegistry;
-import dev.jimmyyoung.printlab.workflow.WorkflowDefinition;
-import dev.jimmyyoung.printlab.workflow.WorkflowEngine;
+import dev.yjimmy.printlab.input.HotFolderWatcher;
+import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
+import dev.yjimmy.printlab.workflow.Job;
+import dev.yjimmy.printlab.workflow.StepRegistry;
+import dev.yjimmy.printlab.workflow.WorkflowDefinition;
+import dev.yjimmy.printlab.workflow.WorkflowEngine;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.ExecutorService;

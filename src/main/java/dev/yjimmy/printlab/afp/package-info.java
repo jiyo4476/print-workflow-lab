@@ -15,4 +15,4 @@
  * </ol>
  * The MO:DCA reference is published free by the AFP Consortium (afpcinc.org).
  */
-package dev.jimmyyoung.printlab.afp;
+package dev.yjimmy.printlab.afp;

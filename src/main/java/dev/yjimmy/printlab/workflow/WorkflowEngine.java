@@ -1,4 +1,4 @@
-package dev.jimmyyoung.printlab.workflow;
+package dev.yjimmy.printlab.workflow;
 
 import java.util.ArrayList;
 import java.util.List;

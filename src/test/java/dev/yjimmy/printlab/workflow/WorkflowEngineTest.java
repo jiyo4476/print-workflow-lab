@@ -1,4 +1,4 @@
-package dev.jimmyyoung.printlab.workflow;
+package dev.yjimmy.printlab.workflow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;

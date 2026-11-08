@@ -51,7 +51,7 @@ Then move `run.pdf` into `hotfolder/` and look in `output/`. On Windows use `mvn
 ## Layout
 
 ```
-src/main/java/dev/jimmyyoung/printlab/
+src/main/java/dev/yjimmy/printlab/
   App.java                 entry point: run | generate
   workflow/                Job, Document, Step, WorkflowDefinition, WorkflowEngine, StepRegistry
   steps/                   SplitPdf, SortDocuments, RunExternalProgram, WriteOutput
