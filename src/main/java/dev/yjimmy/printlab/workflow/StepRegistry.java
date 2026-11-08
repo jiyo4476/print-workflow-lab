@@ -1,9 +1,9 @@
-package dev.jimmyyoung.printlab.workflow;
+package dev.yjimmy.printlab.workflow;
 
-import dev.jimmyyoung.printlab.steps.RunExternalProgramStep;
-import dev.jimmyyoung.printlab.steps.SortDocumentsStep;
-import dev.jimmyyoung.printlab.steps.SplitPdfStep;
-import dev.jimmyyoung.printlab.steps.WriteOutputStep;
+import dev.yjimmy.printlab.steps.RunExternalProgramStep;
+import dev.yjimmy.printlab.steps.SortDocumentsStep;
+import dev.yjimmy.printlab.steps.SplitPdfStep;
+import dev.yjimmy.printlab.steps.WriteOutputStep;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;

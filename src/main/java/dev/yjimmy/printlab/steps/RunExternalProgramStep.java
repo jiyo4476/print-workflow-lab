@@ -1,7 +1,7 @@
-package dev.jimmyyoung.printlab.steps;
+package dev.yjimmy.printlab.steps;
 
-import dev.jimmyyoung.printlab.workflow.Job;
-import dev.jimmyyoung.printlab.workflow.Step;
+import dev.yjimmy.printlab.workflow.Job;
+import dev.yjimmy.printlab.workflow.Step;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;

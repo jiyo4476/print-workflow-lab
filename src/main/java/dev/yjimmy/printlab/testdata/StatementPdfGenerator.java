@@ -1,4 +1,4 @@
-package dev.jimmyyoung.printlab.testdata;
+package dev.yjimmy.printlab.testdata;
 
 import java.io.IOException;
 import java.nio.file.Path;

@@ -1,4 +1,4 @@
-package dev.jimmyyoung.printlab.workflow;
+package dev.yjimmy.printlab.workflow;
 
 public enum JobState {
     RECEIVED,

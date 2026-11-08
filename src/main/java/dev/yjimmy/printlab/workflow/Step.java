@@ -1,4 +1,4 @@
-package dev.jimmyyoung.printlab.workflow;
+package dev.yjimmy.printlab.workflow;
 
 /**
  * A single unit of processing in a workflow — the equivalent of a step built from a step template.
