@@ -105,7 +105,8 @@ workflows/statements.yaml  the sample workflow
 ## Roadmap
 
 The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a requirements doc
-(PRD) for each PR in [`docs/prd/`](docs/prd/README.md).
+(PRD) for each PR in [`docs/prd/`](docs/prd/README.md). Decisions still to be made are in
+[`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md).
 
 - [x] Workflow engine, YAML workflows, step registry
 - [x] Hot folder intake that waits for files to finish copying

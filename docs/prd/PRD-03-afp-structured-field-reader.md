@@ -91,6 +91,8 @@ concrete evidence of AFP knowledge.
 
 ## Risks and open questions
 
+Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-02). Record the answers there and here.
+
 - Real AFP files may use a different code page than IBM037. Make the code page a parameter, with
   IBM037 as the default.
 - Finding a freely shareable real AFP sample may be hard. If so, the manual check uses PRD-04

@@ -60,7 +60,8 @@ Every PRD has the same sections:
 6. **Design notes:** the intended approach. The PR can change it if it explains why.
 7. **Acceptance criteria:** testable statements; each names the tests that verify it.
 8. **Test plan:** tests grouped by level (see *Testing strategy* in the PR plan).
-9. **Risks and open questions.**
+9. **Risks and open questions.** Decisions left to the PR are also listed in
+   [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md), where their answers are recorded.
 10. **Definition of done.**
 
 The test names match the PR plan. If a PR changes a requirement, update its PRD and the plan in

@@ -75,6 +75,8 @@ That's a compact, convincing demo of how the formats compare.
 
 ## Risks and open questions
 
+This PR depends on PRD-04's decision, tracked as Q-03 in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md).
+
 - If PRD-04 (AFP writer) was skipped, `IndexParityTest` compares DPart with region only, and the
   PR says so.
 

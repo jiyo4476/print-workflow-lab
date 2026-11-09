@@ -11,6 +11,8 @@ evenings.
 Each PR also has a PRD in [`docs/prd/`](prd/README.md) (`PRD-NN-*.md`, where NN is the PR number
 below): why it exists, numbered requirements, non-goals, acceptance criteria mapped to these
 tests, and open questions. If a PR changes its scope, update its PRD and this plan together.
+Unanswered decisions are collected in [`OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md); check it when
+starting a PR and record the answer there.
 
 ## Overview
 

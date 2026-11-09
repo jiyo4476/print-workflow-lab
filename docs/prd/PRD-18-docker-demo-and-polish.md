@@ -90,6 +90,8 @@ to present and easy to check.
 
 ## Risks and open questions
 
+Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-09, Q-10). Record the answers there and here.
+
 - Port 8080 is often taken on developer machines (it was during the scaffold's manual check).
   Make the host port configurable in Compose (`${PRINTLAB_PORT:-8080}`) and mention it in the
   demo doc.

@@ -89,6 +89,8 @@ behavior if the user leaves mid-request.
 
 ## Risks and open questions
 
+Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-08). Record the answers there and here.
+
 - **Open:** the Exceptions view could use `GET /api/documents?property=queue&value=exceptions`
   (no new endpoint), or a dedicated `GET /api/exceptions`. Prefer the existing search endpoint
   unless it can't page or sort well enough.

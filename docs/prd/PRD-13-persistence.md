@@ -91,6 +91,8 @@ Plain JDBC rather than an ORM is deliberate practice in SQL schema design and qu
 
 ## Risks and open questions
 
+Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-05). Record the answers there and here.
+
 - H2's PostgreSQL mode differs from real PostgreSQL in edge cases (e.g. `ON CONFLICT`). That's
   why the Testcontainers job matters; make it required if H2 differences bite.
 - Size **L**: split into (a) schema + repositories and (b) `JobStore` + engine integration if

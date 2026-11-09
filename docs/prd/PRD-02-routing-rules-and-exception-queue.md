@@ -94,6 +94,8 @@ DPart errors (PRD-10) and preflight failures (PRD-11) all become "route to excep
 
 ## Risks and open questions
 
+Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-01). Record the answers there and here.
+
 - **Open:** one CSV with a `queue` column, or one CSV per queue? One per queue matches how
   inserter lines consume output; one combined CSV is easier for the dashboard. Decide in the PR.
 - YAML regex escaping (`"\\d{5}"`) catches people out. Show it in the sample workflow with a

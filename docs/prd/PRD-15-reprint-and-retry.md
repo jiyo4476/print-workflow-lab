@@ -84,6 +84,8 @@ run is the headline of the demo.
 
 ## Risks and open questions
 
+Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-06, Q-07). Record the answers there and here.
+
 - **Open:** can one reprint combine documents from different jobs? Allowing it fits real use
   (a damaged inserter tray mixes jobs) but makes "parent job" plural. Decide in the PR, and test
   whichever is chosen.
