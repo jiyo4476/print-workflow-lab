@@ -28,8 +28,8 @@ evenings.
 | 13 | Persistence: jobs and documents in PostgreSQL | Platform | L | 1 |
 | 14 | REST API (read-only) | Platform | M | 13 |
 | 15 | Reprint and retry | Platform | M | 14 |
-| 16 | Dashboard: jobs, documents, search | Dashboard | M | 14 |
-| 17 | Dashboard actions: reprint, retry, exception queue | Dashboard | S | 15, 16 |
+| 16 | Dashboard (Marionette v5): jobs, documents, search | Dashboard | L | 14 |
+| 17 | Dashboard actions: reprint, retry, exception queue | Dashboard | M | 15, 16 |
 | 18 | Docker Compose, demo script, README polish | Presentation | S | 17 |
 
 ```
@@ -61,6 +61,7 @@ Every PR adds tests at the levels below, in proportion to what it changes:
 | **Unit** | One class in isolation: parsers, rules, steps with fake jobs | JUnit 5, `@TempDir` | Yes |
 | **Workflow / integration** | A real workflow YAML end to end on generated input; repositories against a database; HTTP endpoints | JUnit 5, H2, Javalin test tools | Yes |
 | **Differential** | Our PDF readers against a trusted implementation (PDFBox) on the same files; for AFP, writer → reader round trips | JUnit 5 + PDFBox as oracle | Yes |
+| **Dashboard** | Marionette Views and Applications: rendered content, interaction, readiness, cancellation, teardown | `node --test` + JSDOM, ESLint with `marionette/eslint` | Yes (from PR 16) |
 | **Manual** | Things that need eyes: opening AFP in a viewer, the dashboard, the demo | Checklist in the PR description | No |
 
 Rules for every PR:
@@ -604,46 +605,117 @@ expects.
 
 ## Phase 6 — Dashboard
 
-### PR 16 — Dashboard: jobs, documents, search `M`
+The dashboard is built with **Marionette v5** (the `marionette` npm package — not the legacy
+`backbone.marionette` 4.x). It needs no Backbone or jQuery. Marionette's split between
+**Applications** (own readiness, data loading and lifetimes) and **Views/Regions** (own rendering
+and the DOM) lines up with the backend: an Application waits for the API the way a workflow step
+waits for its input.
 
-**Goal:** the operator view. Plain JavaScript (or Preact + htm, no build step), served by Javalin
-as static files.
+**Version rules** — Marionette's core and companion packages must be the same release, and the
+installed package's own `docs/` are the reference (not the website, which may describe another
+version):
 
-- Jobs list with state badges and current step, auto-refreshing.
-- Job detail: properties, step timeline, documents grouped by queue.
-- Document search by account number / name / zip; open a document's file.
-- **Structure view** for a document: collapsible AFP structured fields or PDF object tree, from
-  the `/structure` endpoint — a strong visual for talking through the formats in a demo.
-- Text-only rendering of all values (never `innerHTML` with data).
+- `marionette@5.0.0`, `@mnjs/utils@5.0.0`, `@mnjs/radio@5.0.0`, `@mnjs/adapters@5.0.0`,
+  `@mnjs/data@5.0.0`, `lit-html@3.3.3`; dev: `vite@8.3.0`, `jsdom@30.1.0`, `eslint@10.11.0`.
+- Install with `npm install --save-exact --ignore-scripts …` and commit `package-lock.json`.
+- Node 22.22.2+ (22.x) or 24.15.0+ (24.x), matching Marionette 5.0.0's supported LTS lines.
 
-**Tests** (`node --test`, no browser needed for these)
-- `apiClient.test.js`
+### PR 16 — Dashboard (Marionette v5): jobs, documents, search `L`
+
+**Goal:** the operator view, built as a small Marionette v5 application in `dashboard/`.
+
+**Setup**
+- `dashboard/` npm project (`"type": "module"`) built with Vite. `npm run dev` proxies `/api` to
+  Javalin; `npm run build` writes `dashboard/dist`, which Javalin serves as static files.
+- `src/setup.js`, imported before any View or Application is constructed:
+  `setDataApi(DataApi)`, `setStateApi(StateApi)` (from `@mnjs/data`) and
+  `setDomApi(LitDomApi)` (from `@mnjs/adapters/dom/lit-html`).
+- `src/api-client.js`: plain `fetch` wrappers that accept an `AbortSignal` and turn the API's JSON
+  error body into an `Error`. `@mnjs/data` gives observable Models/Collections only — it does
+  not fetch or save, so all HTTP stays in this module.
+- `eslint.config.mjs` using `marionette/eslint`'s recommended config
+  (`no-private-framework-members`).
+
+**Structure** (who owns what)
+- `DashboardApplication` — the root. Attaches a page shell View with Regions for navigation and
+  content, and registers the child Applications below with `childApps`. Navigation intent from
+  the shell reaches it through `viewEvents` and starts/stops the matching child.
+- `JobsApplication`
+  - `prepareStart(options, { signal })` loads `/api/jobs` and returns a `Collection`; the screen
+    appears only once data is ready (a Loading View shows during the first load).
+  - `onStart` builds the layout **once**, then replaces only the list and detail Regions — so a
+    refresh keeps the page and the operator's selection.
+  - Owned state (`createState` → a `Model`): `selectedJobId`, `loading`, `error`.
+    `stateEvents: { 'change:selectedJobId': 'showDetail' }`.
+  - Refresh button and auto-refresh both call `restart()`; Marionette cancels a pending load
+    when a newer one starts, so an old response can never overwrite a newer one. The
+    auto-refresh timer is installed once per run in `onStart` and cleared in `onStop`.
+  - A failed first load leaves the Application stopped; the parent shows an error View with
+    **Retry**. A failed refresh keeps the current list and shows the error in the status View.
+- Views
+  - `JobsList` — `CollectionView` of `JobRow`s (state badge, current step). Rows emit `select`;
+    the list forwards it with `childViewTriggers`. Rows re-render from the shared state when the
+    selection changes; no View holds a reference to another View or to the Application.
+  - `JobDetail` — properties, step timeline, and documents grouped by queue (a `CollectionView`
+    filtered by queue with `setFilter`, not re-rendered).
+  - `SearchApplication` — search by account number / name / zip. Each new search calls
+    `restart()`, which cancels the previous request (its signal is aborted) — no hand-written
+    request-tracking flags.
+  - `StructureView` — collapsible AFP structured fields or PDF object tree from
+    `/api/documents/{id}/structure`, built from nested `CollectionView`s.
+- **Text-only rendering:** values go through `lit-html` interpolation, which renders them as
+  text. Never use `unsafeHTML` or set `innerHTML` with data.
+
+**Tests** (`node --import ./test/dom.mjs --test`; JSDOM is installed before Marionette and Lit
+are imported, following Marionette's consumer testing guide)
+- `api-client.test.mjs`
   - `buildsQueryStringsAndEncodesValues`
   - `throwsReadableErrorFromJsonErrorBody`
-  - `abortsPreviousSearchWhenNewOneStarts`
-- `format.test.js`
+  - `passesAbortSignalToFetch`
+- `format.test.mjs`
   - `formatsDurationsAndTimestamps`
   - `mapsJobStateToBadge`
-- `render.test.js` (with a minimal DOM such as `linkedom`)
+- `jobs-application.test.mjs` (`fetch` replaced with a controllable Promise — no network, no
+  sleeps)
+  - `screenAppearsOnlyAfterJobsLoad` (`start()` pending → nothing but the Loading View)
+  - `failedFirstLoadRejectsStartAndLeavesAppStopped`
+  - `refreshKeepsLayoutAndSelection` (same layout element before and after `restart()`)
+  - `failedRefreshKeepsListAndShowsError`
+  - `stopDuringLoadCancelsRequestAndNothingRenders` (signal aborted; `start()` resolves `false`)
+  - `autoRefreshTimerIsClearedOnStop` (`t.mock.timers`)
+  - `selectingARowShowsItsDetail`
+- `search-application.test.mjs`
+  - `newSearchCancelsPreviousRequest` (first signal aborted; only the second result renders)
+  - `emptyResultShowsMessage`
+- `views.test.mjs`
   - `rendersValuesAsTextNotHtml` (a name like `<img onerror=…>` shows literally)
   - `emptyStatesRenderMessage`
+  - `replacedDetailViewStopsReactingToItsModel` (spy on `render`; old View destroyed, Model not)
   - `structureViewRendersNestedAfpGroupsAndPdfObjects` (from fixture JSON)
 - Contract: the JS tests load `fixtures/api/job.json` from PR 14, so an API shape change breaks
   them.
-- Manual checklist in the PR: list refreshes, job detail, search, open file, narrow screen.
-- CI: add a `node --test` step to the workflow.
+- Lint: `npx eslint . --max-warnings=0`.
+- Manual checklist in the PR (JSDOM can't check these): keyboard navigation and focus after
+  selecting and refreshing, list refresh, job detail, search, open file, narrow screen.
+- CI: a `dashboard` job with `actions/setup-node` (Node 24), `npm ci`, lint, `npm test`,
+  `npm run build`.
 
-### PR 17 — Dashboard actions `S`
+### PR 17 — Dashboard actions `M`
 
 - Select documents → **Reprint**; failed job → **Retry**; an **Exceptions** view listing
-  documents in the exception queue across jobs.
+  documents in the exception queue across jobs (another child Application).
+- Views only emit intent (`triggers`, e.g. `reprint:documents`); the owning Application makes the
+  `POST` as an explicit operation (not in `prepareStart`, which is for readiness), then calls
+  `restart()` on the jobs list to show the result.
 - Confirmation before actions, inline result, links to the new child job.
 
 **Tests**
-- `actions.test.js`
+- `actions.test.mjs`
   - `reprintSendsSelectedIdsOnly`
   - `buttonsDisabledWhileRequestInFlight` (no double submit)
   - `showsErrorMessageWhenApiFails`
+  - `successfulReprintRefreshesJobsWithoutRebuildingLayout`
+  - `stoppingTheFeatureMidRequestDoesNotUpdateDestroyedViews`
 - Integration — `ExceptionsApiTest` (if a new endpoint is added for the cross-job view)
 - Manual demo script in the PR: generate a run with bad addresses → find one in Exceptions →
   reprint a good statement by account number → see the child job complete.
@@ -654,7 +726,8 @@ as static files.
 
 ### PR 18 — Docker Compose, demo script, README polish `S`
 
-- Multi-stage `Dockerfile`; `docker compose up` starts the app and PostgreSQL with mounted
+- Multi-stage `Dockerfile` (a Node stage builds `dashboard/dist`, a Maven stage builds the jar,
+  the runtime image contains both); `docker compose up` starts the app and PostgreSQL with mounted
   `hotfolder/` and `output/`.
 - `docs/DEMO.md`: the 5-minute walkthrough, step by step.
 - README: architecture diagram, a 30-second GIF of the demo, updated concept map and roadmap.
@@ -672,6 +745,10 @@ as static files.
 ## Conventions for every PR
 
 - One concern per PR; tests in the same PR as the code (see *Testing strategy*).
-- CI (`./mvnw verify`, plus `node --test` from PR 16) green before merging.
+- CI (`./mvnw verify`, plus the dashboard's lint, `npm test` and build from PR 16) green before
+  merging.
+- Dashboard code uses only Marionette's public APIs and the documentation bundled with the
+  installed version; upgrading Marionette is its own PR that bumps every `@mnjs/*` package to the
+  same version.
 - PR description: what and why, the tests added, how to test manually, screenshots for UI changes.
 - Update the README roadmap checkbox in the PR that completes the item.

@@ -72,5 +72,5 @@ workflows/statements.yaml  the sample workflow
       documents for a different envelope
 - [ ] Barcode step (ZXing) for inserter control
 - [ ] Persist jobs and documents (PostgreSQL), REST API
-- [ ] JavaScript dashboard: jobs by step, document search, single-document reprint
+- [ ] Dashboard (Marionette v5): jobs by step, document search, single-document reprint
 - [ ] Docker Compose setup
