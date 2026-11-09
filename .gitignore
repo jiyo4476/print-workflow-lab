@@ -4,6 +4,13 @@ work/
 output/
 *.pdf
 !docs/**/*.pdf
+
+# IDEs
 .idea/
 .vscode/
 *.iml
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
