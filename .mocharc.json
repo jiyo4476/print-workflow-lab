@@ -1,0 +1,4 @@
+{
+  "spec": ["src/test/js/**/*.test.mjs"],
+  "reporter": "spec"
+}

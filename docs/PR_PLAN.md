@@ -26,10 +26,10 @@ evenings.
 | 11 | PDF preflight step | PDF | M | 7, 2 |
 | 12 | Barcode step for inserter control | Print features | M | 0 |
 | 13 | Persistence: jobs and documents in PostgreSQL | Platform | L | 1 |
-| 14 | REST API (read-only) | Platform | M | 13 |
+| 14 | REST API on Tomcat (read-only servlets) | Platform | M | 13 |
 | 15 | Reprint and retry | Platform | M | 14 |
-| 16 | Dashboard: jobs, documents, search | Dashboard | M | 14 |
-| 17 | Dashboard actions: reprint, retry, exception queue | Dashboard | S | 15, 16 |
+| 16 | Marionette 4 dashboard: jobs, documents, search | Dashboard | L | 14 |
+| 17 | Dashboard actions: reprint, retry, exception queue | Dashboard | M | 15, 16 |
 | 18 | Docker Compose, demo script, README polish | Presentation | S | 17 |
 
 ```
@@ -52,6 +52,48 @@ Branch naming: `feature/NN-short-name` (e.g. `feature/03-afp-reader`).
 
 ---
 
+## Web platform
+
+Stack: **Marionette.js v4 (`backbone.marionette` 4.x) with Backbone and jQuery, served by Tomcat as a WAR**.
+The WAR targets **Apache Tomcat 10.1** (Jakarta Servlet 6.0, Java 21). The scaffold for this is
+already on `main`:
+
+- `pom.xml` builds `target/print-workflow-lab.war`. `./mvnw package cargo:run` downloads Tomcat
+  10.1.55 from Maven Central and serves the app at `http://localhost:8080/`
+  (`-Dtomcat.port=...` to change the port).
+- `GET /api/health`: `HealthServlet`, a plain `jakarta.servlet` servlet writing JSON with Jackson.
+- `src/main/webapp/`: the dashboard shell, a Marionette `Application` showing a `ShellView`
+  (header and main regions) with an API-health badge.
+- Browser libraries come from **WebJars** in `WEB-INF/lib`, which Tomcat serves at
+  `/webjars/<name>/<version>/...`, so there is **no JavaScript build step**:
+  `backbone.marionette@4.1.3`, `backbone@1.6.0`, `backbone.radio@2.0.0`, `underscore@1.13.7`,
+  `jquery@3.7.1` (Marionette 4 predates jQuery 4, so jQuery stays on 3.x).
+- App code is plain scripts under a `PrintLab` namespace, loaded by `index.html` after the
+  libraries. `main.js` only starts the app, so tests can load everything else without side
+  effects.
+- **Version pinning:** `pom.xml`, `index.html` and `package.json` (npm copies for tests) must
+  name the same versions; `src/test/js/versions.test.mjs` fails if they don't. Upgrades change
+  all three in one PR.
+
+**Marionette.js v4 ground rules.** The reference is the
+[`v4.1.3` tag's `docs/`](https://github.com/marionettejs/backbone.marionette/tree/v4.1.3/docs),
+since the npm package ships no docs. Use only the 4.x API those docs describe.
+
+- One `Application` (`DashboardApp`, `region: '#app'`) owns startup and the shell. Features are
+  `MnObject` controllers that own their collections, polling and requests; Views only render and
+  emit intent through `triggers` / `childViewTriggers`. No View holds a reference to another View
+  or to a controller.
+- Routing uses `Backbone.Router` + `Backbone.history` (hash routes). Marionette 4 doesn't bundle
+  `AppRouter`, and we don't add it.
+- App-wide events go through a `Backbone.Radio` channel (`dashboard`), via the Application's
+  `channelName` / `radioEvents`.
+- Templates are `_.template` strings using **only `<%- %>`** (escaped) for data, never `<%= %>`.
+  A test fails the build if `<%=` appears under `src/main/webapp/js/`.
+- HTTP goes through Backbone `fetch`/`save` or one `PrintLab.api` helper around `$.ajax`, so
+  tests can replace `Backbone.ajax` and never touch the network.
+
+---
+
 ## Testing strategy
 
 Every PR adds tests at the levels below, in proportion to what it changes:
@@ -59,9 +101,10 @@ Every PR adds tests at the levels below, in proportion to what it changes:
 | Level | What it covers | Tools | Runs in CI |
 |---|---|---|---|
 | **Unit** | One class in isolation: parsers, rules, steps with fake jobs | JUnit 5, `@TempDir` | Yes |
-| **Workflow / integration** | A real workflow YAML end to end on generated input; repositories against a database; HTTP endpoints | JUnit 5, H2, Javalin test tools | Yes |
+| **Workflow / integration** | A real workflow YAML end to end on generated input; repositories against a database; HTTP endpoints | JUnit 5, H2, embedded Tomcat (`TomcatTestServer`) + `java.net.http.HttpClient` | Yes |
 | **Differential** | Our PDF readers against a trusted implementation (PDFBox) on the same files; for AFP, writer → reader round trips | JUnit 5 + PDFBox as oracle | Yes |
-| **Manual** | Things that need eyes: opening AFP in a viewer, the dashboard, the demo | Checklist in the PR description | No |
+| **Dashboard** | Marionette Views, controllers and the Application: rendering, escaping, empty states, requests, polling, teardown | Mocha + jsdom (`npm test`, specs in `src/test/js/`), `Backbone.ajax` stubbed, Sinon fake timers for polling | Yes |
+| **Manual** | Things that need eyes: opening AFP in a viewer, the dashboard in a real Tomcat, the demo | Checklist in the PR description | No |
 
 Rules for every PR:
 
@@ -74,7 +117,7 @@ Rules for every PR:
 - **Golden files** (expected dump output checked into `fixtures/`) are updated deliberately, never
   regenerated blindly to make a test pass.
 - Test names describe behavior: `failedJobMovesInputToErrorFolder`, not `testError1`.
-- CI (`./mvnw verify`) must be green before merging; coverage must not drop (from PR 0 on).
+- CI (`./mvnw verify` and `npm test`) must be green before merging; coverage must not drop (from PR 0 on).
 
 ---
 
@@ -540,22 +583,36 @@ expects.
   - `failedJobIsStoredWithErrorAndStep`
 - Optional CI job: the same repository tests against real PostgreSQL via Testcontainers.
 
-### PR 14 — REST API (read-only) `M`
+### PR 14 — REST API on Tomcat (read-only servlets) `M`
 
-**Goal:** expose jobs and documents over HTTP.
+**Goal:** expose jobs and documents over HTTP from the Tomcat web app, and run the workflow engine
+inside it.
 
-- Javalin. Endpoints:
-  - `GET /api/jobs?state=&limit=` — newest first
-  - `GET /api/jobs/{id}` — job, properties, step history
+- **Plain Jakarta servlets** (no JAX-RS framework), to practice the servlet API directly:
+  - `JsonServlet` base class: writes JSON with Jackson, maps exceptions to the error body
+    `{ "error": "...", "status": 404 }`, sets `Cache-Control: no-store`.
+  - `JobsServlet` on `/api/jobs/*` and `DocumentsServlet` on `/api/documents/*`, parsing
+    `getPathInfo()` for ids and sub-resources.
+- Endpoints:
+  - `GET /api/jobs?state=&limit=`: newest first
+  - `GET /api/jobs/{id}`: job, properties, step history
   - `GET /api/jobs/{id}/documents?queue=`
-  - `GET /api/documents?property=accountNumber&value=…` — search
-  - `GET /api/documents/{id}/file` — streams the PDF/AFP
-  - `GET /api/documents/{id}/structure` — the document's structure as JSON, built from the
+  - `GET /api/documents?property=accountNumber&value=...`: search
+  - `GET /api/documents/{id}/file`: streams the PDF/AFP
+  - `GET /api/documents/{id}/structure`: the document's structure as JSON, built from the
     `dump-afp` / `dump-pdf` readers (structured fields, or object tree + page operators)
-- JSON error body `{ "error": "...", "status": 404 }` everywhere.
+- **Engine lifecycle in Tomcat:** a `WorkflowContextListener` (`@WebListener`) builds the
+  `WorkflowEngine`, repositories and `HotFolderWatcher` on `contextInitialized`, runs the watcher
+  on its own thread, and shuts it down (interrupt + executor shutdown) on `contextDestroyed`, so a
+  redeploy doesn't leave threads behind. Servlets get the repositories from a `ServletContext`
+  attribute.
+- **Configuration** from environment variables with context-param fallbacks (`PRINTLAB_HOME`
+  for `hotfolder/`, `work/`, `output/`; JDBC URL, user and password), so the same WAR runs
+  locally, under Cargo, and in Docker.
+- The CLI (`./mvnw exec:java`) keeps working for scripts and tests.
 
 **Tests**
-- Integration — `JobsApiTest` (Javalin test tools + seeded H2)
+- Integration — `JobsApiTest` (`TomcatTestServer` + seeded H2)
   - `listsJobsNewestFirst`, `filtersByState`, `limitIsCapped`
   - `getJobIncludesStepHistory`
   - `unknownJobReturns404Json`
@@ -568,8 +625,16 @@ expects.
   - `fileEndpointDoesNotServePathsOutsideOutputDir` (path traversal guard)
   - `structureEndpointReturnsFieldsForAfpAndObjectsForPdf`
   - `structureOfCorruptFileReturns422WithOffset`
+- Unit — `JsonServletTest`
+  - `uncaughtExceptionBecomes500JsonWithoutStackTrace`
+  - `unknownSubPathReturns404Json`
+- Integration — `WorkflowContextListenerTest`
+  - `startsWatcherOnStartupAndStopsItOnShutdown` (no live watcher threads after
+    `contextDestroyed`)
+  - `fileDroppedInHotFolderBecomesAJobVisibleInApi`
 - Contract — `ApiJsonShapeTest`: response JSON for one job matches
   `fixtures/api/job.json` (the dashboard depends on this shape).
+- Manual: `./mvnw package cargo:run`, drop a generated file, `curl /api/jobs`.
 
 ### PR 15 — Reprint and retry `M`
 
@@ -604,46 +669,87 @@ expects.
 
 ## Phase 6 — Dashboard
 
-### PR 16 — Dashboard: jobs, documents, search `M`
+### PR 16 — Marionette 4 dashboard: jobs, documents, search `L`
 
-**Goal:** the operator view. Plain JavaScript (or Preact + htm, no build step), served by Javalin
-as static files.
+**Goal:** the operator view, grown from the scaffold's shell (see *Web platform*): Marionette.js
+v4 Views, CollectionViews and Regions over Backbone Models and Collections, with jQuery for
+DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
 
-- Jobs list with state badges and current step, auto-refreshing.
-- Job detail: properties, step timeline, documents grouped by queue.
-- Document search by account number / name / zip; open a document's file.
-- **Structure view** for a document: collapsible AFP structured fields or PDF object tree, from
-  the `/structure` endpoint — a strong visual for talking through the formats in a demo.
-- Text-only rendering of all values (never `innerHTML` with data).
+**Structure** (who owns what)
+- `DashboardApp` (`Marionette.Application`, `region: '#app'`, `channelName: 'dashboard'`) shows
+  the `ShellView` (header, nav and main regions) and starts `Backbone.history`.
+- `DashboardRouter` (`Backbone.Router`) maps hash routes to the app:
+  `#jobs`, `#jobs/:id`, `#search?property=...&value=...`, `#documents/:id/structure`. Route
+  handlers only call app methods; the app picks a controller and shows its View in `main`.
+- Entities (`js/entities/`): `Job` / `JobCollection` (`url: 'api/jobs'`), `Document` /
+  `DocumentCollection`, `StructureNode` with child nodes for nested AFP groups and PDF objects.
+- Controllers (`Marionette.MnObject`), one per feature, owning data and timers:
+  - `JobsController`: fetches `JobCollection`, with **auto-refresh** every 5 s. Before each
+    refresh it aborts the previous in-flight request (`jqXHR.abort()`), so an old response never
+    overwrites a newer one. The timer is cleared in `onDestroy`, which runs when the feature is
+    left.
+  - `SearchController`: each search aborts the previous request; results go into a
+    `DocumentCollection`.
+  - `StructureController`: loads `/api/documents/{id}/structure` into `StructureNode`s.
+- Views (`js/views/`):
+  - `JobsListView`: a `CollectionView` of `JobRowView`s (state badge, current step) with an
+    `emptyView`. Rows `trigger('select')`; the list forwards it with `childViewTriggers`, and the
+    app navigates to `#jobs/:id`.
+  - `JobDetailView`: a `View` with regions for properties, step timeline and documents.
+    `DocumentsView` is a `CollectionView` that switches queues with `setFilter` (no re-fetch, no
+    re-render of the whole detail).
+  - `SearchView`: a form with a `ui` hash and `triggers: { 'submit form': 'search:submit' }`.
+  - `StructureView`: a recursive `CollectionView` of `StructureNodeView`s, each showing its
+    children in a nested `CollectionView` (collapsible).
+- **Text-only rendering:** `<%- %>` only, everywhere; values such as account names never reach
+  `innerHTML` unescaped.
 
-**Tests** (`node --test`, no browser needed for these)
-- `apiClient.test.js`
-  - `buildsQueryStringsAndEncodesValues`
-  - `throwsReadableErrorFromJsonErrorBody`
-  - `abortsPreviousSearchWhenNewOneStarts`
-- `format.test.js`
-  - `formatsDurationsAndTimestamps`
-  - `mapsJobStateToBadge`
-- `render.test.js` (with a minimal DOM such as `linkedom`)
-  - `rendersValuesAsTextNotHtml` (a name like `<img onerror=…>` shows literally)
-  - `emptyStatesRenderMessage`
-  - `structureViewRendersNestedAfpGroupsAndPdfObjects` (from fixture JSON)
-- Contract: the JS tests load `fixtures/api/job.json` from PR 14, so an API shape change breaks
-  them.
-- Manual checklist in the PR: list refreshes, job detail, search, open file, narrow screen.
-- CI: add a `node --test` step to the workflow.
+**Tests** (`npm test`: Mocha specs in jsdom with `Backbone.ajax` stubbed; no network, no sleeps)
+- `entities.test.mjs`
+  - `jobCollectionUrlIncludesStateAndLimit`
+  - `parsesFixtureJobJsonIntoModels` (loads `fixtures/api/job.json` from PR 14: the contract)
+- `jobs.test.mjs`
+  - `listRendersOneRowPerJobWithStateBadge`
+  - `emptyListShowsEmptyView`
+  - `selectingARowNavigatesToJobDetail`
+  - `refreshAbortsPreviousRequest`
+  - `refreshKeepsSelectedJob`
+  - `pollingStopsWhenControllerIsDestroyed` (Sinon fake timers; add `sinon` as a dev dependency)
+- `job-detail.test.mjs`
+  - `switchingQueueFiltersDocumentsWithoutRefetch`
+  - `failedLoadShowsErrorWithRetry`
+- `search.test.mjs`
+  - `newSearchAbortsPreviousRequest`
+  - `encodesQueryValues`
+  - `emptyResultShowsMessage`
+- `structure.test.mjs`
+  - `rendersNestedAfpGroupsAndPdfObjects` (from fixture JSON)
+  - `collapsingANodeHidesItsChildren`
+- `router.test.mjs`
+  - `eachRouteShowsItsView`
+  - `unknownRouteShowsJobs`
+- `security.test.mjs`
+  - `rendersValuesAsTextNotHtml` (a name like `<img onerror=...>` shows literally, in every view)
+  - `noUnescapedTemplateTagsInSource` (fails on `<%=` under `src/main/webapp/js/`)
+- Manual checklist in the PR, against `./mvnw package cargo:run`: list refreshes, job detail,
+  queue filter, search, open file, structure view, back/forward buttons, narrow screen.
 
-### PR 17 — Dashboard actions `S`
+### PR 17 — Dashboard actions `M`
 
 - Select documents → **Reprint**; failed job → **Retry**; an **Exceptions** view listing
   documents in the exception queue across jobs.
-- Confirmation before actions, inline result, links to the new child job.
+- Views only emit intent (`triggers`: `reprint:documents`, `retry:job`); an `ActionsController`
+  (`MnObject`) makes the `POST`, then refreshes the affected collection and navigates to the new
+  child job.
+- Confirmation before actions, inline result, buttons disabled while a request is in flight.
 
 **Tests**
-- `actions.test.js`
+- `actions.test.mjs`
   - `reprintSendsSelectedIdsOnly`
   - `buttonsDisabledWhileRequestInFlight` (no double submit)
   - `showsErrorMessageWhenApiFails`
+  - `successfulReprintRefreshesJobsAndNavigatesToChild`
+  - `leavingThePageMidRequestDoesNotUpdateDestroyedViews`
 - Integration — `ExceptionsApiTest` (if a new endpoint is added for the cross-job view)
 - Manual demo script in the PR: generate a run with bad addresses → find one in Exceptions →
   reprint a good statement by account number → see the child job complete.
@@ -654,15 +760,18 @@ as static files.
 
 ### PR 18 — Docker Compose, demo script, README polish `S`
 
-- Multi-stage `Dockerfile`; `docker compose up` starts the app and PostgreSQL with mounted
-  `hotfolder/` and `output/`.
+- Multi-stage `Dockerfile`: a Maven stage (`eclipse-temurin:21-jdk`) builds the WAR; the runtime
+  stage is `tomcat:10.1-jdk21-temurin` with the WAR copied in as `webapps/ROOT.war`. No Node
+  stage is needed, because the dashboard libraries are inside the WAR as WebJars.
+- `docker compose up` starts Tomcat and PostgreSQL with mounted `hotfolder/` and `output/`
+  (`PRINTLAB_HOME` and the JDBC settings from PR 14 come from the compose file).
 - `docs/DEMO.md`: the 5-minute walkthrough, step by step.
 - README: architecture diagram, a 30-second GIF of the demo, updated concept map and roadmap.
 - Add a license (MIT) before making the repository public.
 
 **Tests**
 - CI job: build the Docker image.
-- CI smoke test: `docker compose up -d`, wait for `/api/health` (add the endpoint here), drop a
+- CI smoke test: `docker compose up -d`, wait for `/api/health` (there since the scaffold), drop a
   generated file in the hot folder, poll `/api/jobs` until the job is `COMPLETE`, then
   `docker compose down`.
 - Manual: from a clean clone, follow `docs/DEMO.md` exactly.
@@ -672,6 +781,8 @@ as static files.
 ## Conventions for every PR
 
 - One concern per PR; tests in the same PR as the code (see *Testing strategy*).
-- CI (`./mvnw verify`, plus `node --test` from PR 16) green before merging.
+- CI (`./mvnw verify` and `npm test`) green before merging.
+- Dashboard code uses only Marionette 4's public API as documented for v4.1.3; library
+  upgrades are their own PR and change `pom.xml`, `index.html` and `package.json` together.
 - PR description: what and why, the tests added, how to test manually, screenshots for UI changes.
 - Update the README roadmap checkbox in the PR that completes the item.
