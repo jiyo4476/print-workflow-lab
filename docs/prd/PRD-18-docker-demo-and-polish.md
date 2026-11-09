@@ -31,12 +31,12 @@ to present and easy to check.
 - `docs/DEMO.md`, plus README polish: architecture diagram, demo GIF, updated concept map and
   roadmap.
 - An MIT license before making the repository public.
-- A CI image build and a Compose smoke test.
+- Image build and Compose smoke test stages in the Jenkins pipeline (PRD-19).
 
 ## Non-goals
 
-- Production hardening: TLS, secrets management, resource limits, Kubernetes manifests.
-- Publishing the image to a registry.
+- Production hardening: TLS, secrets management, resource limits.
+- Kubernetes manifests and publishing the image to a registry; those are PRD-20 (k3s on ARM).
 
 ## Requirements
 
@@ -61,6 +61,9 @@ to present and easy to check.
 **Non-functional**
 - **NFR-1** The image builds reproducibly in CI. Pin base image tags (and digests if practical).
 - **NFR-2** The smoke test finishes in under ~3 minutes on CI.
+- **NFR-3** Every base image has an `arm64` variant, so PRD-20 can build the same Dockerfile for
+  the k3s server. Structure the build stage so it can run on the build machine's platform
+  (`FROM --platform=$BUILDPLATFORM`).
 
 ## Design notes
 
@@ -90,15 +93,13 @@ to present and easy to check.
 
 ## Risks and open questions
 
-Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-09, Q-10). Record the answers there and here.
+Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-09). Record the answers there and here.
 
 - Port 8080 is often taken on developer machines (it was during the scaffold's manual check).
   Make the host port configurable in Compose (`${PRINTLAB_PORT:-8080}`) and mention it in the
   demo doc.
-- Check that the fake bank name in the statement generator isn't a real institution before going
-  public; rename it if it is.
 
 ## Definition of done
 
-- Shared DoD, plus: the repository can be made public (license, no secrets, no real names); the
+- Shared DoD, plus: the repository can be made public (license, no secrets); the
   README roadmap is fully up to date.

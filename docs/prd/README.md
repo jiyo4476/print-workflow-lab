@@ -11,6 +11,9 @@ done**.
 
 ## Index
 
+PRD-19 and PRD-20 were added after the plan was written, so their numbers don't reflect
+their order: PRD-19 lands right after PRD-00.
+
 | PRD | Title | Phase | Size | Depends on |
 |---|---|---|---|---|
 | [00](PRD-00-test-infrastructure.md) | Test infrastructure: coverage, fixtures, helpers | Foundation | S | — |
@@ -32,6 +35,8 @@ done**.
 | [16](PRD-16-marionette-dashboard.md) | Marionette.js v4 dashboard: jobs, documents, search | Dashboard | L | 14 |
 | [17](PRD-17-dashboard-actions.md) | Dashboard actions: reprint, retry, exception queue | Dashboard | M | 15, 16 |
 | [18](PRD-18-docker-demo-and-polish.md) | Docker Compose, demo script, README polish | Presentation | S | 17 |
+| [19](PRD-19-jenkins-ci.md) | Jenkins CI, running locally in Docker (land after 00, before 13) | Foundation | M | 00 |
+| [20](PRD-20-k3s-deployment-on-arm.md) | Deploy to k3s on ARM | Delivery | M | 18, 19 |
 
 ## Users
 

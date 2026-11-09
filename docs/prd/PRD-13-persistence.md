@@ -2,7 +2,7 @@
 
 | Phase | Size | Depends on | Branch |
 |---|---|---|---|
-| Platform | L | 01 | `feature/13-persistence` |
+| Platform | L | 01, 19 | `feature/13-persistence` |
 
 ## Summary
 
@@ -57,8 +57,9 @@ Plain JDBC rather than an ORM is deliberate practice in SQL schema design and qu
 
 **Non-functional**
 - **NFR-1** Every query uses `PreparedStatement` parameters; no string-built SQL.
-- **NFR-2** Repository tests run against H2 with a fresh schema per test. An optional CI job runs
-  them on real PostgreSQL via Testcontainers.
+- **NFR-2** Repository tests run against H2 with a fresh schema per test, for a fast local loop.
+  The same tests also run on real PostgreSQL via Testcontainers as a **required** stage of the
+  Jenkins pipeline (PRD-19), using the PostgreSQL major version that Compose and k3s use.
 
 ## Design notes
 
@@ -87,14 +88,15 @@ Plain JDBC rather than an ORM is deliberate practice in SQL schema design and qu
   `saveIsTransactional`
 - Workflow — `PersistentWorkflowTest`: `completedJobIsReadableAfterEngineRestart`,
   `failedJobIsStoredWithErrorAndStep`
-- Optional CI: the same repository tests on PostgreSQL via Testcontainers.
+- Jenkins stage (required): the same repository tests on PostgreSQL via Testcontainers.
 
 ## Risks and open questions
 
 Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-05). Record the answers there and here.
 
-- H2's PostgreSQL mode differs from real PostgreSQL in edge cases (e.g. `ON CONFLICT`). That's
-  why the Testcontainers job matters; make it required if H2 differences bite.
+- **Decided (Q-05):** the PostgreSQL tests are a required Jenkins stage. H2's PostgreSQL mode
+  differs from real PostgreSQL in edge cases (e.g. `ON CONFLICT`), and the real database is what
+  runs in Compose and on k3s.
 - Size **L**: split into (a) schema + repositories and (b) `JobStore` + engine integration if
   needed.
 

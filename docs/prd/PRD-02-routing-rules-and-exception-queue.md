@@ -53,8 +53,9 @@ DPart errors (PRD-10) and preflight failures (PRD-11) all become "route to excep
 - **FR-6** If there's no `default` and a document matches no route, the job fails, naming the
   document sequence.
 - **FR-7** A step with a false `when:` is skipped and recorded with outcome `SKIPPED`.
-- **FR-8** `WriteOutput` writes `output/<jobId>/<queue>/` and one `documents.csv` per queue, or
-  one CSV with a `queue` column (decide in the PR and document it).
+- **FR-8** `WriteOutput` writes each queue's documents to `output/<jobId>/<queue>/`, and one
+  `output/<jobId>/documents.csv` for the whole job, with a `queue` column on every row
+  (decided in [Q-01](../OPEN_QUESTIONS.md#q-01--exception-and-queue-csv-layout)).
 - **FR-9** The statement generator accepts a count of bad addresses (blank name, 4-digit zip),
   placed deterministically for a given seed.
 
@@ -79,6 +80,7 @@ DPart errors (PRD-10) and preflight failures (PRD-11) all become "route to excep
 | AC-4 | First match wins; unmatched go to default; no default + no match fails | `RouteDocumentsStepTest.*` |
 | AC-5 | A false `when:` skips the step and records `SKIPPED` | `WorkflowEngineTest.stepWithFalseWhenIsSkippedAndRecordedAsSkipped` |
 | AC-6 | With 5 bad addresses in 50, exactly 5 go to exceptions and every document is in exactly one queue | `RoutingWorkflowTest.*` |
+| AC-7 | One `documents.csv` lists every document once, with its queue | `RoutingWorkflowTest.documentsCsvListsEveryDocumentWithItsQueue` |
 
 ## Test plan
 
@@ -90,14 +92,16 @@ DPart errors (PRD-10) and preflight failures (PRD-11) all become "route to excep
   `unmatchedDocumentsGoToDefaultQueue`, `noDefaultAndNoMatchFailsTheJob`
 - Unit — `WorkflowEngineTest.stepWithFalseWhenIsSkippedAndRecordedAsSkipped`
 - Workflow — `RoutingWorkflowTest` (seed with 5 bad of 50): `badAddressesLandInExceptions`,
-  `everyDocumentIsInExactlyOneQueue`, `outputHasOneFolderPerQueue`
+  `everyDocumentIsInExactlyOneQueue`, `outputHasOneFolderPerQueue`,
+  `documentsCsvListsEveryDocumentWithItsQueue`
 
 ## Risks and open questions
 
 Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-01). Record the answers there and here.
 
-- **Open:** one CSV with a `queue` column, or one CSV per queue? One per queue matches how
-  inserter lines consume output; one combined CSV is easier for the dashboard. Decide in the PR.
+- **Decided (Q-01):** one combined `documents.csv` with a `queue` column. The per-queue print
+  folders already separate the physical output, and one file is simpler for PRD-13, PRD-14 and
+  PRD-16 to read.
 - YAML regex escaping (`"\\d{5}"`) catches people out. Show it in the sample workflow with a
   comment.
 

@@ -120,3 +120,4 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
 - [ ] Persist jobs and documents (PostgreSQL), REST API (servlets on Tomcat)
 - [ ] Marionette dashboard: jobs by step, document search, single-document reprint
 - [ ] Docker Compose setup
+- [ ] CI/CD: Jenkins running locally in Docker, deploying to a k3s server on ARM

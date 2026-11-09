@@ -31,17 +31,20 @@ starting a PR and record the answer there.
 | 10 | PDF/VT-style document parts (DPart) indexing | PDF | M | 8, 2 |
 | 11 | PDF preflight step | PDF | M | 7, 2 |
 | 12 | Barcode step for inserter control | Print features | M | 0 |
-| 13 | Persistence: jobs and documents in PostgreSQL | Platform | L | 1 |
+| 13 | Persistence: jobs and documents in PostgreSQL | Platform | L | 1, 19 |
 | 14 | REST API on Tomcat (read-only servlets) | Platform | M | 13 |
 | 15 | Reprint and retry | Platform | M | 14 |
 | 16 | Marionette 4 dashboard: jobs, documents, search | Dashboard | L | 14 |
 | 17 | Dashboard actions: reprint, retry, exception queue | Dashboard | M | 15, 16 |
 | 18 | Docker Compose, demo script, README polish | Presentation | S | 17 |
+| 19 | Jenkins CI, running locally in Docker (land right after 0) | Foundation | M | 0 |
+| 20 | Deploy to k3s on ARM | Delivery | M | 18, 19 |
 
 ```
 0 ──► 1 ──► 2
-│     └──► 13 ──► 14 ──► 15 ──► 17 ──► 18
-│                  └──► 16 ──┘
+│     └──► 13 ──► 14 ──► 15 ──► 17 ──► 18 ──► 20
+│          ▲       └──► 16 ──┘              ▲
+├──► 19 ───┴────────────────────────────────┘
 ├──► 3 ──► 4 ──► 5 ──► 6
 ├──► 7 ──► 8 ──► 10
 │     ├──► 9
@@ -53,6 +56,9 @@ starting a PR and record the answer there.
 → 2. That covers AFP parsing and indexing, PDF objects and content streams, and rules-based
 routing — the most interview-relevant topics — without the platform work. Then 12 (barcodes), and
 13 → 14 → 16 for a visible dashboard.
+
+PRs 19 and 20 were added after the plan was written (CI/CD moved to Jenkins and k3s), so their
+numbers don't show their order: PR 19 lands right after PR 0, and PR 20 comes last.
 
 Branch naming: `feature/NN-short-name` (e.g. `feature/03-afp-reader`).
 
@@ -203,7 +209,8 @@ connectors with rules.
   Routes are checked in order; the first match wins.
 - An optional `when:` on any step so it only runs if a **job** property matches (e.g. skip
   presort when `documentCount` < 50).
-- `WriteOutput` writes each queue to its own subfolder.
+- `WriteOutput` writes each queue to its own subfolder, plus one `documents.csv` for the whole
+  job with a `queue` column (decided in `OPEN_QUESTIONS.md`, Q-01).
 - Generator option to emit a known number of bad addresses (blank name, 4-digit zip).
 
 **Tests**
@@ -226,6 +233,7 @@ connectors with rules.
   - `badAddressesLandInExceptions` (exactly 5)
   - `everyDocumentIsInExactlyOneQueue` (sum of queues == input documents)
   - `outputHasOneFolderPerQueue`
+  - `documentsCsvListsEveryDocumentWithItsQueue` (one row per document, with its queue)
 
 ---
 
@@ -587,7 +595,8 @@ expects.
 - Workflow — `PersistentWorkflowTest`
   - `completedJobIsReadableAfterEngineRestart` (new engine + repository instance, same DB)
   - `failedJobIsStoredWithErrorAndStep`
-- Optional CI job: the same repository tests against real PostgreSQL via Testcontainers.
+- Jenkins stage (required, see PR 19): the same repository tests against real PostgreSQL via
+  Testcontainers.
 
 ### PR 14 — REST API on Tomcat (read-only servlets) `M`
 
@@ -781,6 +790,48 @@ DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
   generated file in the hot folder, poll `/api/jobs` until the job is `COMPLETE`, then
   `docker compose down`.
 - Manual: from a clean clone, follow `docs/DEMO.md` exactly.
+
+---
+
+## Phase 8 — CI/CD
+
+CI/CD runs on a **Jenkins controller running locally in Docker**, and deploys to a **k3s
+server on ARM**. GitHub Actions stays until Jenkins reports build status back to GitHub
+(`OPEN_QUESTIONS.md`, Q-10).
+
+### PR 19 — Jenkins CI, running locally in Docker `M` (land right after PR 0)
+
+- `ci/jenkins/`: a pinned Jenkins LTS (JDK 21) image, pinned `plugins.txt`, a Configuration as
+  Code file and a Compose file. `docker compose -f ci/jenkins/compose.yml up -d` gives a ready
+  Jenkins with a multibranch job for this repository and no setup wizard.
+- A declarative `Jenkinsfile`, each stage in a pinned container: checkout → `./mvnw -B verify`
+  → `npm ci && npm test` → PostgreSQL integration (Testcontainers, required, added by PR 13) →
+  coverage report.
+- JUnit results published (Surefire/Failsafe plus a Mocha JUnit reporter); JaCoCo archived.
+- Credentials only in the Jenkins credential store. `docs/CI.md` explains setup.
+
+**Tests**
+- Manual, recorded in the PR: Jenkins from an empty volume has the job; a green build publishes
+  results and coverage; a broken Java, Mocha and PostgreSQL test each fail the right stage;
+  no containers are left running afterwards.
+
+### PR 20 — Deploy to k3s on ARM `M`
+
+- The pipeline builds the PR 18 image for `linux/arm64` (Maven stage on the build platform,
+  arm64 runtime), tags it with the commit SHA, and pushes it to the registry.
+- `deploy/k8s/`: namespace; app `Deployment` with **one replica** and `Recreate` strategy (the
+  hot-folder watcher must run in exactly one pod); `Service` and Traefik `Ingress`; PostgreSQL;
+  persistent volumes for `PRINTLAB_HOME`; `ConfigMap` and a `Secret` template. Readiness and
+  liveness probes on `/api/health`.
+- On `main` only: deploy, `kubectl rollout status`, then the smoke test against the server.
+  `kubectl rollout undo` if either fails.
+- `docs/DEPLOY.md`: k3s server, registry and Jenkins credential setup.
+
+**Tests**
+- Pipeline: manifests validated (`kubectl apply --dry-run=server` or `kubeconform`); post-deploy
+  smoke test (health → drop a file → job `COMPLETE`).
+- Manual: first deploy from `docs/DEPLOY.md`; a broken build rolls back; data survives
+  `kubectl delete pod`.
 
 ---
 
