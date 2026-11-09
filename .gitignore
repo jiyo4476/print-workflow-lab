@@ -1,9 +1,42 @@
+# Build output (Maven, Cargo's Tomcat install, WAR)
 target/
+.mvn/wrapper/maven-wrapper.jar
+
+# Runtime folders under PRINTLAB_HOME (PRD-01, PRD-06, PRD-14)
 hotfolder/
 work/
 output/
+error/
+
+# Generated print data: keep only docs and checked-in test fixtures
 *.pdf
+*.afp
 !docs/**/*.pdf
+!src/test/resources/**/*.pdf
+!src/test/resources/**/*.afp
+
+# Local databases (H2 file mode, PRD-13)
+*.mv.db
+*.trace.db
+*.lock.db
+
+# Local configuration and secrets (Docker Compose, JDBC credentials, PRD-14/18)
+.env
+.env.*
+!.env.example
+docker-compose.override.yml
+
+# Logs and JVM crash files
+*.log
+logs/
+hs_err_pid*.log
+replay_pid*.log
+
+# Node (dashboard test harness)
+node_modules/
+npm-debug.log*
+coverage/
+.nyc_output/
 
 # IDEs
 .idea/
@@ -14,6 +47,12 @@ output/
 .project
 .settings/
 bin/
+.factorypath
 
-# Node (dashboard test harness)
-node_modules/
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude Code local settings
+.claude/settings.local.json
