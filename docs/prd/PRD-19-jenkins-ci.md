@@ -27,9 +27,10 @@ nothing is set up by clicking through the UI.
 
 - **Developer** pushes a branch. Jenkins builds it, runs the Java, dashboard and PostgreSQL
   tests, and archives the coverage report.
-- **Developer** opens a PR on GitHub and sees whether the Jenkins build passed. How that status
-  gets back to GitHub is
-  [Q-10](../OPEN_QUESTIONS.md#q-10--github-actions-alongside-jenkins).
+- **Developer** opens a PR on GitHub and sees whether the Jenkins build passed: Jenkins posts
+  the result back as a commit status. Jenkins is the only CI; GitHub Actions is removed because
+  its minutes cost money
+  ([Q-10](../OPEN_QUESTIONS.md#q-10--github-actions-alongside-jenkins)).
 - **Developer** on a new machine runs `docker compose -f ci/jenkins/compose.yml up -d` and gets the
   same Jenkins, plugins and job.
 
@@ -40,12 +41,16 @@ nothing is set up by clicking through the UI.
   - `plugins.txt` with pinned plugin versions.
   - A Configuration as Code (JCasC) file.
   - A Compose file that starts Jenkins and gives it Docker access
-    ([Q-11](../OPEN_QUESTIONS.md#q-11--docker-access-for-jenkins)).
+    ([Q-17](../OPEN_QUESTIONS.md#q-17--how-jenkins-reaches-the-local-docker)).
+- Two places to run build containers
+  ([Q-11](../OPEN_QUESTIONS.md#q-11--docker-access-for-jenkins)): Docker, and the k3s cluster
+  through the Kubernetes plugin.
 - A declarative `Jenkinsfile` at the repository root.
 - A multibranch pipeline job for this repository, created by JCasC (or Job DSL), not by hand.
 - Required stages: build and Java tests, dashboard tests, PostgreSQL integration tests (from
   PRD-13 on), coverage report.
-- `docs/CI.md`: how to start Jenkins, add the GitHub credential, and read a build.
+- `docs/CI.md`: how to start Jenkins, add the GitHub and k3s credentials, and read a build.
+- Remove `.github/workflows/ci.yml` once the Jenkins pipeline is green on `main`.
 
 ## Non-goals
 
@@ -58,7 +63,9 @@ nothing is set up by clicking through the UI.
 **Functional**
 - **FR-1** `docker compose -f ci/jenkins/compose.yml up -d` starts a configured Jenkins: plugins
   installed, the multibranch job present, and no setup wizard.
-- **FR-2** Each stage runs in a pinned container image (Docker Pipeline agents):
+- **FR-2** Each stage runs in a pinned container image, either as a Docker agent or as a pod
+  on k3s (Kubernetes plugin). Stages that need a Docker daemon (Testcontainers, image builds)
+  run on Docker. The images:
   - a Maven image with Temurin 21 for `./mvnw -B verify`
   - a Node image matching CI's Node version for `npm ci --ignore-scripts && npm test`
 - **FR-3** Stages, in order:
@@ -73,9 +80,10 @@ nothing is set up by clicking through the UI.
 - **FR-5** The PostgreSQL stage runs the repository tests through Testcontainers against the same
   PostgreSQL major version used in Compose (PRD-18) and on k3s (PRD-20). It is required, not
   optional ([Q-05](../OPEN_QUESTIONS.md#q-05--require-the-postgresql-ci-job)).
-- **FR-6** Builds are triggered for every branch and PR. The trigger method (polling or a
-  webhook) is part of Q-10.
-- **FR-7** Credentials (a GitHub token, later a registry and kubeconfig for PRD-20) live in the
+- **FR-6** Builds are triggered for every branch and PR by polling GitHub (Jenkins isn't
+  exposed to the internet). Each build's result is posted back to GitHub as a commit status.
+- **FR-7** Credentials (a GitHub token, the k3s kubeconfig, and the `registry.yjimmy.dev` login
+  for PRD-20) live in the
   Jenkins credential store. Config files reference them by ID and never contain values.
 
 **Non-functional**
@@ -96,8 +104,10 @@ nothing is set up by clicking through the UI.
 - Testcontainers inside a containerized agent needs the Docker host to be reachable from the
   agent. Set `TESTCONTAINERS_HOST_OVERRIDE` if the Docker access method requires it; Q-11 decides
   the method.
-- The existing GitHub Actions workflow stays until
-  [Q-10](../OPEN_QUESTIONS.md#q-10--github-actions-alongside-jenkins) is answered.
+- GitHub Actions keeps running until the Jenkins pipeline is green on `main`; this PR then
+  deletes `.github/workflows/ci.yml`, so there's no gap without CI.
+- The k3s cluster is ARM, so pod agents need images with `arm64` variants (the official Maven
+  and Node images have them).
 
 ## Acceptance criteria
 
@@ -122,7 +132,7 @@ nothing is set up by clicking through the UI.
 ## Risks and open questions
 
 Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-05,
-Q-10, Q-11). Record the answers there and here.
+Q-10, Q-11, Q-17). Record the answers there and here.
 
 - Docker Desktop on Windows and Docker on Linux differ in socket paths and networking, which
   affects Testcontainers inside Jenkins. Test on the machine that will run Jenkins.
@@ -131,5 +141,6 @@ Q-10, Q-11). Record the answers there and here.
 
 ## Definition of done
 
-- Shared DoD, plus: `docs/CI.md` written; the README's build badge or CI section points to
+- Shared DoD, plus: `docs/CI.md` written; `.github/workflows/ci.yml` removed; the README's
+  CI section points to
   Jenkins; `PR_PLAN.md` and the shared DoD say "Jenkins" where they say "CI".

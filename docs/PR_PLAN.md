@@ -796,8 +796,9 @@ DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
 ## Phase 8 — CI/CD
 
 CI/CD runs on a **Jenkins controller running locally in Docker**, and deploys to a **k3s
-server on ARM**. GitHub Actions stays until Jenkins reports build status back to GitHub
-(`OPEN_QUESTIONS.md`, Q-10).
+server on ARM**. Jenkins is the only CI: GitHub Actions is removed in PR 19, because its
+minutes cost money. Jenkins runs build containers on Docker or as pods on the k3s cluster.
+Decisions are in `OPEN_QUESTIONS.md` (Q-05, Q-10 to Q-15).
 
 ### PR 19 — Jenkins CI, running locally in Docker `M` (land right after PR 0)
 
@@ -808,6 +809,9 @@ server on ARM**. GitHub Actions stays until Jenkins reports build status back to
   → `npm ci && npm test` → PostgreSQL integration (Testcontainers, required, added by PR 13) →
   coverage report.
 - JUnit results published (Surefire/Failsafe plus a Mocha JUnit reporter); JaCoCo archived.
+- Agents on Docker (Testcontainers, image builds) or as pods on k3s (Kubernetes plugin).
+- Jenkins polls GitHub and posts each build's result back as a commit status. Once the pipeline
+  is green on `main`, delete `.github/workflows/ci.yml`.
 - Credentials only in the Jenkins credential store. `docs/CI.md` explains setup.
 
 **Tests**
@@ -818,12 +822,15 @@ server on ARM**. GitHub Actions stays until Jenkins reports build status back to
 ### PR 20 — Deploy to k3s on ARM `M`
 
 - The pipeline builds the PR 18 image for `linux/arm64` (Maven stage on the build platform,
-  arm64 runtime), tags it with the commit SHA, and pushes it to the registry.
-- `deploy/k8s/`: namespace; app `Deployment` with **one replica** and `Recreate` strategy (the
-  hot-folder watcher must run in exactly one pod); `Service` and Traefik `Ingress`; PostgreSQL;
+  arm64 runtime) with `docker buildx`, tags it with the commit SHA, and pushes it to
+  `registry.yjimmy.dev/print-workflow-lab`.
+- `deploy/k8s/` (plain YAML + Kustomize, `kubectl apply -k`): namespace; app `Deployment` with **one replica** and `Recreate` strategy (the
+  hot-folder watcher must run in exactly one pod); `Service` and Traefik `Ingress`; PostgreSQL
+  as an in-cluster `StatefulSet`;
   persistent volumes for `PRINTLAB_HOME`; `ConfigMap` and a `Secret` template. Readiness and
   liveness probes on `/api/health`.
-- On `main` only: deploy, `kubectl rollout status`, then the smoke test against the server.
+- Every green `main` build deploys: set the image tag, `kubectl apply -k`,
+  `kubectl rollout status`, then the smoke test against the server.
   `kubectl rollout undo` if either fails.
 - `docs/DEPLOY.md`: k3s server, registry and Jenkins credential setup.
 

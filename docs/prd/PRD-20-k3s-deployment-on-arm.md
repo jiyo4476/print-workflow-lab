@@ -37,8 +37,8 @@ Then check that the deployed app is healthy.
 
 - Multi-node clusters, high availability, autoscaling, or more than one app replica.
 - Public internet exposure, TLS certificates, or a DNS name.
-- Helm charts or GitOps tooling (Argo CD, Flux), unless
-  [Q-15](../OPEN_QUESTIONS.md#q-15--manifest-format-and-deploy-trigger) decides otherwise.
+- Helm charts, GitOps tooling (Argo CD, Flux), or manual approval gates
+  ([Q-15](../OPEN_QUESTIONS.md#q-15--manifest-format-and-deploy-trigger)).
 - Provisioning the ARM server or installing k3s itself, beyond what `docs/DEPLOY.md` describes.
 
 ## Requirements
@@ -46,18 +46,24 @@ Then check that the deployed app is healthy.
 **Functional**
 - **FR-1** The pipeline builds an image that runs on `linux/arm64`, from the same Dockerfile as
   PRD-18 ([Q-12](../OPEN_QUESTIONS.md#q-12--building-arm-images)).
-- **FR-2** Images are tagged with the commit SHA (plus `latest` on `main`) and pushed to the
-  chosen registry ([Q-13](../OPEN_QUESTIONS.md#q-13--image-registry-for-k3s)).
-- **FR-3** `deploy/k8s/` defines:
+- **FR-2** Images are pushed to `registry.yjimmy.dev/print-workflow-lab`, tagged with the commit
+  SHA (plus `latest` on `main`)
+  ([Q-13](../OPEN_QUESTIONS.md#q-13--image-registry-for-k3s)). The registry login is a Jenkins
+  credential; k3s pulls with a pull secret or `registries.yaml`.
+- **FR-3** `deploy/k8s/` is plain YAML with a `kustomization.yaml`, applied with
+  `kubectl apply -k` ([Q-15](../OPEN_QUESTIONS.md#q-15--manifest-format-and-deploy-trigger)).
+  It defines:
   - a `printlab` namespace
   - the app `Deployment` with **one replica**, using the `Recreate` strategy (see design notes)
   - a `Service` and an `Ingress` through k3s's built-in Traefik
-  - PostgreSQL ([Q-14](../OPEN_QUESTIONS.md#q-14--postgresql-on-k3s))
+  - PostgreSQL as a single-instance `StatefulSet` with a `local-path` volume
+    ([Q-14](../OPEN_QUESTIONS.md#q-14--postgresql-on-k3s))
   - persistent volumes for `PRINTLAB_HOME` (hot folder, work, output, error)
   - a `ConfigMap` for settings and a `Secret` for database credentials
 - **FR-4** The app has a readiness probe and a liveness probe on `/api/health`. Resource requests
   and limits fit a small ARM board.
-- **FR-5** The deploy stage runs only on `main` and sets the image to the commit SHA tag. It waits
+- **FR-5** Every green `main` build deploys automatically, with no approval step. The deploy
+  stage sets the image to the commit SHA tag (`kustomize edit set image`), applies, and waits
   for `kubectl rollout status`, then runs a smoke test against the Ingress: wait for
   `/api/health`, drop a generated file in the hot folder, and poll `/api/jobs` until it's
   `COMPLETE`.
@@ -87,7 +93,8 @@ Then check that the deployed app is healthy.
 - k3s ships Traefik for Ingress and the `local-path` provisioner for volumes, so the manifests
   need no extra cluster components.
 - The pipeline uses the kubeconfig credential with `kubectl` in a pinned container image;
-  nothing is installed on the Jenkins controller.
+  nothing is installed on the Jenkins controller. The image build runs on a Docker agent (it
+  needs `buildx`); the deploy stage can run as a pod on k3s (Q-11).
 
 ## Acceptance criteria
 

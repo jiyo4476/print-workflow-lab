@@ -26,13 +26,14 @@ are suggestions, not decisions: the PR that answers the question makes the call.
 | [Q-07](#q-07--marking-afp-reprints) | [PRD-15](prd/PRD-15-reprint-and-retry.md) | How are reprinted AFP documents marked? | A `Reprint` TLE now; a visible mark later | Open |
 | [Q-08](#q-08--exceptions-endpoint) | [PRD-17](prd/PRD-17-dashboard-actions.md) | Reuse document search for the Exceptions view, or add `GET /api/exceptions`? | Add a `queue` filter to the existing documents endpoint | Open |
 | [Q-09](#q-09--host-port) | [PRD-18](prd/PRD-18-docker-demo-and-polish.md) | Which host port does Compose use by default? | `${PRINTLAB_PORT:-8080}` | Open |
-| [Q-10](#q-10--github-actions-alongside-jenkins) | [PRD-19](prd/PRD-19-jenkins-ci.md) | Keep GitHub Actions alongside Jenkins? | Keep Actions until Jenkins reports status to GitHub | Open |
-| [Q-11](#q-11--docker-access-for-jenkins) | [PRD-19](prd/PRD-19-jenkins-ci.md) | How does Jenkins in Docker get Docker access? | Docker-in-Docker sidecar | Open |
-| [Q-12](#q-12--building-arm-images) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | How are arm64 images built? | `buildx` cross-build, Maven stage on the build platform | Open |
-| [Q-13](#q-13--image-registry-for-k3s) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | Where are images pushed for k3s to pull? | A registry on the LAN | Open |
-| [Q-14](#q-14--postgresql-on-k3s) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | Where does PostgreSQL run for the k3s deployment? | A StatefulSet in the cluster | Open |
-| [Q-15](#q-15--manifest-format-and-deploy-trigger) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | Manifest format, and what triggers a deploy? | Kustomize; auto-deploy `main` | Open |
+| [Q-10](#q-10--github-actions-alongside-jenkins) | [PRD-19](prd/PRD-19-jenkins-ci.md) | Keep GitHub Actions alongside Jenkins? | Keep Actions until Jenkins reports status to GitHub | **Decided:** Jenkins only |
+| [Q-11](#q-11--docker-access-for-jenkins) | [PRD-19](prd/PRD-19-jenkins-ci.md) | How does Jenkins in Docker get Docker access? | Docker-in-Docker sidecar | **Decided:** Docker or k3s |
+| [Q-12](#q-12--building-arm-images) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | How are arm64 images built? | `buildx` cross-build, Maven stage on the build platform | **Decided:** cross-build |
+| [Q-13](#q-13--image-registry-for-k3s) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | Where are images pushed for k3s to pull? | A registry on the LAN | **Decided:** `registry.yjimmy.dev` |
+| [Q-14](#q-14--postgresql-on-k3s) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | Where does PostgreSQL run for the k3s deployment? | A StatefulSet in the cluster | **Decided:** in the cluster |
+| [Q-15](#q-15--manifest-format-and-deploy-trigger) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | Manifest format, and what triggers a deploy? | Kustomize; auto-deploy `main` | **Decided:** Kustomize; deploy green `main` |
 | [Q-16](#q-16--getting-files-into-the-hot-folder-on-k3s) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | How do files reach the hot folder on the server? | A host folder shared over SMB | Open |
+| [Q-17](#q-17--how-jenkins-reaches-the-local-docker) | [PRD-19](prd/PRD-19-jenkins-ci.md) | How does Jenkins reach its local Docker? | Docker-in-Docker sidecar | Open |
 
 ## PRD-02 — Routing rules and exception queue
 
@@ -242,8 +243,8 @@ but it can poll GitHub and post build results back as commit statuses using a to
 statuses to GitHub (GitHub Branch Source plugin with a token). Polling every few minutes avoids
 exposing Jenkins.
 
-- **Answer:** —
-- **Status:** Open · **PR:** —
+- **Answer:** A, Jenkins only. GitHub Actions minutes cost money, so PRD-19 deletes `.github/workflows/ci.yml` once the Jenkins pipeline is green. Jenkins polls GitHub (it isn't exposed to the internet) and posts each build's result back as a commit status, so PRs still show a check.
+- **Status:** Decided (2026-11-09) · **PR:** — (built in plan PR 19)
 
 ### Q-11 — Docker access for Jenkins
 
@@ -259,8 +260,8 @@ Testcontainers, image builds). How does it reach Docker?
 **Recommendation:** B. It's documented, keeps builds off the host's Docker, and works the same on
 Windows and Linux.
 
-- **Answer:** —
-- **Status:** Open · **PR:** —
+- **Answer:** Docker (A or B) plus k3s (C): Jenkins starts containers either on Docker or on the k3s cluster it's connected to (Kubernetes plugin). Testcontainers and image builds stay on Docker, since they need a Docker daemon; other stages can run as pods on k3s. How Jenkins reaches its local Docker (socket mount or Docker-in-Docker) is still open as [Q-17](#q-17--how-jenkins-reaches-the-local-docker).
+- **Status:** Decided (2026-11-09) · **PR:** — (built in plan PR 19)
 
 ## PRD-20 — Deploy to k3s on ARM
 
@@ -277,8 +278,8 @@ Windows and Linux.
 **Recommendation:** A, with `FROM --platform=$BUILDPLATFORM` on the Maven stage, building
 `linux/amd64,linux/arm64`.
 
-- **Answer:** —
-- **Status:** Open · **PR:** —
+- **Answer:** A. Cross-build on the Jenkins machine with `docker buildx`, with the Maven stage on the build platform, producing `linux/amd64` and `linux/arm64`.
+- **Status:** Decided (2026-11-09) · **PR:** — (built in plan PR 20)
 
 ### Q-13 — Image registry for k3s
 
@@ -293,8 +294,8 @@ Windows and Linux.
 **Recommendation:** A, matching the local-first choice in Q-05. Configure `registries.yaml` on
 k3s and document it in `docs/DEPLOY.md`.
 
-- **Answer:** —
-- **Status:** Open · **PR:** —
+- **Answer:** A registry at `registry.yjimmy.dev`. Images are pushed as `registry.yjimmy.dev/print-workflow-lab:<commit SHA>`. Its login is a Jenkins credential, and k3s gets pull access through `registries.yaml` or an image pull secret.
+- **Status:** Decided (2026-11-09) · **PR:** — (built in plan PR 20)
 
 ### Q-14 — PostgreSQL on k3s
 
@@ -310,8 +311,8 @@ k3s and document it in `docs/DEPLOY.md`.
 `pg_dump` CronJob as a light backup if wanted. Use the same major version as Compose and the
 Testcontainers stage.
 
-- **Answer:** —
-- **Status:** Open · **PR:** —
+- **Answer:** A. A single-instance PostgreSQL StatefulSet inside the cluster, on a `local-path` volume, using the same major version as Compose and the Testcontainers stage.
+- **Status:** Decided (2026-11-09) · **PR:** — (built in plan PR 20)
 
 ### Q-15 — Manifest format and deploy trigger
 
@@ -327,8 +328,8 @@ Testcontainers stage.
 **Recommendation:** A. Revisit C if the server is used for interview demos and must stay stable
 at specific times.
 
-- **Answer:** —
-- **Status:** Open · **PR:** —
+- **Answer:** A. Plain manifests with Kustomize (`kubectl apply -k`), and every green `main` build deploys.
+- **Status:** Decided (2026-11-09) · **PR:** — (built in plan PR 20)
 
 ### Q-16 — Getting files into the hot folder on k3s
 
@@ -343,6 +344,24 @@ volume inside the cluster. How do operators get files into it?
 
 **Recommendation:** A with SMB, since the demo machine runs Windows. The pipeline's smoke test
 can still use `kubectl cp` or `kubectl exec` to drop its file.
+
+- **Answer:** —
+- **Status:** Open · **PR:** —
+
+## PRD-19, continued
+
+### Q-17 — How Jenkins reaches the local Docker
+
+**Question:** Q-11 decided that Jenkins starts containers on Docker or on k3s. For the Docker
+side, how does the Jenkins container reach a Docker daemon? This is what Testcontainers and the
+`buildx` cross-build (Q-12) use.
+
+| Option | Pros | Cons |
+|---|---|---|
+| **A. Mount the host's Docker socket** | Simplest and fastest; images and the build cache are shared with the host. | Anything in a build gets root-equivalent access to the host. On Windows, Docker Desktop's socket path and networking need extra care. |
+| **B. A Docker-in-Docker (`docker:dind`) sidecar, reached over TLS** | The setup in Jenkins' own Docker install guide. Builds are isolated from the host's containers and work the same on Windows and Linux. | Runs privileged; a separate image cache (slower first builds); Testcontainers needs `TESTCONTAINERS_HOST_OVERRIDE`. |
+
+**Recommendation:** B.
 
 - **Answer:** —
 - **Status:** Open · **PR:** —
