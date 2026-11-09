@@ -7,6 +7,7 @@
   <groupId>dev.yjimmy</groupId>
   <artifactId>print-workflow-lab</artifactId>
   <version>0.1.0-SNAPSHOT</version>
+  <packaging>war</packaging>
   <name>print-workflow-lab</name>
   <description>A small production-print workflow engine for learning AFP/PDF document processing.</description>
 
@@ -16,6 +17,16 @@
     <pdfbox.version>3.0.3</pdfbox.version>
     <jackson.version>2.18.1</jackson.version>
     <junit.version>5.11.3</junit.version>
+    <tomcat.version>10.1.55</tomcat.version>
+    <!-- Port for ./mvnw package cargo:run; override with -Dtomcat.port=8090 if 8080 is taken. -->
+    <tomcat.port>8080</tomcat.port>
+    <!-- Dashboard libraries, served from WebJars. Keep in sync with package.json (the JS tests
+         check this) and with the script tags in src/main/webapp/index.html. -->
+    <marionette.version>4.1.3</marionette.version>
+    <backbone.version>1.6.0</backbone.version>
+    <backbone.radio.version>2.0.0</backbone.radio.version>
+    <underscore.version>1.13.7</underscore.version>
+    <jquery.version>3.7.1</jquery.version>
   </properties>
 
   <dependencies>
@@ -40,16 +51,95 @@
       <version>2.0.16</version>
     </dependency>
 
+    <!-- Provided by Tomcat at runtime. -->
+    <dependency>
+      <groupId>jakarta.servlet</groupId>
+      <artifactId>jakarta.servlet-api</artifactId>
+      <version>6.0.0</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Browser libraries for the dashboard. Tomcat serves each jar's META-INF/resources, so
+         they appear at /webjars/<name>/<version>/... with no npm build. Transitive deps are
+         excluded so the versions above are the only ones on the classpath. -->
+    <dependency>
+      <groupId>org.webjars.npm</groupId>
+      <artifactId>jquery</artifactId>
+      <version>${jquery.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.webjars.npm</groupId>
+      <artifactId>underscore</artifactId>
+      <version>${underscore.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.webjars.npm</groupId>
+      <artifactId>backbone</artifactId>
+      <version>${backbone.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.webjars.npm</groupId>
+      <artifactId>backbone.radio</artifactId>
+      <version>${backbone.radio.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.webjars.npm</groupId>
+      <artifactId>backbone.marionette</artifactId>
+      <version>${marionette.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
       <version>${junit.version}</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.apache.tomcat.embed</groupId>
+      <artifactId>tomcat-embed-core</artifactId>
+      <version>${tomcat.version}</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
+    <finalName>print-workflow-lab</finalName>
     <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-war-plugin</artifactId>
+        <version>3.4.0</version>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
@@ -61,6 +151,36 @@
         <version>3.5.0</version>
         <configuration>
           <mainClass>dev.yjimmy.printlab.App</mainClass>
+        </configuration>
+      </plugin>
+      <!-- ./mvnw package cargo:run downloads Tomcat (from Maven Central), deploys the WAR at
+           http://localhost:${tomcat.port}/ and runs until Ctrl+C. -->
+      <plugin>
+        <groupId>org.codehaus.cargo</groupId>
+        <artifactId>cargo-maven3-plugin</artifactId>
+        <version>1.10.19</version>
+        <configuration>
+          <container>
+            <containerId>tomcat10x</containerId>
+            <artifactInstaller>
+              <groupId>org.apache.tomcat</groupId>
+              <artifactId>tomcat</artifactId>
+              <version>${tomcat.version}</version>
+              <type>zip</type>
+            </artifactInstaller>
+          </container>
+          <configuration>
+            <properties>
+              <cargo.servlet.port>${tomcat.port}</cargo.servlet.port>
+            </properties>
+          </configuration>
+          <deployables>
+            <deployable>
+              <properties>
+                <context>/</context>
+              </properties>
+            </deployable>
+          </deployables>
         </configuration>
       </plugin>
     </plugins>
