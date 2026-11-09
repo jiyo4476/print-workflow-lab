@@ -35,6 +35,8 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 | `RunExternalProgramStep` | External steps calling other programs |
 | `documents.csv` | Document properties file |
 | `afp/` (planned) | AFP page groups and TLEs as document properties |
+| WAR on Tomcat, `/api/*` servlets | The workflow server and its web services |
+| Marionette dashboard (`src/main/webapp/`) | The operator web interface |
 
 ## Run it
 
@@ -48,6 +50,38 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 
 Then move `run.pdf` into `hotfolder/` and look in `output/`. On Windows use `mvnw.cmd`.
 
+### Web app on Tomcat
+
+The project builds a WAR (`target/print-workflow-lab.war`) for Apache Tomcat 10.1
+(Jakarta Servlet 6.0). To run it locally:
+
+```bash
+./mvnw package cargo:run                      # http://localhost:8080/
+./mvnw package cargo:run -Dtomcat.port=8095   # if 8080 is taken
+```
+
+Cargo downloads Tomcat from Maven Central on first run and keeps it under `target/`. Stop with
+Ctrl+C. To deploy to your own Tomcat instead, copy the WAR into its `webapps/` folder.
+
+- `GET /api/health` returns `{"status":"UP","service":"print-workflow-lab"}`.
+- `/` is the dashboard: **Marionette 4.1.3** on Backbone 1.6.0, Backbone.Radio 2.0.0,
+  Underscore 1.13.7 and jQuery 3.7.1. Tomcat serves the libraries from WebJars
+  (`/webjars/...`), so there's no JavaScript build step. The app code is plain scripts in
+  `src/main/webapp/js/`.
+
+### Dashboard tests
+
+The JavaScript tests run in Node with JSDOM, loading the same library versions from npm:
+
+```bash
+npm ci
+npm test
+```
+
+Library versions are pinned in three places: `pom.xml` (WebJars), `src/main/webapp/index.html`
+(script tags) and `package.json` (tests). `versions.test.mjs` fails if they disagree, so change
+all three together.
+
 ## Layout
 
 ```
@@ -58,6 +92,11 @@ src/main/java/dev/yjimmy/printlab/
   input/HotFolderWatcher   folder intake
   testdata/                fake statement print-run generator (PDFBox)
   afp/                     AFP support (planned, see package-info.java)
+  web/                     servlets (HealthServlet)
+src/main/webapp/
+  index.html               dashboard page; loads WebJars, then js/
+  js/                      Marionette app: health.js, app.js, main.js
+src/test/js/               dashboard tests (node --test + JSDOM)
 workflows/statements.yaml  the sample workflow
 ```
 
@@ -71,6 +110,7 @@ workflows/statements.yaml  the sample workflow
 - [ ] Routing rules: send documents to an exception queue (e.g. invalid zip), flag large
       documents for a different envelope
 - [ ] Barcode step (ZXing) for inserter control
-- [ ] Persist jobs and documents (PostgreSQL), REST API
-- [ ] JavaScript dashboard: jobs by step, document search, single-document reprint
+- [x] Tomcat WAR, `/api/health`, Marionette 4 dashboard shell
+- [ ] Persist jobs and documents (PostgreSQL), REST API (servlets on Tomcat)
+- [ ] Marionette dashboard: jobs by step, document search, single-document reprint
 - [ ] Docker Compose setup
