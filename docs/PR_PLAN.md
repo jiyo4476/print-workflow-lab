@@ -8,6 +8,10 @@ Each PR below is small enough to review in one sitting, leaves `main` working, a
 tests listed under it. Sizes: **S** ≈ an evening, **M** ≈ 2–3 evenings, **L** ≈ a week of
 evenings.
 
+Each PR also has a PRD in [`docs/prd/`](prd/README.md) (`PRD-NN-*.md`, where NN is the PR number
+below): why it exists, numbered requirements, non-goals, acceptance criteria mapped to these
+tests, and open questions. If a PR changes its scope, update its PRD and this plan together.
+
 ## Overview
 
 | # | PR | Phase | Size | Depends on |
