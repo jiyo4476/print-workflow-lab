@@ -54,8 +54,9 @@ Branch naming: `feature/NN-short-name` (e.g. `feature/03-afp-reader`).
 
 ## Web platform
 
-The web side runs as a **WAR on Apache Tomcat 10.1** (Jakarta Servlet 6.0, Java 21), with a
-**Marionette 4** dashboard on **Backbone + jQuery**. The scaffold for this is already on `main`:
+Stack: **Marionette.js v4 (`backbone.marionette` 4.x) with Backbone and jQuery, served by Tomcat as a WAR**.
+The WAR targets **Apache Tomcat 10.1** (Jakarta Servlet 6.0, Java 21). The scaffold for this is
+already on `main`:
 
 - `pom.xml` builds `target/print-workflow-lab.war`. `./mvnw package cargo:run` downloads Tomcat
   10.1.55 from Maven Central and serves the app at `http://localhost:8080/`
@@ -74,9 +75,9 @@ The web side runs as a **WAR on Apache Tomcat 10.1** (Jakarta Servlet 6.0, Java 
   name the same versions; `src/test/js/versions.test.mjs` fails if they don't. Upgrades change
   all three in one PR.
 
-**Marionette 4 ground rules.** The reference is the
+**Marionette.js v4 ground rules.** The reference is the
 [`v4.1.3` tag's `docs/`](https://github.com/marionettejs/backbone.marionette/tree/v4.1.3/docs),
-since the npm package ships no docs. Don't use v5 docs or APIs.
+since the npm package ships no docs. Use only the 4.x API those docs describe.
 
 - One `Application` (`DashboardApp`, `region: '#app'`) owns startup and the shell. Features are
   `MnObject` controllers that own their collections, polling and requests; Views only render and
@@ -102,7 +103,7 @@ Every PR adds tests at the levels below, in proportion to what it changes:
 | **Unit** | One class in isolation: parsers, rules, steps with fake jobs | JUnit 5, `@TempDir` | Yes |
 | **Workflow / integration** | A real workflow YAML end to end on generated input; repositories against a database; HTTP endpoints | JUnit 5, H2, embedded Tomcat (`TomcatTestServer`) + `java.net.http.HttpClient` | Yes |
 | **Differential** | Our PDF readers against a trusted implementation (PDFBox) on the same files; for AFP, writer → reader round trips | JUnit 5 + PDFBox as oracle | Yes |
-| **Dashboard** | Marionette Views, controllers and the Application: rendering, escaping, empty states, requests, polling, teardown | `node --test` + JSDOM (`src/test/js/`), `Backbone.ajax` stubbed | Yes |
+| **Dashboard** | Marionette Views, controllers and the Application: rendering, escaping, empty states, requests, polling, teardown | Mocha + jsdom (`npm test`, specs in `src/test/js/`), `Backbone.ajax` stubbed, Sinon fake timers for polling | Yes |
 | **Manual** | Things that need eyes: opening AFP in a viewer, the dashboard in a real Tomcat, the demo | Checklist in the PR description | No |
 
 Rules for every PR:
@@ -670,8 +671,9 @@ inside it.
 
 ### PR 16 — Marionette 4 dashboard: jobs, documents, search `L`
 
-**Goal:** the operator view, grown from the scaffold's shell (see *Web platform*). Served by
-Tomcat from `src/main/webapp/`; no build step.
+**Goal:** the operator view, grown from the scaffold's shell (see *Web platform*): Marionette.js
+v4 Views, CollectionViews and Regions over Backbone Models and Collections, with jQuery for
+DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
 
 **Structure** (who owns what)
 - `DashboardApp` (`Marionette.Application`, `region: '#app'`, `channelName: 'dashboard'`) shows
@@ -702,7 +704,7 @@ Tomcat from `src/main/webapp/`; no build step.
 - **Text-only rendering:** `<%- %>` only, everywhere; values such as account names never reach
   `innerHTML` unescaped.
 
-**Tests** (`npm test`: `node --test` + JSDOM with `Backbone.ajax` stubbed; no network, no sleeps)
+**Tests** (`npm test`: Mocha specs in jsdom with `Backbone.ajax` stubbed; no network, no sleeps)
 - `entities.test.mjs`
   - `jobCollectionUrlIncludesStateAndLimit`
   - `parsesFixtureJobJsonIntoModels` (loads `fixtures/api/job.json` from PR 14: the contract)
@@ -712,7 +714,7 @@ Tomcat from `src/main/webapp/`; no build step.
   - `selectingARowNavigatesToJobDetail`
   - `refreshAbortsPreviousRequest`
   - `refreshKeepsSelectedJob`
-  - `pollingStopsWhenControllerIsDestroyed` (`t.mock.timers`)
+  - `pollingStopsWhenControllerIsDestroyed` (Sinon fake timers; add `sinon` as a dev dependency)
 - `job-detail.test.mjs`
   - `switchingQueueFiltersDocumentsWithoutRefetch`
   - `failedLoadShowsErrorWithRetry`

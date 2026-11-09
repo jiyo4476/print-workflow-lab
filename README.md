@@ -64,14 +64,16 @@ Cargo downloads Tomcat from Maven Central on first run and keeps it under `targe
 Ctrl+C. To deploy to your own Tomcat instead, copy the WAR into its `webapps/` folder.
 
 - `GET /api/health` returns `{"status":"UP","service":"print-workflow-lab"}`.
-- `/` is the dashboard: **Marionette 4.1.3** on Backbone 1.6.0, Backbone.Radio 2.0.0,
+- `/` is the dashboard: **Marionette.js v4** (`backbone.marionette` 4.1.3) on Backbone 1.6.0,
+  Backbone.Radio 2.0.0,
   Underscore 1.13.7 and jQuery 3.7.1. Tomcat serves the libraries from WebJars
   (`/webjars/...`), so there's no JavaScript build step. The app code is plain scripts in
   `src/main/webapp/js/`.
 
 ### Dashboard tests
 
-The JavaScript tests run in Node with JSDOM, loading the same library versions from npm:
+The JavaScript tests are Mocha specs running in Node with jsdom, loading the same library
+versions from npm:
 
 ```bash
 npm ci
@@ -96,7 +98,7 @@ src/main/java/dev/yjimmy/printlab/
 src/main/webapp/
   index.html               dashboard page; loads WebJars, then js/
   js/                      Marionette app: health.js, app.js, main.js
-src/test/js/               dashboard tests (node --test + JSDOM)
+src/test/js/               dashboard tests (Mocha + jsdom)
 workflows/statements.yaml  the sample workflow
 ```
 

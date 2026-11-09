@@ -1,9 +1,9 @@
 {
   "name": "print-workflow-lab-dashboard",
   "private": true,
-  "description": "Test harness for the Marionette 4 dashboard served from the Tomcat WAR. The browser loads these libraries from WebJars; versions here must match pom.xml.",
+  "description": "Mocha test harness for the Marionette.js v4 dashboard served from the Tomcat WAR. The browser loads these libraries from WebJars; versions here must match pom.xml.",
   "scripts": {
-    "test": "node --test \"src/test/js/**/*.test.mjs\""
+    "test": "mocha"
   },
   "devDependencies": {
     "backbone": "1.6.0",
@@ -11,6 +11,7 @@
     "backbone.radio": "2.0.0",
     "jquery": "3.7.1",
     "jsdom": "26.1.0",
+    "mocha": "12.0.3",
     "underscore": "1.13.7"
   },
   "engines": {

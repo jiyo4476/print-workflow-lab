@@ -1,4 +1,4 @@
-// Loads the dashboard into a JSDOM window the way index.html does: the same scripts, in the same
+// Loads the dashboard into a jsdom window the way index.html does: the same scripts, in the same
 // order. WebJar URLs (webjars/<name>/<version>/<path>) map to node_modules/<name>/<path>, which
 // package.json pins to the same versions as pom.xml.
 import { readFileSync } from 'node:fs';
