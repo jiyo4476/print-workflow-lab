@@ -28,7 +28,7 @@ evenings.
 | 13 | Persistence: jobs and documents in PostgreSQL | Platform | L | 1 |
 | 14 | REST API (read-only) | Platform | M | 13 |
 | 15 | Reprint and retry | Platform | M | 14 |
-| 16 | Dashboard (Marionette v5): jobs, documents, search | Dashboard | L | 14 |
+| 16 | Dashboard (Marionette v4): jobs, documents, search | Dashboard | L | 14 |
 | 17 | Dashboard actions: reprint, retry, exception queue | Dashboard | M | 15, 16 |
 | 18 | Docker Compose, demo script, README polish | Presentation | S | 17 |
 
@@ -61,7 +61,7 @@ Every PR adds tests at the levels below, in proportion to what it changes:
 | **Unit** | One class in isolation: parsers, rules, steps with fake jobs | JUnit 5, `@TempDir` | Yes |
 | **Workflow / integration** | A real workflow YAML end to end on generated input; repositories against a database; HTTP endpoints | JUnit 5, H2, Javalin test tools | Yes |
 | **Differential** | Our PDF readers against a trusted implementation (PDFBox) on the same files; for AFP, writer → reader round trips | JUnit 5 + PDFBox as oracle | Yes |
-| **Dashboard** | Marionette Views and Applications: rendered content, interaction, readiness, cancellation, teardown | `node --test` + JSDOM, ESLint with `marionette/eslint` | Yes (from PR 16) |
+| **Dashboard** | Marionette Applications and Views: rendered content, interaction, request cancellation, teardown | `node --test` + jsdom | Yes (from PR 16) |
 | **Manual** | Things that need eyes: opening AFP in a viewer, the dashboard, the demo | Checklist in the PR description | No |
 
 Rules for every PR:
@@ -113,7 +113,8 @@ happened.
 - When a job fails, move its input file to `error/<jobId>/` alongside an `error.txt` (step name,
   message, timestamp).
 - Write `work/<jobId>/job.json` after every step: job id, state, current step, job properties,
-  document count, and per-step start/end times.
+  the documents (properties and file path of each), and per-step start/end times. This is the
+  checkpoint PR 15's retry resumes from.
 - Add a `StepRecord` list (`name`, `startedAt`, `finishedAt`, `outcome`) to `Job`. Inject a
   `Clock` into the engine so times are testable.
 
@@ -123,7 +124,7 @@ happened.
   - `failedStepIsRecordedWithOutcomeFailed`
   - `stepsAfterFailureAreNotRecorded`
 - Unit — `JobSummaryWriterTest`
-  - `writesJobJsonThatRoundTrips` (write → read with Jackson → equal)
+  - `writesJobJsonThatRoundTrips` (write → read with Jackson → equal, documents included)
   - `overwritesSummaryAfterEachStep`
 - Integration — `ErrorHandlingTest`
   - `failedJobMovesInputToErrorFolder`
@@ -247,8 +248,10 @@ connectors with rules.
   - `contentMatchesPdfGeneratorForSameSeed` (same account numbers, names, zips, page counts)
 - Manual: generated file opens in a free AFP viewer; screenshot in the PR.
 
-> Short on time? Skip this PR and test PR 5 against a sample AFP file with page groups and TLEs
-> checked into `fixtures/afp/`.
+> Short on time? Skip this PR and test PR 5 against a real sample AFP file with page groups and
+> TLEs checked into `fixtures/afp/`. Before committing it, confirm its license allows
+> redistribution in a public repository and that it holds no real customer data; note the source
+> and license in `fixtures/afp/README.md`.
 
 ### PR 5 — `SplitAfp` step `M`
 
@@ -483,25 +486,27 @@ production print.
 **Goal:** stamp an inserter-control barcode on every page, the way mail-finishing equipment
 expects.
 
-- Add ZXing. `AddBarcode` step for PDF documents: Data Matrix (or Code 128) at a configured
+- Add ZXing. `AddBarcode` step for PDF documents: a **Data Matrix** symbol at a configured
   position/size, encoding a template such as
-  `${jobId}|${sequence}|${page}|${pageCount}|${accountNumber}`.
+  `${jobId}|${sequence}|${page}|${pageCount}|${accountNumber}`. (Code 128 was rejected: a payload
+  this long is about 10 cm wide and won't fit in a statement margin.)
 - Optional human-readable text under the barcode.
 
 **Tests**
 - Unit — `BarcodeTemplateTest`
   - `substitutesJobDocumentAndPageValues`
   - `unknownPlaceholderFailsAtLoad`
-  - `valueTooLongForSymbologyFailsWithDocumentSequence`
+  - `valueTooLongForSymbolSizeFailsWithDocumentSequence`
 - Integration — `AddBarcodeStepTest` (render page with PDFBox `PDFRenderer`, decode with ZXing)
   - `firstPageBarcodeDecodesToExpectedValues`
   - `lastPageBarcodeHasPageEqualsPageCount`
   - `everyPageOfEveryDocumentHasABarcode`
   - `barcodeDoesNotOverlapConfiguredRegions` (compare rectangles with the split regions)
   - `existingPageTextIsStillExtractable` (stamping doesn't break `SplitPdf` regions)
+- Cross-feature tests (added by whichever PR lands second — see *Conventions*):
   - `barcodeDrawnAsImageXObjectAtConfiguredPosition` — uses PR 9's content-stream parser to
-    check the `cm`/`Do` operators (skip if PR 9 isn't merged yet)
-  - `preflightStillPassesAfterStamping` (if PR 11 is merged)
+    check the `cm`/`Do` operators (PR 12 or PR 9, whichever merges later)
+  - `preflightStillPassesAfterStamping` (PR 12 or PR 11, whichever merges later)
 - Manual: print or zoom a page and scan the barcode with a phone app.
 
 ---
@@ -513,7 +518,8 @@ expects.
 **Goal:** jobs and documents survive restarts and can be searched.
 
 - PostgreSQL via Docker; H2 (PostgreSQL mode) for tests. Flyway migrations.
-- Tables: `jobs`, `job_steps`, `documents` (`format` = `afp`|`pdf`, `queue`, `file_path`,
+- Tables: `jobs` (with a nullable `parent_job_id` for PR 15's reprint children), `job_steps`,
+  `documents` (`format` = `afp`|`pdf`, `queue`, `file_path`,
   `sequence`, `job_id`) and
   `document_properties` (name/value rows, indexed on `(name, value)`).
 - Plain JDBC repositories (`JobRepository`, `DocumentRepository`) — no ORM, to practice SQL.
@@ -549,7 +555,8 @@ expects.
   - `GET /api/jobs?state=&limit=` — newest first
   - `GET /api/jobs/{id}` — job, properties, step history
   - `GET /api/jobs/{id}/documents?queue=`
-  - `GET /api/documents?property=accountNumber&value=…` — search
+  - `GET /api/documents?property=accountNumber&value=…&queue=…` — search across jobs; needs a
+    property/value pair, a `queue`, or both (`?queue=exceptions` feeds PR 17's Exceptions view)
   - `GET /api/documents/{id}/file` — streams the PDF/AFP
   - `GET /api/documents/{id}/structure` — the document's structure as JSON, built from the
     `dump-afp` / `dump-pdf` readers (structured fields, or object tree + page operators)
@@ -564,7 +571,8 @@ expects.
 - Integration — `DocumentsApiTest`
   - `listsDocumentsForJobFilteredByQueue`
   - `searchByAccountNumberReturnsMatch`
-  - `searchWithoutPropertyReturns400`
+  - `searchByQueueReturnsDocumentsAcrossJobs`
+  - `searchWithoutPropertyOrQueueReturns400`
   - `fileEndpointStreamsPdfWithCorrectContentType`
   - `fileEndpointDoesNotServePathsOutsideOutputDir` (path traversal guard)
   - `structureEndpointReturnsFieldsForAfpAndObjectsForPdf`
@@ -576,10 +584,18 @@ expects.
 
 **Goal:** the two operator actions every production print system needs.
 
-- `POST /api/documents/reprint` with document ids → a **new child job** with just those
-  documents, run through a `reprint` workflow (adds a "REPRINT" marker, skips presort). The child
-  job records its parent job id.
-- `POST /api/jobs/{id}/retry` → re-runs a failed job from the step that failed.
+- `POST /api/documents/reprint` with document ids → **one new child job per source job**, each
+  with just that job's selected documents, run through a `reprint` workflow (adds a "REPRINT"
+  marker, skips presort) in its parent's format. Each child records its single parent job id, so
+  `jobs.parent_job_id` stays one column. Response: `201` with `{ "childJobIds": [...] }`.
+- `POST /api/jobs/{id}/retry` → resumes a failed job from the step that failed:
+  - restores the checkpoint saved after the last successful step (job properties, documents and
+    their files — PR 1's `job.json` / PR 13's `JobStore`) and runs from the failed step on;
+  - moves the input file back from `error/<jobId>/` to the work dir first;
+  - starts with a conditional update, `UPDATE jobs SET state = 'RETRYING' WHERE id = ? AND
+    state = 'ERROR'`; if no row changed, the job isn't failed (or a retry is already running)
+    and the API returns `409`.
+- Steps must leave the work dir consistent when they finish, so a checkpoint is always resumable.
 - Both actions are recorded in `job_steps` for an audit trail.
 
 **Tests**
@@ -587,17 +603,20 @@ expects.
   - `createsChildJobWithOnlySelectedDocuments`
   - `childJobRecordsParentId`
   - `originalJobIsUnchanged`
-  - `documentsFromDifferentJobsCanBeReprintedTogether` (or are rejected — decide and test it)
+  - `documentsFromDifferentJobsCreateOneChildPerParent`
+  - `childJobUsesItsParentsFormat` (AFP and PDF documents never mix in one child)
   - `unknownDocumentIdFailsWholeRequest` (no partial reprint)
 - Unit — `RetryServiceTest`
-  - `retriesFromFailedStepNotFromStart` (`RecordingStep` shows steps 1 was not re-run)
+  - `retriesFromFailedStepNotFromStart` (`RecordingStep` shows step 1 was not re-run)
+  - `restoresDocumentsAndPropertiesFromCheckpoint`
+  - `inputFileIsMovedBackFromErrorFolder`
   - `retryingCompletedJobIsRejected`
   - `retryIsRecordedInStepHistory`
 - Integration — `ActionsApiTest`
-  - `reprintReturns201WithChildJobId`
+  - `reprintReturns201WithChildJobIds`
   - `reprintWithEmptyListReturns400`
   - `retryUnknownJobReturns404`
-  - `doubleSubmitRetryDoesNotRunTwice` (idempotency)
+  - `doubleSubmitRetryDoesNotRunTwice` (second request gets `409`)
 - Workflow — `ReprintWorkflowTest`
   - `reprintedPdfHasReprintMarkerOnEveryPage`
 
@@ -605,118 +624,109 @@ expects.
 
 ## Phase 6 — Dashboard
 
-The dashboard is built with **Marionette v5** (the `marionette` npm package — not the legacy
-`backbone.marionette` 4.x). It needs no Backbone or jQuery. Marionette's split between
-**Applications** (own readiness, data loading and lifetimes) and **Views/Regions** (own rendering
-and the DOM) lines up with the backend: an Application waits for the API the way a workflow step
-waits for its input.
+The dashboard is built with **Marionette v4** (the `backbone.marionette` npm package, on top of
+Backbone) — not the v5 `marionette` package. Backbone supplies Models, Collections and events;
+Marionette adds Applications, Regions, Views and `CollectionView`s, and talks between parts
+through `backbone.radio` channels.
 
-**Version rules** — Marionette's core and companion packages must be the same release, and the
-installed package's own `docs/` are the reference (not the website, which may describe another
-version):
+**Version rules**
 
-- `marionette@5.0.0`, `@mnjs/utils@5.0.0`, `@mnjs/radio@5.0.0`, `@mnjs/adapters@5.0.0`,
-  `@mnjs/data@5.0.0`, `lit-html@3.3.3`; dev: `vite@8.3.0`, `jsdom@30.1.0`, `eslint@10.11.0`.
-- Install with `npm install --save-exact --ignore-scripts …` and commit `package-lock.json`.
-- Node 22.22.2+ (22.x) or 24.15.0+ (24.x), matching Marionette 5.0.0's supported LTS lines.
+- `backbone.marionette@4.1.3`, `backbone@1.6.1`, `underscore@1.13.8`, `backbone.radio@2.0.0`;
+  dev: `vite`, `jsdom`. Install with `npm install --save-exact` and commit `package-lock.json`.
+- 4.1.3 is the last v4 release (2020). Use the v4.1.3 docs, not the v5 site; v5-only APIs
+  (`prepareStart`, `restart()`, `createState`, `@mnjs/*`) do not exist here.
+- **No jQuery.** Marionette v4 works through its own DOM API, and HTTP lives in
+  `api-client.js` (`fetch` + `AbortController`). Don't call `Model#fetch`/`save`, which would need
+  `Backbone.ajax`. Models and Collections are filled with `reset`/`set` from the API client.
 
-### PR 16 — Dashboard (Marionette v5): jobs, documents, search `L`
+### PR 16 — Dashboard (Marionette v4): jobs, documents, search `L`
 
-**Goal:** the operator view, built as a small Marionette v5 application in `dashboard/`.
+**Goal:** the operator view, built as a small Marionette v4 application in `dashboard/`.
 
 **Setup**
 - `dashboard/` npm project (`"type": "module"`) built with Vite. `npm run dev` proxies `/api` to
   Javalin; `npm run build` writes `dashboard/dist`, which Javalin serves as static files.
-- `src/setup.js`, imported before any View or Application is constructed:
-  `setDataApi(DataApi)`, `setStateApi(StateApi)` (from `@mnjs/data`) and
-  `setDomApi(LitDomApi)` (from `@mnjs/adapters/dom/lit-html`).
-- `src/api-client.js`: plain `fetch` wrappers that accept an `AbortSignal` and turn the API's JSON
-  error body into an `Error`. `@mnjs/data` gives observable Models/Collections only — it does
-  not fetch or save, so all HTTP stays in this module.
-- `eslint.config.mjs` using `marionette/eslint`'s recommended config
-  (`no-private-framework-members`).
+- `src/api-client.js`: `fetch` wrappers that take an `AbortSignal` and turn the API's JSON error
+  body into an `Error`.
+- `src/latest-request.js`: a small helper that aborts the previous request when a new one starts
+  and ignores responses that are no longer current — Marionette v4 has no built-in cancellation.
 
 **Structure** (who owns what)
-- `DashboardApplication` — the root. Attaches a page shell View with Regions for navigation and
-  content, and registers the child Applications below with `childApps`. Navigation intent from
-  the shell reaches it through `viewEvents` and starts/stops the matching child.
-- `JobsApplication`
-  - `prepareStart(options, { signal })` loads `/api/jobs` and returns a `Collection`; the screen
-    appears only once data is ready (a Loading View shows during the first load).
-  - `onStart` builds the layout **once**, then replaces only the list and detail Regions — so a
-    refresh keeps the page and the operator's selection.
-  - Owned state (`createState` → a `Model`): `selectedJobId`, `loading`, `error`.
-    `stateEvents: { 'change:selectedJobId': 'showDetail' }`.
-  - Refresh button and auto-refresh both call `restart()`; Marionette cancels a pending load
-    when a newer one starts, so an old response can never overwrite a newer one. The
-    auto-refresh timer is installed once per run in `onStart` and cleared in `onStop`.
-  - A failed first load leaves the Application stopped; the parent shows an error View with
-    **Retry**. A failed refresh keeps the current list and shows the error in the status View.
+- `DashboardApp` (`Marionette.Application`) — the root. Shows a `LayoutView` with `nav` and
+  `content` Regions; navigation events on a `dashboard` Radio channel swap the content.
+- `JobsController` (`Marionette.MnObject`) — owns the jobs `Collection` and a `ui` state `Model`
+  (`selectedJobId`, `loading`, `error`). Loads `/api/jobs` through `latest-request`, so a slow
+  old response can't overwrite a newer one. Auto-refresh timer started on show, cleared in
+  `onDestroy`. A failed refresh keeps the current list and shows the error.
 - Views
-  - `JobsList` — `CollectionView` of `JobRow`s (state badge, current step). Rows emit `select`;
-    the list forwards it with `childViewTriggers`. Rows re-render from the shared state when the
-    selection changes; no View holds a reference to another View or to the Application.
-  - `JobDetail` — properties, step timeline, and documents grouped by queue (a `CollectionView`
-    filtered by queue with `setFilter`, not re-rendered).
-  - `SearchApplication` — search by account number / name / zip. Each new search calls
-    `restart()`, which cancels the previous request (its signal is aborted) — no hand-written
-    request-tracking flags.
+  - `JobsLayout` — built once; refreshes only update the Collection, so the page and the
+    operator's selection survive.
+  - `JobsList` — `CollectionView` of `JobRow`s (state badge, current step). Rows `triggers` a
+    `select`; the list forwards it with `childViewTriggers`. No View holds a reference to another
+    View or to the controller.
+  - `JobDetail` — properties, step timeline, documents grouped by queue (a `CollectionView` per
+    queue using `viewFilter`/`setFilter`, not re-rendered).
+  - `SearchView` + `SearchController` — search by account number / name / zip; each new search
+    aborts the previous one through `latest-request`.
   - `StructureView` — collapsible AFP structured fields or PDF object tree from
     `/api/documents/{id}/structure`, built from nested `CollectionView`s.
-- **Text-only rendering:** values go through `lit-html` interpolation, which renders them as
-  text. Never use `unsafeHTML` or set `innerHTML` with data.
+- **Text-only rendering:** templates are `_.template` and use only `<%- %>` (escaped). `<%= %>`
+  and setting `innerHTML` with data are forbidden; a test greps the templates for `<%=`.
 
-**Tests** (`node --import ./test/dom.mjs --test`; JSDOM is installed before Marionette and Lit
-are imported, following Marionette's consumer testing guide)
+**Tests** (`node --import ./test/dom.mjs --test`; jsdom globals are installed before Backbone and
+Marionette are imported)
 - `api-client.test.mjs`
   - `buildsQueryStringsAndEncodesValues`
   - `throwsReadableErrorFromJsonErrorBody`
   - `passesAbortSignalToFetch`
+- `latest-request.test.mjs`
+  - `newRequestAbortsPrevious`
+  - `staleResponseIsIgnored` (first request resolves after the second)
 - `format.test.mjs`
   - `formatsDurationsAndTimestamps`
   - `mapsJobStateToBadge`
-- `jobs-application.test.mjs` (`fetch` replaced with a controllable Promise — no network, no
-  sleeps)
-  - `screenAppearsOnlyAfterJobsLoad` (`start()` pending → nothing but the Loading View)
-  - `failedFirstLoadRejectsStartAndLeavesAppStopped`
-  - `refreshKeepsLayoutAndSelection` (same layout element before and after `restart()`)
+- `jobs-controller.test.mjs` (`fetch` replaced with a controllable Promise — no network, no sleeps)
+  - `loadingViewShownUntilJobsArrive`
+  - `refreshKeepsLayoutAndSelection` (same layout element before and after)
   - `failedRefreshKeepsListAndShowsError`
-  - `stopDuringLoadCancelsRequestAndNothingRenders` (signal aborted; `start()` resolves `false`)
-  - `autoRefreshTimerIsClearedOnStop` (`t.mock.timers`)
+  - `destroyDuringLoadAbortsRequestAndNothingRenders`
+  - `autoRefreshTimerIsClearedOnDestroy` (`t.mock.timers`)
   - `selectingARowShowsItsDetail`
-- `search-application.test.mjs`
-  - `newSearchCancelsPreviousRequest` (first signal aborted; only the second result renders)
+- `search.test.mjs`
+  - `newSearchCancelsPreviousRequest` (only the second result renders)
   - `emptyResultShowsMessage`
 - `views.test.mjs`
   - `rendersValuesAsTextNotHtml` (a name like `<img onerror=…>` shows literally)
+  - `templatesUseOnlyEscapedInterpolation` (no `<%=` in `src/`)
   - `emptyStatesRenderMessage`
-  - `replacedDetailViewStopsReactingToItsModel` (spy on `render`; old View destroyed, Model not)
+  - `destroyedViewStopsListeningToItsModel`
   - `structureViewRendersNestedAfpGroupsAndPdfObjects` (from fixture JSON)
 - Contract: the JS tests load `fixtures/api/job.json` from PR 14, so an API shape change breaks
   them.
-- Lint: `npx eslint . --max-warnings=0`.
-- Manual checklist in the PR (JSDOM can't check these): keyboard navigation and focus after
-  selecting and refreshing, list refresh, job detail, search, open file, narrow screen.
-- CI: a `dashboard` job with `actions/setup-node` (Node 24), `npm ci`, lint, `npm test`,
-  `npm run build`.
+- Manual checklist in the PR: keyboard focus after selecting and refreshing, list refresh, job
+  detail, search, open file, narrow screen.
+- CI: a `dashboard` job with `actions/setup-node`, `npm ci`, `npm test`, `npm run build`.
 
 ### PR 17 — Dashboard actions `M`
 
 - Select documents → **Reprint**; failed job → **Retry**; an **Exceptions** view listing
-  documents in the exception queue across jobs (another child Application).
-- Views only emit intent (`triggers`, e.g. `reprint:documents`); the owning Application makes the
-  `POST` as an explicit operation (not in `prepareStart`, which is for readiness), then calls
-  `restart()` on the jobs list to show the result.
-- Confirmation before actions, inline result, links to the new child job.
+  documents in the exception queue across jobs, loaded from `GET /api/documents?queue=exceptions`
+  (PR 14 — no new endpoint).
+- Views only emit intent (`triggers`, e.g. `reprint:documents`); the owning controller makes the
+  `POST` and then refreshes the jobs Collection.
+- A reprint across several jobs returns several child jobs (PR 15); the result lists a link to
+  each.
+- Confirmation before actions, inline result, links to the new child jobs.
 
 **Tests**
 - `actions.test.mjs`
   - `reprintSendsSelectedIdsOnly`
   - `buttonsDisabledWhileRequestInFlight` (no double submit)
   - `showsErrorMessageWhenApiFails`
+  - `reprintAcrossJobsLinksEveryChildJob`
+  - `retryConflict409ShowsAlreadyRetryingMessage`
   - `successfulReprintRefreshesJobsWithoutRebuildingLayout`
-  - `stoppingTheFeatureMidRequestDoesNotUpdateDestroyedViews`
-- Integration — `ExceptionsApiTest` (if a new endpoint is added for the cross-job view)
+  - `destroyingTheViewMidRequestDoesNotUpdateIt`
 - Manual demo script in the PR: generate a run with bad addresses → find one in Exceptions →
   reprint a good statement by account number → see the child job complete.
 
@@ -731,7 +741,8 @@ are imported, following Marionette's consumer testing guide)
   `hotfolder/` and `output/`.
 - `docs/DEMO.md`: the 5-minute walkthrough, step by step.
 - README: architecture diagram, a 30-second GIF of the demo, updated concept map and roadmap.
-- Add a license (MIT) before making the repository public.
+- Add a license (MIT) before making the repository public, and re-check that every file in
+  `fixtures/` (especially real AFP samples) may be redistributed.
 
 **Tests**
 - CI job: build the Docker image.
@@ -745,10 +756,12 @@ are imported, following Marionette's consumer testing guide)
 ## Conventions for every PR
 
 - One concern per PR; tests in the same PR as the code (see *Testing strategy*).
-- CI (`./mvnw verify`, plus the dashboard's lint, `npm test` and build from PR 16) green before
+- CI (`./mvnw verify`, plus the dashboard's `npm test` and build from PR 16) green before
   merging.
-- Dashboard code uses only Marionette's public APIs and the documentation bundled with the
-  installed version; upgrading Marionette is its own PR that bumps every `@mnjs/*` package to the
-  same version.
+- **Cross-feature tests:** when a test needs two features from different PRs (e.g. barcodes and
+  preflight), whichever PR merges second adds it. Its description names the test, and reviewers
+  check for it. No conditional or self-skipping tests.
+- Dashboard code stays on Marionette v4 (`backbone.marionette` 4.x) public APIs; moving to v5 is
+  its own PR.
 - PR description: what and why, the tests added, how to test manually, screenshots for UI changes.
 - Update the README roadmap checkbox in the PR that completes the item.
