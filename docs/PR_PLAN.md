@@ -54,6 +54,8 @@ Branch naming: `feature/NN-short-name` (e.g. `feature/03-afp-reader`).
 
 ## Testing strategy
 
+CI runs on **Jenkins** from a `Jenkinsfile` at the repository root (no GitHub Actions).
+
 Every PR adds tests at the levels below, in proportion to what it changes:
 
 | Level | What it covers | Tools | Runs in CI |
@@ -95,7 +97,8 @@ Rules for every PR:
     load a workflow and redirect output to a temp folder (replaces the ad-hoc
     `withOutputDir` in `StatementWorkflowTest`).
   - `RecordingStep` — a `Step` that records calls, can be told to throw.
-- Upload the JaCoCo report as a CI artifact.
+- Archive the JaCoCo report in Jenkins (`archiveArtifacts`, or the Coverage plugin's
+  `recordCoverage`).
 
 **Tests**
 - Existing tests refactored onto the helpers and still green.
@@ -705,7 +708,8 @@ Marionette are imported)
   them.
 - Manual checklist in the PR: keyboard focus after selecting and refreshing, list refresh, job
   detail, search, open file, narrow screen.
-- CI: a `dashboard` job with `actions/setup-node`, `npm ci`, `npm test`, `npm run build`.
+- CI: a `dashboard` stage in the `Jenkinsfile` (Node via the NodeJS plugin or a Node agent):
+  `npm ci`, `npm test`, `npm run build`.
 
 ### PR 17 — Dashboard actions `M`
 
