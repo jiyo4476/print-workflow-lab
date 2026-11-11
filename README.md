@@ -104,6 +104,10 @@ workflows/statements.yaml  the sample workflow
 
 ## Roadmap
 
+The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a requirements doc
+(PRD) for each PR in [`docs/prd/`](docs/prd/README.md). Decisions still to be made are in
+[`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md).
+
 - [x] Workflow engine, YAML workflows, step registry
 - [x] Hot folder intake that waits for files to finish copying
 - [x] PDF split + region-based indexing, zip presort, output with document index
@@ -116,3 +120,4 @@ workflows/statements.yaml  the sample workflow
 - [ ] Persist jobs and documents (PostgreSQL), REST API (servlets on Tomcat)
 - [ ] Marionette dashboard: jobs by step, document search, single-document reprint
 - [ ] Docker Compose setup
+- [ ] CI/CD: Jenkins running locally in Docker, deploying to a k3s server on ARM

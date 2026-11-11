@@ -8,6 +8,12 @@ Each PR below is small enough to review in one sitting, leaves `main` working, a
 tests listed under it. Sizes: **S** ≈ an evening, **M** ≈ 2–3 evenings, **L** ≈ a week of
 evenings.
 
+Each PR also has a PRD in [`docs/prd/`](prd/README.md) (`PRD-NN-*.md`, where NN is the PR number
+below): why it exists, numbered requirements, non-goals, acceptance criteria mapped to these
+tests, and open questions. If a PR changes its scope, update its PRD and this plan together.
+Unanswered decisions are collected in [`OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md); check it when
+starting a PR and record the answer there.
+
 ## Overview
 
 | # | PR | Phase | Size | Depends on |
@@ -25,17 +31,20 @@ evenings.
 | 10 | PDF/VT-style document parts (DPart) indexing | PDF | M | 8, 2 |
 | 11 | PDF preflight step | PDF | M | 7, 2 |
 | 12 | Barcode step for inserter control | Print features | M | 0 |
-| 13 | Persistence: jobs and documents in PostgreSQL | Platform | L | 1 |
+| 13 | Persistence: jobs and documents in PostgreSQL | Platform | L | 1, 19 |
 | 14 | REST API on Tomcat (read-only servlets) | Platform | M | 13 |
 | 15 | Reprint and retry | Platform | M | 14 |
 | 16 | Marionette 4 dashboard: jobs, documents, search | Dashboard | L | 14 |
 | 17 | Dashboard actions: reprint, retry, exception queue | Dashboard | M | 15, 16 |
 | 18 | Docker Compose, demo script, README polish | Presentation | S | 17 |
+| 19 | Jenkins CI, running locally in Docker (land right after 0) | Foundation | M | 0 |
+| 20 | Deploy to k3s on ARM | Delivery | M | 18, 19 |
 
 ```
 0 ──► 1 ──► 2
-│     └──► 13 ──► 14 ──► 15 ──► 17 ──► 18
-│                  └──► 16 ──┘
+│     └──► 13 ──► 14 ──► 15 ──► 17 ──► 18 ──► 20
+│          ▲       └──► 16 ──┘              ▲
+├──► 19 ───┴────────────────────────────────┘
 ├──► 3 ──► 4 ──► 5 ──► 6
 ├──► 7 ──► 8 ──► 10
 │     ├──► 9
@@ -47,6 +56,9 @@ evenings.
 → 2. That covers AFP parsing and indexing, PDF objects and content streams, and rules-based
 routing — the most interview-relevant topics — without the platform work. Then 12 (barcodes), and
 13 → 14 → 16 for a visible dashboard.
+
+PRs 19 and 20 were added after the plan was written (CI/CD moved to Jenkins and k3s), so their
+numbers don't show their order: PR 19 lands right after PR 0, and PR 20 comes last.
 
 Branch naming: `feature/NN-short-name` (e.g. `feature/03-afp-reader`).
 
@@ -100,11 +112,17 @@ Every PR adds tests at the levels below, in proportion to what it changes:
 
 | Level | What it covers | Tools | Runs in CI |
 |---|---|---|---|
-| **Unit** | One class in isolation: parsers, rules, steps with fake jobs | JUnit 5, `@TempDir` | Yes |
-| **Workflow / integration** | A real workflow YAML end to end on generated input; repositories against a database; HTTP endpoints | JUnit 5, H2, embedded Tomcat (`TomcatTestServer`) + `java.net.http.HttpClient` | Yes |
-| **Differential** | Our PDF readers against a trusted implementation (PDFBox) on the same files; for AFP, writer → reader round trips | JUnit 5 + PDFBox as oracle | Yes |
+| **Unit** | One class in isolation: parsers, rules, steps with fake jobs | JUnit 4, `TemporaryFolder` rule | Yes |
+| **Workflow / integration** | A real workflow YAML end to end on generated input; repositories against a database; HTTP endpoints | JUnit 4, H2, embedded Tomcat (`TomcatTestServer`) + `java.net.http.HttpClient` | Yes |
+| **Differential** | Our PDF readers against a trusted implementation (PDFBox) on the same files; for AFP, writer → reader round trips | JUnit 4 + PDFBox as oracle | Yes |
 | **Dashboard** | Marionette Views, controllers and the Application: rendering, escaping, empty states, requests, polling, teardown | Mocha + jsdom (`npm test`, specs in `src/test/js/`), `Backbone.ajax` stubbed, Sinon fake timers for polling | Yes |
 | **Manual** | Things that need eyes: opening AFP in a viewer, the dashboard in a real Tomcat, the demo | Checklist in the PR description | No |
+
+Java tests use **JUnit 4** (4.13.2), the version common in long-lived enterprise Java
+codebases such as RICOH ProcessDirector's. Test classes and methods are `public`; use
+`@Before`/`@After`, the `TemporaryFolder` rule for files, `@RunWith(Parameterized.class)` for
+table-driven tests, and `assertThrows` (added in 4.13). Assertion messages come first:
+`assertEquals(message, expected, actual)`. Don't add JUnit 5 (Jupiter) or the Vintage engine.
 
 Rules for every PR:
 
@@ -113,7 +131,7 @@ Rules for every PR:
   files. Production print is mostly about what happens when things go wrong.
 - **Deterministic data.** Generators take a seed; tests never depend on the current time or on
   random order.
-- **No test touches the real `hotfolder/`, `work/` or `output/`.** Use `@TempDir`.
+- **No test touches the real `hotfolder/`, `work/` or `output/`.** Use the `TemporaryFolder` rule.
 - **Golden files** (expected dump output checked into `fixtures/`) are updated deliberately, never
   regenerated blindly to make a test pass.
 - Test names describe behavior: `failedJobMovesInputToErrorFolder`, not `testError1`.
@@ -132,7 +150,7 @@ Rules for every PR:
 - Add **AssertJ** for readable assertions on collections and files.
 - `src/test/resources/fixtures/` for small checked-in test files (AFP samples, workflow YAMLs).
 - Test helpers in `src/test/java/.../testsupport/`:
-  - `TestJobs.newJob(Path tempDir, Path input)` — a `Job` with a work dir under `@TempDir`.
+  - `TestJobs.newJob(Path tempDir, Path input)` — a `Job` with a work dir under a `TemporaryFolder`.
   - `TestWorkflows.of(StepDefinition...)` and `TestWorkflows.load(name, overrides)` — build or
     load a workflow and redirect output to a temp folder (replaces the ad-hoc
     `withOutputDir` in `StatementWorkflowTest`).
@@ -197,7 +215,8 @@ connectors with rules.
   Routes are checked in order; the first match wins.
 - An optional `when:` on any step so it only runs if a **job** property matches (e.g. skip
   presort when `documentCount` < 50).
-- `WriteOutput` writes each queue to its own subfolder.
+- `WriteOutput` writes each queue to its own subfolder, plus one `documents.csv` for the whole
+  job with a `queue` column (decided in `OPEN_QUESTIONS.md`, Q-01).
 - Generator option to emit a known number of bad addresses (blank name, 4-digit zip).
 
 **Tests**
@@ -220,6 +239,7 @@ connectors with rules.
   - `badAddressesLandInExceptions` (exactly 5)
   - `everyDocumentIsInExactlyOneQueue` (sum of queues == input documents)
   - `outputHasOneFolderPerQueue`
+  - `documentsCsvListsEveryDocumentWithItsQueue` (one row per document, with its queue)
 
 ---
 
@@ -581,7 +601,8 @@ expects.
 - Workflow — `PersistentWorkflowTest`
   - `completedJobIsReadableAfterEngineRestart` (new engine + repository instance, same DB)
   - `failedJobIsStoredWithErrorAndStep`
-- Optional CI job: the same repository tests against real PostgreSQL via Testcontainers.
+- Jenkins stage (required, see PR 19): the same repository tests against real PostgreSQL via
+  Testcontainers.
 
 ### PR 14 — REST API on Tomcat (read-only servlets) `M`
 
@@ -775,6 +796,55 @@ DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
   generated file in the hot folder, poll `/api/jobs` until the job is `COMPLETE`, then
   `docker compose down`.
 - Manual: from a clean clone, follow `docs/DEMO.md` exactly.
+
+---
+
+## Phase 8 — CI/CD
+
+CI/CD runs on a **Jenkins controller running locally in Docker**, and deploys to a **k3s
+server on ARM**. Jenkins is the only CI: GitHub Actions is removed in PR 19, because its
+minutes cost money. Jenkins runs build containers on Docker or as pods on the k3s cluster.
+Decisions are in `OPEN_QUESTIONS.md` (Q-05, Q-10 to Q-15).
+
+### PR 19 — Jenkins CI, running locally in Docker `M` (land right after PR 0)
+
+- `ci/jenkins/`: a pinned Jenkins LTS (JDK 21) image, pinned `plugins.txt`, a Configuration as
+  Code file and a Compose file. `docker compose -f ci/jenkins/compose.yml up -d` gives a ready
+  Jenkins with a multibranch job for this repository and no setup wizard.
+- A declarative `Jenkinsfile`, each stage in a pinned container: checkout → `./mvnw -B verify`
+  → `npm ci && npm test` → PostgreSQL integration (Testcontainers, required, added by PR 13) →
+  coverage report.
+- JUnit results published (Surefire/Failsafe plus a Mocha JUnit reporter); JaCoCo archived.
+- Agents on Docker (Testcontainers, image builds) or as pods on k3s (Kubernetes plugin).
+- Jenkins polls GitHub and posts each build's result back as a commit status. Once the pipeline
+  is green on `main`, delete `.github/workflows/ci.yml`.
+- Credentials only in the Jenkins credential store. `docs/CI.md` explains setup.
+
+**Tests**
+- Manual, recorded in the PR: Jenkins from an empty volume has the job; a green build publishes
+  results and coverage; a broken Java, Mocha and PostgreSQL test each fail the right stage;
+  no containers are left running afterwards.
+
+### PR 20 — Deploy to k3s on ARM `M`
+
+- The pipeline builds the PR 18 image for `linux/arm64` (Maven stage on the build platform,
+  arm64 runtime) with `docker buildx`, tags it with the commit SHA, and pushes it to
+  `registry.yjimmy.dev/print-workflow-lab`.
+- `deploy/k8s/` (plain YAML + Kustomize, `kubectl apply -k`): namespace; app `Deployment` with **one replica** and `Recreate` strategy (the
+  hot-folder watcher must run in exactly one pod); `Service` and Traefik `Ingress`; PostgreSQL
+  as an in-cluster `StatefulSet`;
+  persistent volumes for `PRINTLAB_HOME`; `ConfigMap` and a `Secret` template. Readiness and
+  liveness probes on `/api/health`.
+- Every green `main` build deploys: set the image tag, `kubectl apply -k`,
+  `kubectl rollout status`, then the smoke test against the server.
+  `kubectl rollout undo` if either fails.
+- `docs/DEPLOY.md`: k3s server, registry and Jenkins credential setup.
+
+**Tests**
+- Pipeline: manifests validated (`kubectl apply --dry-run=server` or `kubeconform`); post-deploy
+  smoke test (health → drop a file → job `COMPLETE`).
+- Manual: first deploy from `docs/DEPLOY.md`; a broken build rolls back; data survives
+  `kubectl delete pod`.
 
 ---
 
