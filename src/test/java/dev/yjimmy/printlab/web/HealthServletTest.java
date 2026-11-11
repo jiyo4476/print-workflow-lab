@@ -1,42 +1,42 @@
 package dev.yjimmy.printlab.web;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.file.Path;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 /** Runs {@link HealthServlet} in a real (embedded) Tomcat and calls it over HTTP. */
-class HealthServletTest {
+public class HealthServletTest {
 
-    @TempDir
-    Path tmp;
+    @Rule
+    public TemporaryFolder folder = new TemporaryFolder();
 
     private TomcatTestServer server;
     private final HttpClient http = HttpClient.newHttpClient();
 
-    @BeforeEach
-    void startTomcat() throws Exception {
-        server = new TomcatTestServer(tmp)
+    @Before
+    public void startTomcat() throws Exception {
+        server = new TomcatTestServer(folder.getRoot().toPath())
                 .servlet("health", new HealthServlet(), "/api/health")
                 .start();
     }
 
-    @AfterEach
-    void stopTomcat() throws Exception {
+    @After
+    public void stopTomcat() throws Exception {
         server.close();
     }
 
     @Test
-    void getReturnsUpAsJson() throws Exception {
+    public void getReturnsUpAsJson() throws Exception {
         HttpResponse<String> resp = http.send(
                 HttpRequest.newBuilder(server.uri("/api/health")).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
@@ -52,7 +52,7 @@ class HealthServletTest {
     }
 
     @Test
-    void postIsRejectedWith405() throws Exception {
+    public void postIsRejectedWith405() throws Exception {
         HttpResponse<String> resp = http.send(
                 HttpRequest.newBuilder(server.uri("/api/health"))
                         .POST(HttpRequest.BodyPublishers.noBody()).build(),
