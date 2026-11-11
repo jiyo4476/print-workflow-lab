@@ -78,8 +78,8 @@ These apply to every PR; each PRD lists only what's extra.
 
 - Tests in the same PR as the code; failure paths covered, not just the happy path.
 - `./mvnw verify` and `npm test` green in CI; coverage doesn't drop (from PRD-00 on).
-- Deterministic tests: seeded generators, no wall-clock time, no fixed sleeps, `@TempDir` for
-  files.
+- Deterministic tests: seeded generators, no wall-clock time, no fixed sleeps, a JUnit 4
+  `TemporaryFolder` for files.
 - Scraped or file-derived values are shown as text, never HTML (Java logs, API JSON, dashboard).
 - PR description: what and why, tests added, manual check, screenshots for UI changes.
 - README roadmap checkbox ticked by the PR that completes it.

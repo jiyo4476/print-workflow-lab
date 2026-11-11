@@ -88,7 +88,9 @@ Plain JDBC rather than an ORM is deliberate practice in SQL schema design and qu
   `saveIsTransactional`
 - Workflow — `PersistentWorkflowTest`: `completedJobIsReadableAfterEngineRestart`,
   `failedJobIsStoredWithErrorAndStep`
-- Jenkins stage (required): the same repository tests on PostgreSQL via Testcontainers.
+- Jenkins stage (required): the same repository tests on PostgreSQL via Testcontainers. Use
+  Testcontainers 1.x, whose containers work as JUnit 4 rules (`@ClassRule`); check that JUnit 4
+  support remains before moving to 2.x.
 
 ## Risks and open questions
 

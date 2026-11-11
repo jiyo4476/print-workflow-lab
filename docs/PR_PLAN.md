@@ -112,11 +112,17 @@ Every PR adds tests at the levels below, in proportion to what it changes:
 
 | Level | What it covers | Tools | Runs in CI |
 |---|---|---|---|
-| **Unit** | One class in isolation: parsers, rules, steps with fake jobs | JUnit 5, `@TempDir` | Yes |
-| **Workflow / integration** | A real workflow YAML end to end on generated input; repositories against a database; HTTP endpoints | JUnit 5, H2, embedded Tomcat (`TomcatTestServer`) + `java.net.http.HttpClient` | Yes |
-| **Differential** | Our PDF readers against a trusted implementation (PDFBox) on the same files; for AFP, writer → reader round trips | JUnit 5 + PDFBox as oracle | Yes |
+| **Unit** | One class in isolation: parsers, rules, steps with fake jobs | JUnit 4, `TemporaryFolder` rule | Yes |
+| **Workflow / integration** | A real workflow YAML end to end on generated input; repositories against a database; HTTP endpoints | JUnit 4, H2, embedded Tomcat (`TomcatTestServer`) + `java.net.http.HttpClient` | Yes |
+| **Differential** | Our PDF readers against a trusted implementation (PDFBox) on the same files; for AFP, writer → reader round trips | JUnit 4 + PDFBox as oracle | Yes |
 | **Dashboard** | Marionette Views, controllers and the Application: rendering, escaping, empty states, requests, polling, teardown | Mocha + jsdom (`npm test`, specs in `src/test/js/`), `Backbone.ajax` stubbed, Sinon fake timers for polling | Yes |
 | **Manual** | Things that need eyes: opening AFP in a viewer, the dashboard in a real Tomcat, the demo | Checklist in the PR description | No |
+
+Java tests use **JUnit 4** (4.13.2), the version common in long-lived enterprise Java
+codebases such as RICOH ProcessDirector's. Test classes and methods are `public`; use
+`@Before`/`@After`, the `TemporaryFolder` rule for files, `@RunWith(Parameterized.class)` for
+table-driven tests, and `assertThrows` (added in 4.13). Assertion messages come first:
+`assertEquals(message, expected, actual)`. Don't add JUnit 5 (Jupiter) or the Vintage engine.
 
 Rules for every PR:
 
@@ -125,7 +131,7 @@ Rules for every PR:
   files. Production print is mostly about what happens when things go wrong.
 - **Deterministic data.** Generators take a seed; tests never depend on the current time or on
   random order.
-- **No test touches the real `hotfolder/`, `work/` or `output/`.** Use `@TempDir`.
+- **No test touches the real `hotfolder/`, `work/` or `output/`.** Use the `TemporaryFolder` rule.
 - **Golden files** (expected dump output checked into `fixtures/`) are updated deliberately, never
   regenerated blindly to make a test pass.
 - Test names describe behavior: `failedJobMovesInputToErrorFolder`, not `testError1`.
@@ -144,7 +150,7 @@ Rules for every PR:
 - Add **AssertJ** for readable assertions on collections and files.
 - `src/test/resources/fixtures/` for small checked-in test files (AFP samples, workflow YAMLs).
 - Test helpers in `src/test/java/.../testsupport/`:
-  - `TestJobs.newJob(Path tempDir, Path input)` — a `Job` with a work dir under `@TempDir`.
+  - `TestJobs.newJob(Path tempDir, Path input)` — a `Job` with a work dir under a `TemporaryFolder`.
   - `TestWorkflows.of(StepDefinition...)` and `TestWorkflows.load(name, overrides)` — build or
     load a workflow and redirect output to a temp folder (replaces the ad-hoc
     `withOutputDir` in `StatementWorkflowTest`).
