@@ -1,15 +1,15 @@
 package dev.yjimmy.printlab.workflow;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
 
-class WorkflowEngineTest {
+public class WorkflowEngineTest {
 
     private static WorkflowDefinition workflow(String... types) {
         List<WorkflowDefinition.StepDefinition> steps = new ArrayList<>();
@@ -20,7 +20,7 @@ class WorkflowEngineTest {
     }
 
     @Test
-    void runsStepsInOrderAndCompletes() {
+    public void runsStepsInOrderAndCompletes() {
         List<String> ran = new ArrayList<>();
         StepRegistry registry = new StepRegistry();
         registry.register("A", p -> job -> ran.add("A"));
@@ -34,7 +34,7 @@ class WorkflowEngineTest {
     }
 
     @Test
-    void stopsAtFailingStepAndRecordsError() {
+    public void stopsAtFailingStepAndRecordsError() {
         List<String> ran = new ArrayList<>();
         StepRegistry registry = new StepRegistry();
         registry.register("Ok", p -> job -> ran.add("Ok"));
@@ -50,7 +50,7 @@ class WorkflowEngineTest {
     }
 
     @Test
-    void unknownStepTypeFailsAtStartup() {
+    public void unknownStepTypeFailsAtStartup() {
         assertThrows(IllegalArgumentException.class,
                 () -> new WorkflowEngine(workflow("Nope"), StepRegistry.withBuiltIns()));
     }

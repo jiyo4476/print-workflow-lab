@@ -16,7 +16,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <pdfbox.version>3.0.3</pdfbox.version>
     <jackson.version>2.18.1</jackson.version>
-    <junit.version>5.11.3</junit.version>
+    <junit.version>4.13.2</junit.version>
     <tomcat.version>10.1.55</tomcat.version>
     <!-- Port for ./mvnw package cargo:run; override with -Dtomcat.port=8090 if 8080 is taken. -->
     <tomcat.port>8080</tomcat.port>
@@ -119,8 +119,8 @@
     </dependency>
 
     <dependency>
-      <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter</artifactId>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
       <version>${junit.version}</version>
       <scope>test</scope>
     </dependency>

@@ -1,7 +1,7 @@
 package dev.yjimmy.printlab;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
 import dev.yjimmy.printlab.workflow.Document;
@@ -14,17 +14,19 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 /** End to end: generated print run -> the real statements.yaml workflow -> sorted output. */
-class StatementWorkflowTest {
+public class StatementWorkflowTest {
 
-    @TempDir
-    Path tmp;
+    @Rule
+    public TemporaryFolder folder = new TemporaryFolder();
 
     @Test
-    void splitsIndexesAndSortsAStatementRun() throws Exception {
+    public void splitsIndexesAndSortsAStatementRun() throws Exception {
+        Path tmp = folder.getRoot().toPath();
         Path input = tmp.resolve("run.pdf");
         new StatementPdfGenerator(42).generate(25, input);
 
@@ -35,14 +37,14 @@ class StatementWorkflowTest {
         Job job = new Job("test0001", input, tmp);
         new WorkflowEngine(def, StepRegistry.withBuiltIns()).run(job);
 
-        assertEquals(JobState.COMPLETE, job.state(), job.errorMessage());
+        assertEquals(job.errorMessage(), JobState.COMPLETE, job.state());
         List<Document> docs = job.documents();
         assertEquals(25, docs.size());
 
         int pages = 0;
         for (Document d : docs) {
-            assertTrue(d.property("accountNumber").matches("\\d{10}"), d.properties().toString());
-            assertTrue(d.property("zip").matches("\\d{5}"), d.properties().toString());
+            assertTrue(d.properties().toString(), d.property("accountNumber").matches("\\d{10}"));
+            assertTrue(d.properties().toString(), d.property("zip").matches("\\d{5}"));
             assertTrue(d.property("cityStateZip").endsWith(d.property("zip")));
             assertTrue(!d.property("name").isBlank());
             pages += Integer.parseInt(d.property("pageCount"));
@@ -50,8 +52,8 @@ class StatementWorkflowTest {
         assertEquals(Integer.parseInt(job.properties().get("totalPages")), pages);
 
         for (int i = 1; i < docs.size(); i++) {
-            assertTrue(docs.get(i - 1).property("zip").compareTo(docs.get(i).property("zip")) <= 0,
-                    "documents should be presorted by zip");
+            assertTrue("documents should be presorted by zip",
+                    docs.get(i - 1).property("zip").compareTo(docs.get(i).property("zip")) <= 0);
         }
 
         Path jobOut = outputDir.resolve("test0001");
