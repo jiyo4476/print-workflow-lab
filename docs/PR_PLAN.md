@@ -137,6 +137,17 @@ Rules for every PR:
 - Test names describe behavior: `failedJobMovesInputToErrorFolder`, not `testError1`.
 - CI (`./mvnw verify` and `npm test`) must be green before merging; coverage must not drop (from PR 0 on).
 
+**Coverage.** `./mvnw verify` runs JaCoCo: the report is `target/site/jacoco/index.html`, and the
+build fails if line coverage is below `coverage.line.minimum` in `pom.xml`. Test-data generators
+(`testdata/`) and `App` are excluded. To raise the gate, run `./mvnw verify`, read the *Lines*
+total in the report, and set the property to that value rounded **down** to two decimals, in its
+own commit. Never lower it to get a PR through; add tests instead.
+
+**Test helpers** (`src/test/java/dev/yjimmy/printlab/testsupport/`): `TestJobs.newJob` for a job
+in a temp folder, `TestWorkflows.of`/`step`/`load` to build or load workflows with output
+redirected, and `RecordingStep` for a fake step that records calls or throws on its Nth call.
+Small checked-in test files go in `src/test/resources/fixtures/`.
+
 ---
 
 ## Phase 0 — Foundation
@@ -151,11 +162,12 @@ Rules for every PR:
 - `src/test/resources/fixtures/` for small checked-in test files (AFP samples, workflow YAMLs).
 - Test helpers in `src/test/java/.../testsupport/`:
   - `TestJobs.newJob(Path tempDir, Path input)` — a `Job` with a work dir under a `TemporaryFolder`.
-  - `TestWorkflows.of(StepDefinition...)` and `TestWorkflows.load(name, overrides)` — build or
+  - `TestWorkflows.of(StepDefinition...)` and `TestWorkflows.load(name, outputDir)` — build or
     load a workflow and redirect output to a temp folder (replaces the ad-hoc
     `withOutputDir` in `StatementWorkflowTest`).
   - `RecordingStep` — a `Step` that records calls, can be told to throw.
-- Upload the JaCoCo report as a CI artifact.
+- Upload the JaCoCo report as a CI artifact — **deferred to PR 19** (Jenkins), since GitHub
+  Actions is being retired (Q-10).
 
 **Tests**
 - Existing tests refactored onto the helpers and still green.
