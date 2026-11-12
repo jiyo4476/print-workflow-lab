@@ -8,6 +8,8 @@ import dev.yjimmy.printlab.workflow.WorkflowDefinition;
 import dev.yjimmy.printlab.workflow.WorkflowEngine;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.ZoneOffset;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -41,7 +43,10 @@ public final class App {
 
     private static void run(Path workflowFile) throws Exception {
         WorkflowDefinition definition = WorkflowDefinition.load(workflowFile);
-        WorkflowEngine engine = new WorkflowEngine(definition, StepRegistry.withBuiltIns());
+        WorkflowEngine engine = new WorkflowEngine(
+                definition, StepRegistry.withBuiltIns(), Path.of("error"),
+                // Millisecond ticks: Windows clocks report 100 ns digits nobody needs to read.
+                Clock.tickMillis(ZoneOffset.UTC));
         Path workRoot = Path.of("work");
 
         // One job at a time for now; the watcher thread never blocks on processing.
