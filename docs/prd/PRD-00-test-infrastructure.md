@@ -44,11 +44,12 @@ the code" checkable rather than a promise.
 - **FR-3** `TestJobs.newJob(Path tempDir, Path input)` returns a `Job` whose work dir is under
   the given temp dir.
 - **FR-4** `TestWorkflows.of(StepDefinition...)` builds a workflow; `TestWorkflows.load(name,
-  overrides)` loads a YAML from `workflows/` and redirects `WriteOutput` to a temp folder,
+  outputDir)` loads a YAML from `workflows/` and redirects `WriteOutput` to a temp folder,
   leaving every other step unchanged.
 - **FR-5** `RecordingStep` records each `execute` call (job id, order) and can be configured to
   throw on its Nth call.
-- **FR-6** CI uploads the JaCoCo report as a build artifact.
+- **FR-6** CI uploads the JaCoCo report as a build artifact. **Deferred to PRD-19:** GitHub
+  Actions is being replaced by Jenkins (Q-10), so the artifact is archived by the Jenkinsfile.
 
 **Non-functional**
 - **NFR-1** Adds no more than ~10 s to `./mvnw verify` on CI.
@@ -68,7 +69,7 @@ the code" checkable rather than a promise.
 | AC-1 | Existing tests pass unchanged in behavior after moving onto the helpers | existing suite |
 | AC-2 | `TestWorkflows.load` changes only the `WriteOutput` step's `outputDir` | `TestWorkflowsTest.outputOverrideOnlyChangesWriteOutputStep` |
 | AC-3 | Lowering coverage below the gate fails `./mvnw verify` | manual: temporarily delete a test |
-| AC-4 | CI run has a downloadable `jacoco-report` artifact | CI run page |
+| AC-4 | CI run has a downloadable `jacoco-report` artifact | CI run page (deferred to PRD-19) |
 
 ## Test plan
 
