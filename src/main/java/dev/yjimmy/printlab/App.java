@@ -65,17 +65,20 @@ public final class App {
                 System.err.println("Could not start job for " + file + ": " + e.getMessage());
                 return;
             }
+            // The engine fails jobs cleanly for step errors; these are for whatever it lets
+            // escape (OutOfMemoryError, a bug in the engine itself).
             try {
                 engine.run(job);
-            } catch (Throwable t) {
-                // The engine fails jobs cleanly for step errors; this is for whatever it lets
-                // escape (OutOfMemoryError, a bug in the engine itself).
+            } catch (Error err) {
                 System.err.println(job + " stopped unexpectedly; its files are in "
                         + job.workDir().toAbsolutePath());
-                t.printStackTrace();
-                if (t instanceof Error err) {
-                    throw err;
-                }
+                // The worker thread's uncaught-exception handler prints the stack trace once;
+                // the executor then starts a fresh thread for the next job.
+                throw err;
+            } catch (RuntimeException e) {
+                System.err.println(job + " stopped unexpectedly; its files are in "
+                        + job.workDir().toAbsolutePath());
+                e.printStackTrace();
             }
         })).watch();
     }

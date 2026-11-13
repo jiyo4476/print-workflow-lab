@@ -72,7 +72,7 @@ public class ErrorHandlingTest {
     public void failedJobMovesInputToErrorFolder() throws Exception {
         Path input = blankPdf("in", "run.pdf");
 
-        Job job = runFailingJob("job00001", input);
+        runFailingJob("job00001", input);
 
         assertFalse("input should no longer be where it was", Files.exists(input));
         assertTrue(Files.isRegularFile(errorDir.resolve("job00001").resolve("run.pdf")));

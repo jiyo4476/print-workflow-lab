@@ -59,8 +59,8 @@ Then move `run.pdf` into `hotfolder/` and look in `output/`. On Windows use `mvn
 | `error/<jobId>/` | Only for failed jobs: the input file and `error.txt` |
 
 `job.json` is rewritten after every step, so it always shows how far a job has got: its id,
-state, current step, job properties, document count, and each step's start and finish time and
-outcome (`COMPLETED` or `FAILED`). It's written to a temp file and then moved into place, so it's
+state, current step, error message (if it failed), job properties, document count, and each
+step's start and finish time and outcome (`COMPLETED` or `FAILED`). It's written to a temp file and then moved into place, so it's
 never half-written.
 
 When a step throws, the job stops there: later steps don't run, the input file moves to
