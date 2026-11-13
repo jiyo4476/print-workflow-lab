@@ -48,7 +48,13 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw -q exec:java                               # start watching ./hotfolder
 ```
 
-Then move `run.pdf` into `hotfolder/` and look in `output/`. On Windows use `mvnw.cmd`.
+Then move `run.pdf` into `hotfolder/` and look in `output/`. On Windows use `mvnw.cmd`. In
+PowerShell, quote any `-D` argument; otherwise PowerShell splits it at the dot and Maven reports
+an unknown lifecycle phase:
+
+```powershell
+.\mvnw.cmd -q exec:java "-Dexec.args=generate 200 run.pdf"
+```
 
 ### Where a job's files go
 
