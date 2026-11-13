@@ -21,7 +21,7 @@
     <jacoco.version>0.8.12</jacoco.version>
     <!-- Build fails if line coverage drops below this. Raise it deliberately, never lower it to
          get a PR through. See "Coverage" in docs/PR_PLAN.md. -->
-    <coverage.line.minimum>0.70</coverage.line.minimum>
+    <coverage.line.minimum>0.75</coverage.line.minimum>
     <tomcat.version>10.1.55</tomcat.version>
     <!-- Port for ./mvnw package cargo:run; override with -Dtomcat.port=8090 if 8080 is taken. -->
     <tomcat.port>8080</tomcat.port>
