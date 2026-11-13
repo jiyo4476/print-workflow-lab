@@ -44,8 +44,8 @@ dashboard's step timeline (PRD-16).
 - **FR-3** `Job` holds a list of `StepRecord(name, startedAt, finishedAt, outcome)`, where
   `outcome` is `COMPLETED` or `FAILED` (PRD-02 adds `SKIPPED`).
 - **FR-4** Steps after a failure are not run and not recorded.
-- **FR-5** After each step, `work/<jobId>/job.json` holds: id, state, current step, job
-  properties, document count and step records.
+- **FR-5** After each step, `work/<jobId>/job.json` holds: id, state, current step, error
+  message (null unless the job failed), job properties, document count and step records.
 - **FR-6** Two failed jobs whose input files have the same name never overwrite each other.
 
 **Non-functional**
@@ -57,6 +57,14 @@ dashboard's step timeline (PRD-16).
 
 - `JobSummaryWriter` (Jackson) writes `job.json`; it reads back into the same shape for tests and
   for PRD-13's file-based `JobStore`.
+- The engine fails the job for any `Exception`, and also for `StackOverflowError` (PDFBox on a
+  deeply nested PDF) and `LinkageError`, since those are about the one job. Other `Error`s, such
+  as `OutOfMemoryError`, escape; `App` logs them with the job's work folder instead of losing them
+  in an unread `Future`.
+- A failure whose exception has no message is described by its class name, so `error.txt`
+  never says `null`.
+- If the input can't be moved to `error/<jobId>/`, `error.txt` gets a `Note:` line saying where
+  it was left. Failing to write `job.json` is logged, not a job failure: it's a diagnostic record.
 - The error folder root is configurable alongside `hotfolder`/`work`/`output` (PRD-14 moves all
   of them under `PRINTLAB_HOME`).
 
@@ -73,11 +81,17 @@ dashboard's step timeline (PRD-16).
 ## Test plan
 
 - Unit — `WorkflowEngineTest`: `recordsStartAndFinishForEveryStep` (fixed `Clock`),
-  `failedStepIsRecordedWithOutcomeFailed`, `stepsAfterFailureAreNotRecorded`
-- Unit — `JobSummaryWriterTest`: `writesJobJsonThatRoundTrips`, `overwritesSummaryAfterEachStep`
+  `failedStepIsRecordedWithOutcomeFailed`, `stepsAfterFailureAreNotRecorded`,
+  `rewritesSummaryAfterEachStep`, `failedJobSummaryRecordsTheError`,
+  `exceptionWithoutMessageIsDescribedByItsClass`, `stackOverflowInStepFailsTheJobCleanly`,
+  `linkageErrorInStepFailsTheJob`, `outOfMemoryErrorIsNotSwallowed`
+- Unit — `JobSummaryWriterTest`: `writesJobJsonThatRoundTrips`, `overwritesSummaryAfterEachStep`,
+  `writesTimesAsIso8601`, `leavesNoTempFilesBehind`
 - Integration — `ErrorHandlingTest`: `failedJobMovesInputToErrorFolder`,
   `errorTxtContainsStepNameAndMessage`, `successfulJobLeavesNothingInErrorFolder`,
-  `twoFailedJobsWithSameFileNameDoNotCollide`
+  `twoFailedJobsWithSameFileNameDoNotCollide`, `errorTxtSaysWhereInputWasLeftWhenItCannotBeMoved`
+- Manual — Windows: drop a blank PDF in `hotfolder/`; it fails in `split-and-index` after
+  PDFBox has opened it, and still moves to `error/<jobId>/` (checked 2026-11-12).
 
 ## Risks and open questions
 

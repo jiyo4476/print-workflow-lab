@@ -6,9 +6,13 @@ import static org.junit.Assert.assertTrue;
 import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
 import dev.yjimmy.printlab.testsupport.TestJobs;
 import dev.yjimmy.printlab.testsupport.TestWorkflows;
+import dev.yjimmy.printlab.testsupport.TickingClock;
 import dev.yjimmy.printlab.workflow.Document;
 import dev.yjimmy.printlab.workflow.Job;
 import dev.yjimmy.printlab.workflow.JobState;
+import dev.yjimmy.printlab.workflow.JobSummary;
+import dev.yjimmy.printlab.workflow.JobSummaryWriter;
+import dev.yjimmy.printlab.workflow.StepRecord;
 import dev.yjimmy.printlab.workflow.StepRegistry;
 import dev.yjimmy.printlab.workflow.WorkflowEngine;
 import java.nio.file.Files;
@@ -32,7 +36,8 @@ public class StatementWorkflowTest {
         Path outputDir = tmp.resolve("output");
 
         Job job = TestJobs.newJob(tmp, input);
-        new WorkflowEngine(TestWorkflows.load("statements", outputDir), StepRegistry.withBuiltIns())
+        new WorkflowEngine(TestWorkflows.load("statements", outputDir), StepRegistry.withBuiltIns(),
+                tmp.resolve("error"), TickingClock.oneSecondTicks())
                 .run(job);
 
         assertEquals(job.errorMessage(), JobState.COMPLETE, job.state());
@@ -58,5 +63,11 @@ public class StatementWorkflowTest {
         List<String> csv = Files.readAllLines(jobOut.resolve("documents.csv"));
         assertEquals(26, csv.size());
         assertTrue(Files.exists(jobOut.resolve("00025.pdf")));
+
+        JobSummary summary = JobSummaryWriter.read(job.workDir().resolve(JobSummaryWriter.FILE_NAME));
+        assertEquals(JobState.COMPLETE, summary.state());
+        assertEquals(25, summary.documentCount());
+        assertEquals(List.of("split-and-index", "presort", "write-output"),
+                summary.steps().stream().map(StepRecord::name).toList());
     }
 }

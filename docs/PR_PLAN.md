@@ -78,7 +78,7 @@ already on `main`:
   (header and main regions) with an API-health badge.
 - Browser libraries come from **WebJars** in `WEB-INF/lib`, which Tomcat serves at
   `/webjars/<name>/<version>/...`, so there is **no JavaScript build step**:
-  `backbone.marionette@4.1.3`, `backbone@1.6.0`, `backbone.radio@2.0.0`, `underscore@1.13.7`,
+  `backbone.marionette@4.1.3`, `backbone@1.6.0`, `backbone.radio@2.0.0`, `underscore@1.13.8`,
   `jquery@3.7.1` (Marionette 4 predates jQuery 4, so jQuery stays on 3.x).
 - App code is plain scripts under a `PrintLab` namespace, loaded by `index.html` after the
   libraries. `main.js` only starts the app, so tests can load everything else without side
@@ -184,8 +184,8 @@ happened.
 
 - When a job fails, move its input file to `error/<jobId>/` alongside an `error.txt` (step name,
   message, timestamp).
-- Write `work/<jobId>/job.json` after every step: job id, state, current step, job properties,
-  document count, and per-step start/end times.
+- Write `work/<jobId>/job.json` after every step: job id, state, current step, error message,
+  job properties, document count, and per-step start/end times.
 - Add a `StepRecord` list (`name`, `startedAt`, `finishedAt`, `outcome`) to `Job`. Inject a
   `Clock` into the engine so times are testable.
 
@@ -194,14 +194,20 @@ happened.
   - `recordsStartAndFinishForEveryStep` (fixed `Clock`)
   - `failedStepIsRecordedWithOutcomeFailed`
   - `stepsAfterFailureAreNotRecorded`
+  - `rewritesSummaryAfterEachStep`, `failedJobSummaryRecordsTheError`,
+    `exceptionWithoutMessageIsDescribedByItsClass`
+  - `stackOverflowInStepFailsTheJobCleanly`, `linkageErrorInStepFailsTheJob`,
+    `outOfMemoryErrorIsNotSwallowed`
 - Unit — `JobSummaryWriterTest`
   - `writesJobJsonThatRoundTrips` (write → read with Jackson → equal)
   - `overwritesSummaryAfterEachStep`
+  - `writesTimesAsIso8601`, `leavesNoTempFilesBehind`
 - Integration — `ErrorHandlingTest`
   - `failedJobMovesInputToErrorFolder`
   - `errorTxtContainsStepNameAndMessage`
   - `successfulJobLeavesNothingInErrorFolder`
   - `twoFailedJobsWithSameFileNameDoNotCollide`
+  - `errorTxtSaysWhereInputWasLeftWhenItCannotBeMoved`
 
 ### PR 2 — Routing rules and exception queue `M`
 

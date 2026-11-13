@@ -48,7 +48,40 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw -q exec:java                               # start watching ./hotfolder
 ```
 
-Then move `run.pdf` into `hotfolder/` and look in `output/`. On Windows use `mvnw.cmd`.
+Then move `run.pdf` into `hotfolder/` and look in `output/`. On Windows use `mvnw.cmd`. In
+PowerShell, quote any `-D` argument; otherwise PowerShell splits it at the dot and Maven reports
+an unknown lifecycle phase:
+
+```powershell
+.\mvnw.cmd -q exec:java "-Dexec.args=generate 200 run.pdf"
+```
+
+### Where a job's files go
+
+| Folder | What's in it |
+|---|---|
+| `work/<jobId>/` | The input file while it's processed, intermediate documents, and `job.json` |
+| `output/<jobId>/` | The finished documents in presort order, plus `documents.csv` |
+| `error/<jobId>/` | Only for failed jobs: the input file and `error.txt` |
+
+`job.json` is rewritten after every step, so it always shows how far a job has got: its id,
+state, current step, error message (if it failed), job properties, document count, and each
+step's start and finish time and outcome (`COMPLETED` or `FAILED`). It's written to a temp file and then moved into place, so it's
+never half-written.
+
+When a step throws, the job stops there: later steps don't run, the input file moves to
+`error/<jobId>/`, and `error.txt` says which step failed, when, and why:
+
+```
+Job:    3fc8bd7b
+Input:  blank.pdf
+Step:   split-and-index
+Time:   2026-11-12T19:13:04.699Z
+Error:  No 'accountNumber' found on page 1
+```
+
+Each failed job gets its own folder, so two failed files with the same name never overwrite each
+other. If the input can't be moved, `error.txt` adds a `Note:` line saying where it was left.
 
 ### Web app on Tomcat
 
@@ -66,7 +99,7 @@ Ctrl+C. To deploy to your own Tomcat instead, copy the WAR into its `webapps/` f
 - `GET /api/health` returns `{"status":"UP","service":"print-workflow-lab"}`.
 - `/` is the dashboard: **Marionette.js v4** (`backbone.marionette` 4.1.3) on Backbone 1.6.0,
   Backbone.Radio 2.0.0,
-  Underscore 1.13.7 and jQuery 3.7.1. Tomcat serves the libraries from WebJars
+  Underscore 1.13.8 and jQuery 3.7.1. Tomcat serves the libraries from WebJars
   (`/webjars/...`), so there's no JavaScript build step. The app code is plain scripts in
   `src/main/webapp/js/`.
 

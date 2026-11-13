@@ -2,6 +2,7 @@ package dev.yjimmy.printlab.workflow;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +21,7 @@ public final class Job {
     private final Path workDir;
     private final Map<String, String> properties = new LinkedHashMap<>();
     private final List<Document> documents = new ArrayList<>();
+    private final List<StepRecord> stepRecords = new ArrayList<>();
     private JobState state = JobState.RECEIVED;
     private String currentStep;
     private String errorMessage;
@@ -43,6 +45,13 @@ public final class Job {
     public JobState state() { return state; }
     public String currentStep() { return currentStep; }
     public String errorMessage() { return errorMessage; }
+
+    /** The steps this job has been through so far, in the order they ran. */
+    public List<StepRecord> stepRecords() { return Collections.unmodifiableList(stepRecords); }
+
+    void addStepRecord(StepRecord record) {
+        stepRecords.add(record);
+    }
 
     void moveTo(JobState state, String step) {
         this.state = state;

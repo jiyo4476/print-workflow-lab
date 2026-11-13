@@ -8,6 +8,8 @@ import dev.yjimmy.printlab.workflow.WorkflowDefinition;
 import dev.yjimmy.printlab.workflow.WorkflowEngine;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.ZoneOffset;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -41,20 +43,42 @@ public final class App {
 
     private static void run(Path workflowFile) throws Exception {
         WorkflowDefinition definition = WorkflowDefinition.load(workflowFile);
-        WorkflowEngine engine = new WorkflowEngine(definition, StepRegistry.withBuiltIns());
+        WorkflowEngine engine = new WorkflowEngine(
+                definition, StepRegistry.withBuiltIns(), Path.of("error"),
+                // Millisecond ticks: Windows clocks report 100 ns digits nobody needs to read.
+                Clock.tickMillis(ZoneOffset.UTC));
         Path workRoot = Path.of("work");
 
         // One job at a time for now; the watcher thread never blocks on processing.
         ExecutorService jobs = Executors.newSingleThreadExecutor();
-        new HotFolderWatcher(Path.of("hotfolder"), "*.pdf", file -> jobs.submit(() -> {
+        // execute, not submit: submit would park anything thrown in a Future nobody reads, and the
+        // job would vanish without even a log line.
+        new HotFolderWatcher(Path.of("hotfolder"), "*.pdf", file -> jobs.execute(() -> {
+            Job job;
             try {
                 // Move the file out of the hot folder first so it is never picked up twice.
                 String id = Job.newId();
                 Path workDir = Files.createDirectories(workRoot.resolve(id));
                 Path input = Files.move(file, workDir.resolve(file.getFileName()));
-                engine.run(new Job(id, input, workDir));
+                job = new Job(id, input, workDir);
             } catch (Exception e) {
                 System.err.println("Could not start job for " + file + ": " + e.getMessage());
+                return;
+            }
+            // The engine fails jobs cleanly for step errors; these are for whatever it lets
+            // escape (OutOfMemoryError, a bug in the engine itself).
+            try {
+                engine.run(job);
+            } catch (Error err) {
+                System.err.println(job + " stopped unexpectedly; its files are in "
+                        + job.workDir().toAbsolutePath());
+                // The worker thread's uncaught-exception handler prints the stack trace once;
+                // the executor then starts a fresh thread for the next job.
+                throw err;
+            } catch (RuntimeException e) {
+                System.err.println(job + " stopped unexpectedly; its files are in "
+                        + job.workDir().toAbsolutePath());
+                e.printStackTrace();
             }
         })).watch();
     }
