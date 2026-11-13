@@ -19,6 +19,7 @@ Use `./mvnw` (or `mvnw.cmd` on Windows); it downloads Maven on first use.
 ./mvnw test -Dtest=WorkflowEngineTest           # one test class (no coverage gate in `test`)
 ./mvnw test -Dtest=WorkflowEngineTest#someMethod  # one test method
 ./mvnw -q exec:java -Dexec.args="generate 200 run.pdf"  # fake 200-statement print run
+./mvnw -q exec:java -Dexec.args="generate 50 bad.pdf 5" # ...with 5 bad addresses
 ./mvnw -q exec:java                             # watch ./hotfolder with workflows/statements.yaml
 ./mvnw package cargo:run [-Dtomcat.port=8095]   # WAR on Tomcat at http://localhost:8080/
 
@@ -39,20 +40,27 @@ report's line total rounded *down* to two decimals, in its own commit.
 - **`workflow/`** is the core. `WorkflowDefinition` is a record loaded from YAML
   (`workflows/*.yaml`; unknown properties fail). `StepRegistry` maps a YAML step `type` to a
   `Function<Map<String,Object>, Step>` factory; built-ins are registered in `withBuiltIns()`.
-  `WorkflowEngine(definition, registry, errorDir, clock)` builds **all** steps in its
-  constructor, so bad config fails at startup, then runs them in order. It times each step with
+  `WorkflowEngine(definition, registry, errorDir, clock)` builds **all** steps (and parses their
+  `when:` conditions) in its constructor, so bad config fails at startup, then runs them in
+  order; a step whose `when:` is false for the job's properties is recorded as `SKIPPED`.
+  `StepRegistry.create` prefixes a factory's `IllegalArgumentException` with the step name. It times each step with
   the injected `Clock` into a `StepRecord` on the job and rewrites `work/<jobId>/job.json`
   (`JobSummaryWriter`, atomic temp-file + move) after each one. The first exception puts the job
   in `ERROR`, records the step as `FAILED`, stops the run, and `ErrorFolder` moves the input to
   `error/<jobId>/` with an `error.txt`. `Job` holds job properties and an ordered, mutable list
   of `Document` records, each with its own property map. Steps communicate only by changing the
   job's documents and properties.
+- **`workflow/rules/`** is the rule model shared by `when:` and `RouteDocuments`: a sealed
+  `Condition` (`Rule`, `All`, `Any`) built by `RuleParser`, which rejects every config mistake
+  and compiles regexes at load time.
 - **`steps/`** are the step implementations. Each takes its raw YAML params in the constructor and
   reads them through the package-private `Params` helper, whose errors name the missing param. To
   add a step type: implement `Step`, register it in `StepRegistry.withBuiltIns()`, and use it from YAML.
   `SplitPdfStep` finds document boundaries and properties from text in page regions
   (`[x, y, w, h]` in points from the top-left). The regions in `statements.yaml` match the
-  layout `testdata/StatementPdfGenerator` writes, so change both together.
+  layout `testdata/StatementPdfGenerator` writes, so change both together. `RouteDocuments` sets
+  the `queue` document property; `WriteOutput` writes each queue to `output/<jobId>/<queue>/`
+  and one `documents.csv` for the job.
 - **`input/HotFolderWatcher`** hands off a file only once its size stops changing. `App.run`
   moves each file into `work/<jobId>/` before processing it, so a file is never picked up twice,
   and runs jobs one at a time on a single-thread executor.

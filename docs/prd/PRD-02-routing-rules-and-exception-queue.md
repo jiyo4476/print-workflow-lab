@@ -105,6 +105,32 @@ Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTION
 - YAML regex escaping (`"\\d{5}"`) catches people out. Show it in the sample workflow with a
   comment.
 
+## Implementation notes
+
+Decisions made while building this PR, beyond the requirements above:
+
+- The rules live in `workflow/rules/` (`Condition`, `Rule`, `Operator`, `RuleParser`) because
+  both the engine (`when:`) and `RouteDocumentsStep` use them.
+- `matches` / `notMatches` test the whole value, so `\d{5}` means exactly five digits. An absent
+  property never equals, matches or compares; `notEquals` and `notMatches` are therefore true
+  for it, so a document with no zip goes to `exceptions`.
+- `greaterThan` / `lessThan` fall back to text comparison when either side isn't a number.
+- `missing` rejects a `value`, and unknown keys in a condition or a route are errors, so typos
+  fail at load.
+- Queue names become folder names, so they must match `[A-Za-z0-9][A-Za-z0-9._-]*`; checked at
+  load and again in `WriteOutput`.
+- `StepRegistry.create` prefixes every step factory's `IllegalArgumentException` with
+  `Step '<name>' (<type>): `, which covers NFR-1 for `RouteDocuments` and every existing step.
+- In `WriteOutput`, files are numbered from `00001.pdf` within each queue, the CSV's `position`
+  is the position within the queue, and `file` is relative to `output/<jobId>/`
+  (`standard/00001.pdf`). Documents without a `queue` (no routing step) go in
+  `output/<jobId>/` as before.
+- The generator alternates bad addresses (blank name, then 4-digit zip) and picks which
+  statements are bad from a separate `Random`, so a seed's good statements are the same with or
+  without bad ones.
+- Generated statements have 1-3 pages, so the `large-envelope` route never fires on generated
+  data; `RouteDocumentsStepTest` covers it.
+
 ## Definition of done
 
 - Shared DoD, plus: `workflows/statements.yaml` uses `RouteDocuments`, and the README concept

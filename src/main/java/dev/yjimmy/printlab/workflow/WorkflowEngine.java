@@ -1,5 +1,7 @@
 package dev.yjimmy.printlab.workflow;
 
+import dev.yjimmy.printlab.workflow.rules.Condition;
+import dev.yjimmy.printlab.workflow.rules.RuleParser;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -11,6 +13,9 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Runs a job through every step of a workflow in order, stopping on the first failure.
+ *
+ * <p>A step with a {@code when:} condition runs only if the condition holds for the job's
+ * properties at that point; otherwise it's recorded as {@code SKIPPED}.
  *
  * <p>Every step is timed and recorded on the job, and {@code work/<jobId>/job.json} is rewritten
  * after each one. When a step throws, the job goes to ERROR, later steps don't run, and the input
@@ -26,7 +31,8 @@ public final class WorkflowEngine {
     private final Clock clock;
     private final JobSummaryWriter summaries = new JobSummaryWriter();
 
-    private record NamedStep(String name, Step step) {}
+    /** @param when the step's condition, or {@code null} to always run */
+    private record NamedStep(String name, Step step, Condition when) {}
 
     /**
      * @param errorDir root of the error folder; each failed job gets {@code <errorDir>/<jobId>/}
@@ -39,7 +45,19 @@ public final class WorkflowEngine {
         this.clock = clock;
         // Build every step up front so a bad workflow file fails at startup, not mid-job.
         for (WorkflowDefinition.StepDefinition def : definition.steps()) {
-            steps.add(new NamedStep(def.name(), registry.create(def)));
+            steps.add(new NamedStep(def.name(), registry.create(def), when(def)));
+        }
+    }
+
+    private static Condition when(WorkflowDefinition.StepDefinition def) {
+        if (def.when() == null) {
+            return null;
+        }
+        try {
+            return RuleParser.parse(def.when());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "Step '" + def.name() + "' has an invalid 'when': " + e.getMessage(), e);
         }
     }
 
@@ -49,6 +67,13 @@ public final class WorkflowEngine {
             job.moveTo(JobState.PROCESSING, s.name());
             log.info("{} -> step '{}'", job.id(), s.name());
             Instant startedAt = clock.instant();
+            if (s.when() != null && !s.when().test(job.properties())) {
+                log.info("{} skipped step '{}': its 'when' is false", job.id(), s.name());
+                job.addStepRecord(
+                        new StepRecord(s.name(), startedAt, clock.instant(), StepOutcome.SKIPPED));
+                writeSummary(job);
+                continue;
+            }
             try {
                 s.step().execute(job);
             } catch (Exception | StackOverflowError | LinkageError e) {

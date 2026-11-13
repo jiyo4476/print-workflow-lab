@@ -56,7 +56,7 @@ read.
 
 - **Answer:** B. One `output/<jobId>/documents.csv` per job, with a `queue` column on every row.
   PRD-02 FR-8 and the new test `documentsCsvListsEveryDocumentWithItsQueue` reflect this.
-- **Status:** Decided (2026-11-09) · **PR:** — (built in plan PR 2)
+- **Status:** Decided (2026-11-09) · **PR:** plan PR 2 (`feature/02-routing-rules`)
 
 ## PRD-03 — AFP structured field reader
 

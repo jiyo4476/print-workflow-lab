@@ -18,10 +18,29 @@ steps:
         cityStateZip:  [70, 136, 260, 16]
         zip:           [495, 138, 70, 14]
 
+  # Decide where each statement goes. Routes are checked in order; the first match wins.
+  - name: route
+    type: RouteDocuments
+    params:
+      routes:
+        # Bad addresses can't be mailed: send them to the exception queue.
+        # In a double-quoted YAML string a backslash must be doubled, so "\\d{5}" is the regex
+        # \d{5} (exactly five digits). Single quotes need no escaping: '\d{5}'.
+        - queue: exceptions
+          when: { any: [ { property: zip, operator: notMatches, value: "\\d{5}" },
+                         { property: name, operator: missing } ] }
+        # Too many sheets for a standard envelope.
+        - queue: large-envelope
+          when: { property: pageCount, operator: greaterThan, value: 6 }
+      default: standard
+
   - name: presort
     type: SortDocuments
     params:
       by: zip
+    # Any step can take a 'when' on job properties; it's skipped (and recorded as SKIPPED) when
+    # false. For example, to presort only runs big enough to qualify for a postal discount:
+    # when: { property: documentCount, operator: greaterThan, value: 499 }
 
   # Example external step (runs in the job's work directory):
   # - name: notify

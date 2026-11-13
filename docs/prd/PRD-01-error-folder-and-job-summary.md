@@ -42,7 +42,7 @@ dashboard's step timeline (PRD-16).
 - **FR-2** `error/<jobId>/error.txt` contains the step name, the error message and an ISO-8601
   timestamp.
 - **FR-3** `Job` holds a list of `StepRecord(name, startedAt, finishedAt, outcome)`, where
-  `outcome` is `COMPLETED` or `FAILED` (PRD-02 adds `SKIPPED`).
+  `outcome` is `COMPLETED` or `FAILED` (PRD-02 added `SKIPPED`).
 - **FR-4** Steps after a failure are not run and not recorded.
 - **FR-5** After each step, `work/<jobId>/job.json` holds: id, state, current step, error
   message (null unless the job failed), job properties, document count and step records.
