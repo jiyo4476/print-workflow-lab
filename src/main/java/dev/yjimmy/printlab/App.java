@@ -51,15 +51,31 @@ public final class App {
 
         // One job at a time for now; the watcher thread never blocks on processing.
         ExecutorService jobs = Executors.newSingleThreadExecutor();
-        new HotFolderWatcher(Path.of("hotfolder"), "*.pdf", file -> jobs.submit(() -> {
+        // execute, not submit: submit would park anything thrown in a Future nobody reads, and the
+        // job would vanish without even a log line.
+        new HotFolderWatcher(Path.of("hotfolder"), "*.pdf", file -> jobs.execute(() -> {
+            Job job;
             try {
                 // Move the file out of the hot folder first so it is never picked up twice.
                 String id = Job.newId();
                 Path workDir = Files.createDirectories(workRoot.resolve(id));
                 Path input = Files.move(file, workDir.resolve(file.getFileName()));
-                engine.run(new Job(id, input, workDir));
+                job = new Job(id, input, workDir);
             } catch (Exception e) {
                 System.err.println("Could not start job for " + file + ": " + e.getMessage());
+                return;
+            }
+            try {
+                engine.run(job);
+            } catch (Throwable t) {
+                // The engine fails jobs cleanly for step errors; this is for whatever it lets
+                // escape (OutOfMemoryError, a bug in the engine itself).
+                System.err.println(job + " stopped unexpectedly; its files are in "
+                        + job.workDir().toAbsolutePath());
+                t.printStackTrace();
+                if (t instanceof Error err) {
+                    throw err;
+                }
             }
         })).watch();
     }

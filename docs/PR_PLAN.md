@@ -196,6 +196,8 @@ happened.
   - `stepsAfterFailureAreNotRecorded`
   - `rewritesSummaryAfterEachStep`, `failedJobSummaryRecordsTheError`,
     `exceptionWithoutMessageIsDescribedByItsClass`
+  - `stackOverflowInStepFailsTheJobCleanly`, `linkageErrorInStepFailsTheJob`,
+    `outOfMemoryErrorIsNotSwallowed`
 - Unit — `JobSummaryWriterTest`
   - `writesJobJsonThatRoundTrips` (write → read with Jackson → equal)
   - `overwritesSummaryAfterEachStep`

@@ -4,6 +4,7 @@ import static dev.yjimmy.printlab.testsupport.TestWorkflows.step;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
 import dev.yjimmy.printlab.testsupport.RecordingStep;
 import dev.yjimmy.printlab.testsupport.TestJobs;
@@ -87,6 +88,49 @@ public class WorkflowEngineTest {
         run(job, TestWorkflows.of(step("npe", "Npe")));
 
         assertEquals("java.lang.NullPointerException", job.errorMessage());
+    }
+
+    @Test
+    public void stackOverflowInStepFailsTheJobCleanly() throws Exception {
+        registry.register("Deep", params -> job -> {
+            throw new StackOverflowError();
+        });
+
+        Job job = newJob("j9");
+        Path input = job.inputFile();
+        run(job, TestWorkflows.of(step("deep", "Deep")));
+
+        assertEquals(JobState.ERROR, job.state());
+        assertEquals("java.lang.StackOverflowError", job.errorMessage());
+        assertThat(job.stepRecords()).extracting(StepRecord::outcome)
+                .containsExactly(StepOutcome.FAILED);
+        assertTrue("input should be in the error folder",
+                Files.exists(errorDir.resolve("j9").resolve(input.getFileName())));
+    }
+
+    @Test
+    public void linkageErrorInStepFailsTheJob() throws Exception {
+        registry.register("Broken", params -> job -> {
+            throw new NoClassDefFoundError("org/example/Missing");
+        });
+
+        Job job = newJob("j10");
+        run(job, TestWorkflows.of(step("broken", "Broken")));
+
+        assertEquals(JobState.ERROR, job.state());
+        assertEquals("org/example/Missing", job.errorMessage());
+    }
+
+    @Test
+    public void outOfMemoryErrorIsNotSwallowed() throws Exception {
+        registry.register("Hungry", params -> job -> {
+            throw new OutOfMemoryError("test");
+        });
+
+        Job job = newJob("j11");
+
+        assertThrows("the JVM is in trouble; the engine shouldn't pretend otherwise",
+                OutOfMemoryError.class, () -> run(job, TestWorkflows.of(step("hungry", "Hungry"))));
     }
 
     @Test

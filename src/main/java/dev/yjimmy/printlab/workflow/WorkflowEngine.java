@@ -51,7 +51,10 @@ public final class WorkflowEngine {
             Instant startedAt = clock.instant();
             try {
                 s.step().execute(job);
-            } catch (Exception e) {
+            } catch (Exception | StackOverflowError | LinkageError e) {
+                // StackOverflowError: PDFBox can recurse too deep on a deeply nested or malformed
+                // PDF. LinkageError: a missing or broken class. Both are about this one job, so
+                // the job fails cleanly. Other Errors (OutOfMemoryError, ...) are left to escape.
                 fail(job, s.name(), startedAt, e);
                 return;
             }
@@ -64,7 +67,7 @@ public final class WorkflowEngine {
         log.info("{} complete: {} documents", job, job.documents().size());
     }
 
-    private void fail(Job job, String step, Instant startedAt, Exception e) {
+    private void fail(Job job, String step, Instant startedAt, Throwable e) {
         Instant failedAt = clock.instant();
         String message = describe(e);
         job.fail(step, message);
@@ -81,7 +84,7 @@ public final class WorkflowEngine {
     }
 
     /** The exception's message, or its class name when it has none (a bare NPE, say). */
-    private static String describe(Exception e) {
+    private static String describe(Throwable e) {
         String message = e.getMessage();
         return message == null || message.isBlank() ? e.getClass().getName() : message;
     }

@@ -57,6 +57,10 @@ dashboard's step timeline (PRD-16).
 
 - `JobSummaryWriter` (Jackson) writes `job.json`; it reads back into the same shape for tests and
   for PRD-13's file-based `JobStore`.
+- The engine fails the job for any `Exception`, and also for `StackOverflowError` (PDFBox on a
+  deeply nested PDF) and `LinkageError`, since those are about the one job. Other `Error`s, such
+  as `OutOfMemoryError`, escape; `App` logs them with the job's work folder instead of losing them
+  in an unread `Future`.
 - A failure whose exception has no message is described by its class name, so `error.txt`
   never says `null`.
 - If the input can't be moved to `error/<jobId>/`, `error.txt` gets a `Note:` line saying where
@@ -79,7 +83,8 @@ dashboard's step timeline (PRD-16).
 - Unit — `WorkflowEngineTest`: `recordsStartAndFinishForEveryStep` (fixed `Clock`),
   `failedStepIsRecordedWithOutcomeFailed`, `stepsAfterFailureAreNotRecorded`,
   `rewritesSummaryAfterEachStep`, `failedJobSummaryRecordsTheError`,
-  `exceptionWithoutMessageIsDescribedByItsClass`
+  `exceptionWithoutMessageIsDescribedByItsClass`, `stackOverflowInStepFailsTheJobCleanly`,
+  `linkageErrorInStepFailsTheJob`, `outOfMemoryErrorIsNotSwallowed`
 - Unit — `JobSummaryWriterTest`: `writesJobJsonThatRoundTrips`, `overwritesSummaryAfterEachStep`,
   `writesTimesAsIso8601`, `leavesNoTempFilesBehind`
 - Integration — `ErrorHandlingTest`: `failedJobMovesInputToErrorFolder`,
