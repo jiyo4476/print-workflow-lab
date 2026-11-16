@@ -1,0 +1,120 @@
+package dev.yjimmy.printlab.steps;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
+
+import dev.yjimmy.printlab.testsupport.TestJobs;
+import dev.yjimmy.printlab.workflow.Document;
+import dev.yjimmy.printlab.workflow.Job;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
+
+public class WriteOutputStepTest {
+
+    private static final String NL = System.lineSeparator();
+
+    @Rule
+    public TemporaryFolder folder = new TemporaryFolder();
+
+    private Path tmp;
+    private Path outputDir;
+    private Job job;
+
+    @Before
+    public void setUp() throws Exception {
+        tmp = folder.getRoot().toPath();
+        outputDir = tmp.resolve("out");
+        job = TestJobs.newJob(tmp, tmp.resolve("in.pdf"));
+    }
+
+    @Test
+    public void copiesDocumentsInOrderAndWritesTheCsv() throws Exception {
+        addDocument("a", Map.of("zip", "80202"));
+        addDocument("b", Map.of("zip", "10001", "name", "AVERY"));
+
+        write();
+
+        Path jobOut = outputDir.resolve(job.id());
+        assertEquals("first", "a", Files.readString(jobOut.resolve("00001.pdf")));
+        assertEquals("second", "b", Files.readString(jobOut.resolve("00002.pdf")));
+        assertEquals("csv", String.join(NL,
+                "position,sequence,file,zip,name",
+                "1,1,00001.pdf,80202,",
+                "2,2,00002.pdf,10001,AVERY") + NL, csv());
+        assertEquals("outputDir property", jobOut.toString(), job.properties().get("outputDir"));
+    }
+
+    @Test
+    public void eachQueueIsNumberedFromOneInItsOwnFolder() throws Exception {
+        addDocument("a", Map.of("queue", "mail"));
+        addDocument("b", Map.of("queue", "exceptions"));
+        addDocument("c", Map.of("queue", "mail"));
+        addDocument("d", Map.of());
+
+        write();
+
+        Path jobOut = outputDir.resolve(job.id());
+        assertEquals("mail 1", "a", Files.readString(jobOut.resolve("mail/00001.pdf")));
+        assertEquals("exceptions 1", "b", Files.readString(jobOut.resolve("exceptions/00001.pdf")));
+        assertEquals("mail 2", "c", Files.readString(jobOut.resolve("mail/00002.pdf")));
+        assertEquals("no queue", "d", Files.readString(jobOut.resolve("00001.pdf")));
+        assertThat(csv()).contains("2,3,mail/00002.pdf,mail").contains("1,4,00001.pdf,");
+    }
+
+    @Test
+    public void csvQuotesCommasQuotesAndLineBreaks() throws Exception {
+        Map<String, String> props = new LinkedHashMap<>();
+        props.put("name", "NGUYEN, AVERY");
+        props.put("note", "say \"hi\"");
+        props.put("lf", "two\nlines");
+        props.put("cr", "two\rlines");
+        props.put("plain", "ok");
+        props.put("city, state", "DENVER CO");
+        addDocument("a", props);
+
+        write();
+
+        assertEquals("csv", String.join(NL,
+                "position,sequence,file,name,note,lf,cr,plain,\"city, state\"",
+                "1,1,00001.pdf,\"NGUYEN, AVERY\",\"say \"\"hi\"\"\",\"two\nlines\","
+                        + "\"two\rlines\",ok,DENVER CO") + NL, csv());
+    }
+
+    @Test
+    public void unsafeQueueNameIsRejected() throws Exception {
+        addDocument("a", Map.of("queue", "../escape"));
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, this::write);
+
+        assertThat(e.getMessage()).contains("'../escape'");
+        assertThat(tmp.resolve("escape")).doesNotExist();
+    }
+
+    @Test
+    public void noDocumentsWritesJustTheHeader() throws Exception {
+        write();
+
+        assertEquals("csv", "position,sequence,file" + NL, csv());
+    }
+
+    private void addDocument(String content, Map<String, String> properties) throws Exception {
+        int sequence = job.documents().size() + 1;
+        Path file = Files.writeString(tmp.resolve("doc-" + sequence + ".pdf"), content);
+        job.documents().add(new Document(sequence, file, new LinkedHashMap<>(properties)));
+    }
+
+    private void write() throws Exception {
+        new WriteOutputStep(Map.of("outputDir", outputDir.toString())).execute(job);
+    }
+
+    private String csv() throws Exception {
+        return Files.readString(outputDir.resolve(job.id()).resolve("documents.csv"));
+    }
+}
