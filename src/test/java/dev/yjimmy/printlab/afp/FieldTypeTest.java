@@ -40,6 +40,13 @@ public class FieldTypeTest {
     }
 
     @Test
+    public void everyIdIsInTheModcaClass() {
+        for (FieldType type : FieldType.values()) {
+            assertEquals(type + " class byte", 0xD3, type.id() >>> 16);
+        }
+    }
+
+    @Test
     public void beginAndEndAreRecognizedByTypeByte() {
         StructuredField bng = field(FieldType.BNG);
         StructuredField eng = field(FieldType.ENG);

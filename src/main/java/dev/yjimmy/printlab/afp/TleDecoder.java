@@ -20,6 +20,8 @@ public final class TleDecoder {
     public static final int TRIPLET_ATTRIBUTE_VALUE = 0x36;
     /** FQN type for a TLE's attribute name (Attribute GID). */
     public static final int FQN_TYPE_ATTRIBUTE_NAME = 0x0B;
+    /** FQN format: a character string. The others (an OID, a URL) aren't text names. */
+    public static final int FQN_FORMAT_CHARACTER_STRING = 0x00;
 
     /** Bytes before the text in both triplets: length, ID, and two type/format/reserved bytes. */
     private static final int TEXT_START = 4;
@@ -40,7 +42,8 @@ public final class TleDecoder {
 
     /**
      * Decodes TLE data. Throws {@link IllegalArgumentException} if a triplet's length runs past
-     * the data or the name or value triplet is missing.
+     * the data, the name isn't a character string (FQN format 00), or the name or value triplet
+     * is missing.
      */
     public static Tle decode(byte[] data, Charset codePage) {
         String name = null;
@@ -57,6 +60,13 @@ public final class TleDecoder {
             boolean hasText = length >= TEXT_START;
             if (id == TRIPLET_FQN && hasText
                     && (data[i + 2] & 0xFF) == FQN_TYPE_ATTRIBUTE_NAME) {
+                int format = data[i + 3] & 0xFF;
+                if (format != FQN_FORMAT_CHARACTER_STRING) {
+                    throw new IllegalArgumentException(String.format(
+                            "attribute name triplet at data offset %d has FQN format %02X;"
+                                    + " only 00 (character string) is supported",
+                            i, format));
+                }
                 name = Ebcdic.decode(data, i + TEXT_START, length - TEXT_START, codePage);
             } else if (id == TRIPLET_ATTRIBUTE_VALUE && hasText) {
                 value = Ebcdic.decode(data, i + TEXT_START, length - TEXT_START, codePage);

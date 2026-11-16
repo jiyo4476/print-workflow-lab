@@ -10,6 +10,11 @@ import java.util.Optional;
  * {@code D3} for MO:DCA), type ({@code A8} Begin, {@code A9} End, others for descriptors, data
  * and includes) and category ({@code A8} document, {@code AD} named page group, {@code AF} page,
  * ...). This list isn't complete; {@link #nameOf(int)} shows any other ID in hex.
+ *
+ * <p>Every ID was checked against the type and category byte constants in Apache FOP's AFP
+ * writer ({@code org.apache.fop.afp.modca.AbstractAFPObject}): for example IEL is type
+ * {@code B2} (variable) + category {@code A7} (index), and OBP is {@code AC} (position) +
+ * {@code 6B} (object area).
  */
 public enum FieldType {
     BDT(0xD3A8A8, "Begin Document"),

@@ -113,7 +113,10 @@ Decisions made while building this PR, beyond the requirements above:
   list, so nesting works for fields the enum doesn't name. `matchingEndId()` gives the End for a
   Begin.
 - `FieldType` covers the FR-6 list plus the other common Begin/End pairs and descriptors (about
-  50 IDs). `everyBeginTypeHasItsEndType` guards the list.
+  50 IDs). `everyBeginTypeHasItsEndType` guards the list. Every ID was checked against the type
+  and category byte constants in Apache FOP's `AbstractAFPObject`.
+- `TleDecoder` accepts only an attribute name in FQN format `00` (character string); another
+  format (an OID or URL) fails with its offset instead of decoding as unreadable text.
 - `dump-afp` shows each Begin field's 8-character name, and reports problems on `!!` lines
   instead of stopping: an End with no matching Begin, a Begin never closed, a TLE that won't
   decode, and the offset of bytes that aren't a field. The last line counts fields and problems;

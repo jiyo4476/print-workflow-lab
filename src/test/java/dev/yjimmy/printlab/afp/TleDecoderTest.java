@@ -67,6 +67,19 @@ public class TleDecoderTest {
     }
 
     @Test
+    public void nameThatIsNotACharacterStringFails() {
+        // FQN format 10 is an ASN.1 object identifier, not text; decoding it would give garbage.
+        byte[] data = concat(
+                triplet(0x02, bytes(0x0B, 0x10, 0x06, 0x03, 0x2B, 0x0C, 0x02)),
+                triplet(0x36, concat(bytes(0x00, 0x00), Ebcdic.encode("80202"))));
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> TleDecoder.decode(data, Ebcdic.IBM037));
+
+        assertThat(e.getMessage()).contains("data offset 0").contains("FQN format 10");
+    }
+
+    @Test
     public void tripletRunningPastTheDataFails() {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> TleDecoder.decode(bytes(0x20, 0x02, 0x0B), Ebcdic.IBM037));
