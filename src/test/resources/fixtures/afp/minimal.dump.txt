@@ -1,0 +1,19 @@
+Offset    Length  Field
+00000000      16  BDT  Begin Document  "STMTRUN "
+00000011      16    BNG  Begin Named Page Group  "G0000001"
+00000022      49      TLE  Tag Logical Element  accountNumber = "1234567890"
+00000054      32      TLE  Tag Logical Element  name = "AVERY NGUYEN"
+00000075      24      TLE  Tag Logical Element  zip = "80202"
+0000008E      16      BPG  Begin Page  "P0000001"
+0000009F       8        BAG  Begin Active Environment Group
+000000A8      23          PGD  Page Descriptor
+000000C0       8        EAG  End Active Environment Group
+000000C9       8      EPG  End Page
+000000D2       8    ENG  End Named Page Group
+000000DB      16    BNG  Begin Named Page Group  "G0000002"
+000000EC      39      TLE  Tag Logical Element  accountNumber = "5550001234"
+00000114      16      BPG  Begin Page  "P0000002"
+00000125       8      EPG  End Page
+0000012E       8    ENG  End Named Page Group
+00000137       8  EDT  End Document
+17 fields, 0 problems

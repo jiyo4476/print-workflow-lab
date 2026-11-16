@@ -98,6 +98,38 @@ Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTION
 - Finding a freely shareable real AFP sample may be hard. If so, the manual check uses PRD-04
   output, and the PR says so.
 
+## Implementation notes
+
+Decisions made while building this PR, beyond the requirements above:
+
+- `AfpReader` is an `Iterator<StructuredField>`, so it throws unchecked exceptions:
+  `AfpFormatException` (with `offset()`) for bad bytes, `UncheckedIOException` for I/O. After an
+  error `hasNext()` is false. `readAll` is a convenience for small inputs.
+- The extension flag (`0x80`) is handled: the extension is split off into
+  `StructuredField.extension()`, so `data()` is always the field's real data. Segmented data
+  (`0x20`) and padding (`0x08`) are kept in `flags` but not joined or stripped; no planned PR
+  needs them.
+- Begin/End is decided by the middle ID byte (`A8` Begin, `A9` End), not by the `FieldType`
+  list, so nesting works for fields the enum doesn't name. `matchingEndId()` gives the End for a
+  Begin.
+- `FieldType` covers the FR-6 list plus the other common Begin/End pairs and descriptors (about
+  50 IDs). `everyBeginTypeHasItsEndType` guards the list.
+- `dump-afp` shows each Begin field's 8-character name, and reports problems on `!!` lines
+  instead of stopping: an End with no matching Begin, a Begin never closed, a TLE that won't
+  decode, and the offset of bytes that aren't a field. The last line counts fields and problems;
+  the exit code is 1 when there are any. This is the "won't split" support scenario.
+- A missing-introducer error says files copied from a mainframe sometimes have a record header
+  before each field (a common reason a file "isn't AFP").
+- The code page is a parameter everywhere (`dump-afp <file> [codePage]`), IBM037 by default.
+- Extra tests beyond the plan: `truncatedHeaderFailsWithOffset`, `lengthShorterThanHeaderFails`,
+  `extensionIsSeparatedFromData`, `extensionLongerThanFieldFails`, `readsOneFieldAtATime`
+  (NFR-1), `ioErrorsAreUnchecked`, `otherCodePagesCanBeUsed`, `missingNameTripletFails`,
+  `tripletRunningPastTheDataFails`, and the dump problem cases.
+- Golden-file fixture: `minimal.afp` comes from a small Python script (`cp037` codec), not from
+  this project's code; a test rebuilds it with `AfpBytes` and compares the bytes. That's an
+  independent cross-check of the byte layout, but not the real-world sample Q-02 asks for, so
+  the manual check against a production AFP file and viewer is still open.
+
 ## Definition of done
 
 - Shared DoD, plus: README "Run it" shows `dump-afp`, and the concept map links AFP page groups

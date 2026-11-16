@@ -66,7 +66,13 @@ report's line total rounded *down* to two decimals, in its own commit.
   and runs jobs one at a time on a single-thread executor.
 - **`web/`** holds the servlets, registered with `@WebServlet` (there is no `web.xml`). Currently
   only `GET /api/health`.
-- **`afp/`** is planned (PRDs 03–06); `package-info.java` describes the intended design.
+- **`afp/`** reads MO:DCA. `AfpReader` is a streaming `Iterator<StructuredField>` (one field in
+  memory; bad bytes throw `AfpFormatException` with the byte offset). `FieldType` names common
+  IDs; Begin/End is the middle ID byte (`A8`/`A9`). `TleDecoder` reads triplets `02` (name) and
+  `36` (value); text is EBCDIC via `Ebcdic` (IBM037 default, code page is a parameter).
+  `AfpDump` backs `App dump-afp` and reports structural problems instead of stopping. The
+  writer (PRD-04) and `SplitAfp` step (PRD-05) are next. Build AFP test input with
+  `testsupport/AfpBytes`.
 - **Dashboard** (`src/main/webapp/`): plain browser scripts with no JS build. `index.html` loads
   the libraries from WebJars (`/webjars/<name>/<version>/...`) as globals, in a fixed order, then
   `js/*.js` (an IIFE namespace `PrintLab`; `main.js` starts the app). The tests in
@@ -91,7 +97,8 @@ report's line total rounded *down* to two decimals, in its own commit.
 - **Test helpers** in `src/test/java/.../testsupport/`: `TestJobs.newJob` (job in a temp folder,
   fixed id `test0001`), `TestWorkflows.of`/`step`/`load` (`load` reads a real YAML and redirects
   `WriteOutput.outputDir`), `RecordingStep` (records calls, can throw on the Nth call),
-  `TickingClock` (deterministic clock, +1 s per read). Always give the engine an `errorDir` under
+  `TickingClock` (deterministic clock, +1 s per read), `AfpBytes` (builds AFP fields, TLEs and
+  triplets as bytes). Always give the engine an `errorDir` under
   the temp folder.
   `web/TomcatTestServer` is embedded Tomcat on a random port for HTTP-level servlet tests.
   Fixtures go in `src/test/resources/fixtures/` and are loaded from the classpath. Update golden
