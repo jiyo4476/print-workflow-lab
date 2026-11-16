@@ -9,6 +9,7 @@ import static org.junit.Assert.assertThrows;
 
 import dev.yjimmy.printlab.testsupport.AfpBytes;
 import java.io.ByteArrayInputStream;
+import java.nio.charset.Charset;
 import org.junit.Test;
 
 public class TleDecoderTest {
@@ -85,6 +86,66 @@ public class TleDecoderTest {
                 () -> TleDecoder.decode(bytes(0x20, 0x02, 0x0B), Ebcdic.IBM037));
 
         assertThat(e.getMessage()).contains("data offset 0").contains("length 32");
+    }
+
+    @Test
+    public void tripletLengthsOutsideTheModcaRangeFail() {
+        // MO:DCA triplets are 3-254 bytes. Length 0 or 1 would also never advance the loop.
+        byte[] valid = AfpBytes.tleData("zip", "80202");
+        for (int length : new int[] {0, 1, 2, 255}) {
+            byte[] data = concat(bytes(length, 0x80, 0x00), valid);
+
+            IllegalArgumentException e = assertThrows("length " + length,
+                    IllegalArgumentException.class, () -> TleDecoder.decode(data, Ebcdic.IBM037));
+
+            assertThat(e.getMessage()).contains("data offset 0").contains("length " + length)
+                    .contains("3-254");
+        }
+    }
+
+    @Test
+    public void tripletsOfTheBoundaryLengthsAreAccepted() {
+        byte[] shortest = triplet(0x80, bytes(0x00));
+        byte[] longest = triplet(0x80, new byte[252]);
+        byte[] data = concat(shortest, longest, AfpBytes.tleData("zip", "80202"));
+        assertEquals("shortest", 3, shortest[0]);
+        assertEquals("longest", 254, longest[0] & 0xFF);
+
+        assertEquals("TLE", new Tle("zip", "80202"), TleDecoder.decode(data, Ebcdic.IBM037));
+    }
+
+    @Test
+    public void nameOrValueTripletTooShortToHoldTextIsNotUsed() {
+        // A 3-byte FQN has no room for the format byte or text, so it isn't the name.
+        byte[] data = concat(bytes(0x03, 0x02, 0x0B),
+                triplet(0x36, concat(bytes(0x00, 0x00), Ebcdic.encode("80202"))));
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> TleDecoder.decode(data, Ebcdic.IBM037));
+
+        assertThat(e.getMessage()).contains("no attribute name");
+    }
+
+    @Test
+    public void emptyValueIsAllowed() {
+        byte[] data = concat(
+                triplet(0x02, concat(bytes(0x0B, 0x00), Ebcdic.encode("suite"))),
+                triplet(0x36, bytes(0x00, 0x00)));
+
+        assertEquals("TLE", new Tle("suite", ""), TleDecoder.decode(data, Ebcdic.IBM037));
+    }
+
+    @Test
+    public void codePageIsUsedForNameAndValue() {
+        // '[' is 0x4A in IBM500 (in IBM037 0x4A is a cent sign).
+        Charset ibm500 = Charset.forName("IBM500");
+        byte[] asIbm500 = concat(
+                triplet(0x02, concat(bytes(0x0B, 0x00), Ebcdic.encode("a[1]", ibm500))),
+                triplet(0x36, concat(bytes(0x00, 0x00), Ebcdic.encode("x[y]", ibm500))));
+
+        assertEquals("IBM500", new Tle("a[1]", "x[y]"), TleDecoder.decode(asIbm500, ibm500));
+        assertThat(TleDecoder.decode(asIbm500, Ebcdic.IBM037).value())
+                .as("same bytes, wrong code page").isNotEqualTo("x[y]");
     }
 
     @Test

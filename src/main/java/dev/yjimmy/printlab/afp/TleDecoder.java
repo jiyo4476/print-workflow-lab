@@ -23,6 +23,13 @@ public final class TleDecoder {
     /** FQN format: a character string. The others (an OID, a URL) aren't text names. */
     public static final int FQN_FORMAT_CHARACTER_STRING = 0x00;
 
+    /**
+     * MO:DCA triplet lengths, counting the length byte. A triplet is at least a length, an ID and
+     * one byte of data; X'FF' is not a valid length (IPDS Reference, chapter 15, Triplets).
+     */
+    static final int MIN_TRIPLET_LENGTH = 3;
+    static final int MAX_TRIPLET_LENGTH = 254;
+
     /** Bytes before the text in both triplets: length, ID, and two type/format/reserved bytes. */
     private static final int TEXT_START = 4;
 
@@ -41,8 +48,8 @@ public final class TleDecoder {
     }
 
     /**
-     * Decodes TLE data. Throws {@link IllegalArgumentException} if a triplet's length runs past
-     * the data, the name isn't a character string (FQN format 00), or the name or value triplet
+     * Decodes TLE data. Throws {@link IllegalArgumentException} if a triplet's length is outside
+     * 3-254 or runs past the data, the name isn't a character string (FQN format 00), or the name or value triplet
      * is missing.
      */
     public static Tle decode(byte[] data, Charset codePage) {
@@ -51,7 +58,13 @@ public final class TleDecoder {
         int i = 0;
         while (i < data.length) {
             int length = data[i] & 0xFF;
-            if (length < 2 || i + length > data.length) {
+            if (length < MIN_TRIPLET_LENGTH || length > MAX_TRIPLET_LENGTH) {
+                throw new IllegalArgumentException(String.format(
+                        "malformed triplet at data offset %d: length %d is outside the MO:DCA"
+                                + " range %d-%d", i, length, MIN_TRIPLET_LENGTH,
+                        MAX_TRIPLET_LENGTH));
+            }
+            if (i + length > data.length) {
                 throw new IllegalArgumentException(String.format(
                         "malformed triplet at data offset %d: length %d, but %d byte(s) remain",
                         i, length, data.length - i));

@@ -117,6 +117,10 @@ Decisions made while building this PR, beyond the requirements above:
   and category byte constants in Apache FOP's `AbstractAFPObject`.
 - `TleDecoder` accepts only an attribute name in FQN format `00` (character string); another
   format (an OID or URL) fails with its offset instead of decoding as unreadable text.
+- Triplet lengths must be 3-254, the MO:DCA range given in the IPDS Reference (AFPC-0001-13,
+  chapter 15, "Triplets"); that chapter also states the FQN (X'02') and CGCSGID (X'01')
+  triplets are identical to MO:DCA's. A CGCSGID triplet inside a TLE, which names the code
+  page for the triplets after it, is not honoured yet: the code page passed in is used.
 - `dump-afp` shows each Begin field's 8-character name, and reports problems on `!!` lines
   instead of stopping: an End with no matching Begin, a Begin never closed, a TLE that won't
   decode, and the offset of bytes that aren't a field. The last line counts fields and problems;

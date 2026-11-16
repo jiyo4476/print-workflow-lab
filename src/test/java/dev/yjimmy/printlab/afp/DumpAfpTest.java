@@ -6,11 +6,14 @@ import static dev.yjimmy.printlab.testsupport.AfpBytes.triplet;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
 
 import dev.yjimmy.printlab.testsupport.AfpBytes;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.Test;
@@ -177,6 +180,72 @@ public class DumpAfpTest {
                 .bytes());
 
         assertThat(fieldColumn(lines.get(1))).isEqualTo("BPG  Begin Page");
+    }
+
+    @Test
+    public void nonAsciiTextIsEscaped() {
+        assertEquals("quote", "\"caf\\u00E9 \\u000A\"", AfpDump.quote("café \n"));
+    }
+
+    @Test
+    public void beginWithFewerThanEightNameBytesShowsNoName() {
+        List<String> lines = dump(AfpBytes.create()
+                .field(FieldType.BPG, Ebcdic.encode("P1"))
+                .bytes());
+
+        assertThat(fieldColumn(lines.get(1))).isEqualTo("BPG  Begin Page");
+    }
+
+    @Test
+    public void beginNameThatIsNotPrintableShowsNoName() {
+        // 0x00 and 0x25 decode to NUL and line feed in IBM037.
+        List<String> lines = dump(AfpBytes.create()
+                .field(FieldType.BPG, bytes(0xC1, 0x00, 0x25, 0x40, 0x40, 0x40, 0x40, 0x40))
+                .bytes());
+
+        assertThat(fieldColumn(lines.get(1))).isEqualTo("BPG  Begin Page");
+    }
+
+    @Test
+    public void codePageIsUsedForNamesAndTles() {
+        Charset ibm500 = Charset.forName("IBM500");
+        byte[] afp = AfpBytes.create()
+                .field(FieldType.BNG, Ebcdic.encode("[G1]    ", ibm500))
+                .field(FieldType.TLE, concat(
+                        triplet(0x02, concat(bytes(0x0B, 0x00), Ebcdic.encode("k", ibm500))),
+                        triplet(0x36, concat(bytes(0x00, 0x00), Ebcdic.encode("[v]", ibm500)))))
+                .end(FieldType.ENG)
+                .bytes();
+        StringBuilder out = new StringBuilder();
+
+        new AfpDump(ibm500).dump(new ByteArrayInputStream(afp), out);
+
+        List<String> lines = out.toString().lines().toList();
+        assertThat(lines.get(1)).endsWith("\"[G1]    \"");
+        assertThat(lines.get(2)).endsWith("k = \"[v]\"");
+    }
+
+    @Test
+    public void outputErrorsAreUnchecked() {
+        Appendable broken = new Appendable() {
+            @Override
+            public Appendable append(CharSequence csq) throws IOException {
+                throw new IOException("pipe closed");
+            }
+
+            @Override
+            public Appendable append(CharSequence csq, int start, int end) throws IOException {
+                throw new IOException("pipe closed");
+            }
+
+            @Override
+            public Appendable append(char c) throws IOException {
+                throw new IOException("pipe closed");
+            }
+        };
+
+        assertThrows(UncheckedIOException.class, () -> new AfpDump()
+                .dump(new ByteArrayInputStream(new byte[0]), broken));
     }
 
     private static List<String> dump(byte[] afp) {

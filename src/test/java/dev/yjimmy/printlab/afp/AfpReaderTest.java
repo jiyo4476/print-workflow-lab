@@ -158,6 +158,41 @@ public class AfpReaderTest {
     }
 
     @Test
+    public void extensionFlagWithNoDataFails() {
+        byte[] afp = AfpBytes.create()
+                .field(FieldType.NOP.id(), StructuredField.FLAG_EXTENSION, 0)
+                .bytes();
+
+        AfpFormatException e = assertThrows(AfpFormatException.class, () -> read(afp));
+
+        assertThat(e.getMessage()).contains("extension length (0)");
+    }
+
+    @Test
+    public void extensionLengthZeroFails() {
+        // The extension length counts itself, so 0 can't be right (and would loop if trusted).
+        byte[] afp = AfpBytes.create()
+                .field(FieldType.NOP.id(), StructuredField.FLAG_EXTENSION, 0, bytes(0x00, 0xC1))
+                .bytes();
+
+        AfpFormatException e = assertThrows(AfpFormatException.class, () -> read(afp));
+
+        assertThat(e.getMessage()).contains("extension length (0)");
+    }
+
+    @Test
+    public void extensionOfJustItsLengthByteIsEmpty() {
+        byte[] afp = AfpBytes.create()
+                .field(FieldType.NOP.id(), StructuredField.FLAG_EXTENSION, 0, bytes(0x01, 0xC1))
+                .bytes();
+
+        StructuredField field = read(afp).get(0);
+
+        assertThat(field.extension()).isEmpty();
+        assertThat(field.data()).containsExactly(0xC1);
+    }
+
+    @Test
     public void readsOneFieldAtATime() {
         // Garbage follows the first field. A reader that parsed ahead (to build a list, say)
         // would throw before returning anything; a streaming one returns the first field.
@@ -178,6 +213,44 @@ public class AfpReaderTest {
         };
 
         assertThrows(UncheckedIOException.class, () -> new AfpReader(broken).hasNext());
+    }
+
+    @Test
+    public void ioErrorPartWayThroughAFieldIsUnchecked() {
+        // The introducer reads fine; the stream breaks while the header is being read.
+        InputStream breaksAfterIntroducer = new InputStream() {
+            private boolean introducerSent;
+
+            @Override
+            public int read() throws IOException {
+                if (!introducerSent) {
+                    introducerSent = true;
+                    return 0x5A;
+                }
+                throw new IOException("disk gone");
+            }
+        };
+        AfpReader reader = new AfpReader(breaksAfterIntroducer);
+
+        assertThrows(UncheckedIOException.class, reader::hasNext);
+        assertFalse("no fields after an error", reader.hasNext());
+    }
+
+    @Test
+    public void closeClosesTheStream() throws IOException {
+        boolean[] closed = {false};
+        InputStream in = new ByteArrayInputStream(new byte[0]) {
+            @Override
+            public void close() {
+                closed[0] = true;
+            }
+        };
+
+        try (AfpReader reader = new AfpReader(in)) {
+            assertFalse("hasNext", reader.hasNext());
+        }
+
+        assertThat(closed[0]).as("stream closed").isTrue();
     }
 
     private static List<StructuredField> read(byte[] afp) {
