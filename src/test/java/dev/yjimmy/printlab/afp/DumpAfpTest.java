@@ -136,6 +136,96 @@ public class DumpAfpTest {
     }
 
     @Test
+    public void endNameMustMatchItsBegin() {
+        List<String> lines = dump(AfpBytes.create()
+                .begin(FieldType.BNG, "G1")
+                .field(FieldType.ENG, AfpBytes.name8("G2"))
+                .bytes());
+
+        assertThat(lines.get(2)).endsWith("ENG  End Named Page Group  !! name \"G2      \""
+                + " doesn't match the BNG at 00000000 (\"G1      \")");
+        assertThat(lines).last().isEqualTo("2 fields, 1 problem");
+    }
+
+    @Test
+    public void endNameThatMatchesOrIsOmittedIsFine() {
+        List<String> lines = dump(AfpBytes.create()
+                .begin(FieldType.BDT, "D1")
+                .begin(FieldType.BNG, "G1")
+                .field(FieldType.ENG, AfpBytes.name8("G1"))
+                .end(FieldType.EDT)
+                .bytes());
+
+        assertThat(lines).last().isEqualTo("4 fields, 0 problems");
+    }
+
+    @Test
+    public void endNameStartingFfffMatchesAnyBegin() {
+        List<String> lines = dump(AfpBytes.create()
+                .begin(FieldType.BNG, "G1")
+                .field(FieldType.ENG, bytes(0xFF, 0xFF, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40))
+                .bytes());
+
+        assertThat(lines).last().isEqualTo("2 fields, 0 problems");
+    }
+
+    @Test
+    public void namedEndForAnUnnamedBeginIsReported() {
+        List<String> lines = dump(AfpBytes.create()
+                .field(FieldType.BPG, bytes(0xFF, 0xFF, 0, 0, 0, 0, 0, 0))
+                .field(FieldType.EPG, AfpBytes.name8("P1"))
+                .bytes());
+
+        assertThat(lines.get(2)).endsWith("!! name \"P1      \" doesn't match the BPG at 00000000"
+                + " (no name)");
+    }
+
+    @Test
+    public void segmentsThatFollowEachOtherAreFine() {
+        int seg = StructuredField.FLAG_SEGMENTED;
+        List<String> lines = dump(AfpBytes.create()
+                .field(FieldType.IPD.id(), seg, 0, bytes(0x01))
+                .field(FieldType.IPD.id(), seg, 0, bytes(0x02))
+                .field(FieldType.IPD.id(), 0, 0, bytes(0x03))
+                .field(FieldType.NOP)
+                .bytes());
+
+        assertThat(lines).last().isEqualTo("4 fields, 0 problems");
+    }
+
+    @Test
+    public void anotherFieldBetweenSegmentsIsReported() {
+        List<String> lines = dump(AfpBytes.create()
+                .field(FieldType.IPD.id(), StructuredField.FLAG_SEGMENTED, 0, bytes(0x01))
+                .field(FieldType.NOP)
+                .bytes());
+
+        assertThat(lines.get(2)).endsWith("NOP  No Operation  !! the IPD at 00000000 is segmented,"
+                + " but the next field isn't the next IPD segment");
+        assertThat(lines).last().isEqualTo("2 fields, 1 problem");
+    }
+
+    @Test
+    public void segmentedLastFieldIsReported() {
+        List<String> lines = dump(AfpBytes.create()
+                .field(FieldType.IPD.id(), StructuredField.FLAG_SEGMENTED, 0, bytes(0x01))
+                .bytes());
+
+        assertThat(lines).contains("!! the IPD at 00000000 is segmented, but the next field"
+                + " isn't the next IPD segment");
+    }
+
+    @Test
+    public void paddedTleDecodes() {
+        byte[] afp = AfpBytes.create()
+                .field(FieldType.TLE.id(), StructuredField.FLAG_PADDING, 0,
+                        AfpBytes.concat(AfpBytes.tleData("zip", "80202"), bytes(0x40, 0x02)))
+                .bytes();
+
+        assertThat(dump(afp).get(1)).endsWith("zip = \"80202\"");
+    }
+
+    @Test
     public void mismatchedEndWithNoOpenMatchKeepsNesting() {
         List<String> lines = dump(AfpBytes.create()
                 .begin(FieldType.BNG, "G")

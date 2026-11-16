@@ -66,10 +66,13 @@ report's line total rounded *down* to two decimals, in its own commit.
   and runs jobs one at a time on a single-thread executor.
 - **`web/`** holds the servlets, registered with `@WebServlet` (there is no `web.xml`). Currently
   only `GET /api/health`.
-- **`afp/`** reads MO:DCA. `AfpReader` is a streaming `Iterator<StructuredField>` (one field in
-  memory; bad bytes throw `AfpFormatException` with the byte offset). `FieldType` names common
-  IDs; Begin/End is the middle ID byte (`A8`/`A9`). `TleDecoder` reads triplets `02` (name) and
-  `36` (value); text is EBCDIC via `Ebcdic` (IBM037 default, code page is a parameter).
+- **`afp/`** reads MO:DCA, following the MO:DCA Reference AFPC-0004-11. `AfpReader` is a
+  streaming `Iterator<StructuredField>` (one field in memory; bad bytes throw
+  `AfpFormatException` with the byte offset); it enforces lengths 8-32,767, splits off the
+  extension and strips padding. Bytes 6-7 are `reserved()`, not a sequence number. `FieldType`
+  lists all 98 structured fields from Appendix E; Begin/End is the middle ID byte (`A8`/`A9`).
+  `TleDecoder` reads triplets `01` (code page), `02` type `0B` (name) and `36` (value); text is
+  EBCDIC via `Ebcdic` (IBM037 default, code page is a parameter).
   `AfpDump` backs `App dump-afp` and reports structural problems instead of stopping. The
   writer (PRD-04) and `SplitAfp` step (PRD-05) are next. Build AFP test input with
   `testsupport/AfpBytes`.

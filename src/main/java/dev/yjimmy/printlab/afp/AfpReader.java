@@ -15,17 +15,25 @@ import java.util.NoSuchElementException;
  * Reads a MO:DCA (AFP) file one structured field at a time. Only the current field is held in
  * memory, so files of any size can be read. See {@link StructuredField} for the byte layout.
  *
- * <p>The reader expects raw MO:DCA: every field starts with {@code 0x5A}. Bad input throws
+ * <p>The reader expects the usual AFP file form: each MO:DCA structured field preceded by a
+ * {@code 0x5A} byte. It checks what MO:DCA defines for every field (length 8-32,767, a valid
+ * extension and padding) and strips padding, but returns segmented fields one at a time, as they
+ * appear. Bad input throws
  * {@link AfpFormatException} with the byte offset, after which {@link #hasNext()} is false.
  * I/O errors are wrapped in {@link UncheckedIOException}, since {@link Iterator} can't throw
  * checked exceptions.
  */
 public final class AfpReader implements Iterator<StructuredField>, Closeable {
 
-    /** Every structured field starts with this byte (Carriage Control Character X'5A'). */
+    /**
+     * The byte before every structured field in an AFP file. It's a carriage-control character
+     * that platforms add around MO:DCA records, not part of MO:DCA itself.
+     */
     public static final int INTRODUCER = 0x5A;
-    /** Bytes counted by the length that come before the data: length 2, ID 3, flags 1, seq 2. */
+    /** The Structured Field Introducer: length 2, ID 3, flags 1, reserved 2. */
     public static final int HEADER_LENGTH = 8;
+    /** The largest SFLength MO:DCA allows. */
+    public static final int MAX_LENGTH = 32_767;
 
     private final InputStream in;
     private long position;
@@ -81,9 +89,9 @@ public final class AfpReader implements Iterator<StructuredField>, Closeable {
         }
         if (first != INTRODUCER) {
             throw new AfpFormatException(start, String.format(
-                    "expected the structured field introducer 0x5A but found 0x%02X. Files"
-                            + " copied from a mainframe sometimes have a record header before"
-                            + " each field; this reader expects raw MO:DCA.", first));
+                    "expected 0x5A before a structured field but found 0x%02X. Files copied"
+                            + " from a mainframe sometimes have a record header (RDW) before"
+                            + " each field instead; this reader expects the 0x5A form.", first));
         }
         byte[] header = readFully(HEADER_LENGTH, start, -1);
         int length = unsigned(header, 0, 2);
@@ -91,9 +99,13 @@ public final class AfpReader implements Iterator<StructuredField>, Closeable {
             throw new AfpFormatException(start, "length " + length
                     + " is less than the " + HEADER_LENGTH + "-byte header it must include");
         }
+        if (length > MAX_LENGTH) {
+            throw new AfpFormatException(start, "length " + length
+                    + " is more than the MO:DCA maximum of " + MAX_LENGTH);
+        }
         int typeId = unsigned(header, 2, 3);
         int flags = unsigned(header, 5, 1);
-        int sequence = unsigned(header, 6, 2);
+        int reserved = unsigned(header, 6, 2);
         byte[] body = readFully(length - HEADER_LENGTH, start, length);
 
         byte[] extension = new byte[0];
@@ -107,7 +119,37 @@ public final class AfpReader implements Iterator<StructuredField>, Closeable {
             extension = Arrays.copyOfRange(body, 1, extensionLength);
             data = Arrays.copyOfRange(body, extensionLength, body.length);
         }
-        return new StructuredField(start, length, typeId, flags, sequence, extension, data);
+        if ((flags & StructuredField.FLAG_PADDING) != 0) {
+            data = Arrays.copyOf(data, data.length - paddingLength(data, start));
+        }
+        return new StructuredField(start, length, typeId, flags, reserved, extension, data);
+    }
+
+    /**
+     * The padding at the end of {@code data}, including its length bytes ("Structured Field
+     * Padding"): a non-zero last byte is the length (1-255 bytes of padding); a last byte of
+     * {@code 00} means the two bytes before it are the length (3-32,759 bytes).
+     */
+    private static int paddingLength(byte[] data, long start) {
+        int n = data.length;
+        if (n == 0) {
+            throw new AfpFormatException(start, "the padding flag is set but the field has no"
+                    + " data to hold the padding length");
+        }
+        int padding = data[n - 1] & 0xFF;
+        if (padding == 0) {
+            padding = n < 3 ? 0 : unsigned(data, n - 3, 2);
+            if (padding < 3) {
+                throw new AfpFormatException(start, "the padding flag is set but the 3-byte"
+                        + " padding length (" + padding + ") is less than 3");
+            }
+        }
+        if (padding > n) {
+            throw new AfpFormatException(start, "the padding flag is set but the padding length"
+                    + " (" + padding + ") is more than the " + n + " byte(s) after the header"
+                    + " and extension");
+        }
+        return padding;
     }
 
     /**

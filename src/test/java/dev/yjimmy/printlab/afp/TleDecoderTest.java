@@ -10,6 +10,7 @@ import static org.junit.Assert.assertThrows;
 import dev.yjimmy.printlab.testsupport.AfpBytes;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import org.junit.Test;
 
 public class TleDecoderTest {
@@ -115,15 +116,84 @@ public class TleDecoderTest {
     }
 
     @Test
-    public void nameOrValueTripletTooShortToHoldTextIsNotUsed() {
-        // A 3-byte FQN has no room for the format byte or text, so it isn't the name.
-        byte[] data = concat(bytes(0x03, 0x02, 0x0B),
-                triplet(0x36, concat(bytes(0x00, 0x00), Ebcdic.encode("80202"))));
+    public void tripletsShorterThanTheirMinimumFail() {
+        // MO:DCA: an FQN is 5-254 bytes (at least one name byte), an Attribute Value 4-254.
+        byte[] value = triplet(0x36, concat(bytes(0x00, 0x00), Ebcdic.encode("80202")));
+        byte[] name = triplet(0x02, concat(bytes(0x0B, 0x00), Ebcdic.encode("zip")));
 
-        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> TleDecoder.decode(data, Ebcdic.IBM037));
+        assertThat(assertThrows(IllegalArgumentException.class,
+                () -> TleDecoder.decode(concat(bytes(0x04, 0x02, 0x0B, 0x00), value),
+                        Ebcdic.IBM037)).getMessage())
+                .isEqualTo("Fully Qualified Name triplet at data offset 0 has length 4;"
+                        + " the minimum is 5");
+        assertThat(assertThrows(IllegalArgumentException.class,
+                () -> TleDecoder.decode(concat(name, bytes(0x03, 0x36, 0x00)),
+                        Ebcdic.IBM037)).getMessage())
+                .isEqualTo("Attribute Value triplet at data offset 7 has length 3;"
+                        + " the minimum is 4");
+    }
 
-        assertThat(e.getMessage()).contains("no attribute name");
+    @Test
+    public void nameAndValueMustEachOccurOnce() {
+        byte[] name = triplet(0x02, concat(bytes(0x0B, 0x00), Ebcdic.encode("zip")));
+        byte[] value = triplet(0x36, concat(bytes(0x00, 0x00), Ebcdic.encode("80202")));
+
+        assertThat(assertThrows(IllegalArgumentException.class,
+                () -> TleDecoder.decode(concat(name, name, value), Ebcdic.IBM037)).getMessage())
+                .isEqualTo("second attribute name triplet at data offset 7; a TLE has exactly one");
+        assertThat(assertThrows(IllegalArgumentException.class,
+                () -> TleDecoder.decode(concat(name, value, value), Ebcdic.IBM037)).getMessage())
+                .isEqualTo("second attribute value triplet at data offset 16; a TLE has exactly"
+                        + " one");
+    }
+
+    @Test
+    public void otherFqnTypesAreIgnored() {
+        // X'0C' Process Element Name (the TLE's own name) and X'87' Begin Page Reference.
+        byte[] data = concat(
+                triplet(0x02, concat(bytes(0x0C, 0x00), Ebcdic.encode("TAG1"))),
+                triplet(0x02, concat(bytes(0x87, 0x00), Ebcdic.encode("P0000001"))),
+                AfpBytes.tleData("zip", "80202"));
+
+        assertEquals("TLE", new Tle("zip", "80202"), TleDecoder.decode(data, Ebcdic.IBM037));
+    }
+
+    @Test
+    public void codePageTripletAppliesToTheTripletsAfterIt() {
+        // '[' is 0x4A in IBM500 but 0xBA in IBM037. X'01' GCSGID FFFF, CPGID 500 (X'01F4').
+        Charset ibm500 = Charset.forName("IBM500");
+        byte[] data = concat(
+                triplet(0x02, concat(bytes(0x0B, 0x00), Ebcdic.encode("a[1]"))),
+                bytes(0x06, 0x01, 0xFF, 0xFF, 0x01, 0xF4),
+                triplet(0x36, concat(bytes(0x00, 0x00), Ebcdic.encode("x[y]", ibm500))));
+
+        assertEquals("name in IBM037, value in IBM500", new Tle("a[1]", "x[y]"),
+                TleDecoder.decode(data, Ebcdic.IBM037));
+    }
+
+    @Test
+    public void codePageTripletCanGiveACcsid() {
+        // CCSID form: GCSGID 0000, then CCSID 1208 (UTF-8).
+        byte[] data = concat(
+                bytes(0x06, 0x01, 0x00, 0x00, 0x04, 0xB8),
+                triplet(0x02, concat(bytes(0x0B, 0x00), "city".getBytes(StandardCharsets.UTF_8))),
+                triplet(0x36, concat(bytes(0x00, 0x00), "Zürich".getBytes(StandardCharsets.UTF_8))));
+
+        assertEquals("UTF-8", new Tle("city", "Zürich"), TleDecoder.decode(data, Ebcdic.IBM037));
+    }
+
+    @Test
+    public void badCodePageTripletFails() {
+        byte[] valid = AfpBytes.tleData("zip", "80202");
+
+        assertThat(assertThrows(IllegalArgumentException.class,
+                () -> TleDecoder.decode(concat(bytes(0x05, 0x01, 0xFF, 0xFF, 0x01), valid),
+                        Ebcdic.IBM037)).getMessage())
+                .isEqualTo("CGCSGID triplet at data offset 0 has length 5; it must be 6");
+        assertThat(assertThrows(IllegalArgumentException.class,
+                () -> TleDecoder.decode(concat(bytes(0x06, 0x01, 0xFF, 0xFF, 0xFF, 0xFE), valid),
+                        Ebcdic.IBM037)).getMessage())
+                .startsWith("CGCSGID triplet at data offset 0: code page 65534");
     }
 
     @Test

@@ -19,7 +19,7 @@ public class AfpReaderTest {
 
     @Test
     public void readsSingleField() {
-        // 5A | length 000B | ID D3EEEE (NOP) | flags 00 | sequence 0007 | data C1 C2 F1
+        // 5A | length 000B | ID D3EEEE (NOP) | flags 00 | reserved 0007 | data C1 C2 F1
         byte[] afp = bytes(0x5A, 0x00, 0x0B, 0xD3, 0xEE, 0xEE, 0x00, 0x00, 0x07, 0xC1, 0xC2, 0xF1);
 
         List<StructuredField> fields = read(afp);
@@ -31,7 +31,7 @@ public class AfpReaderTest {
         assertEquals("type ID", 0xD3EEEE, nop.typeId());
         assertEquals("type", FieldType.NOP, nop.type());
         assertEquals("flags", 0, nop.flags());
-        assertEquals("sequence", 7, nop.sequence());
+        assertEquals("reserved bytes", 7, nop.reserved());
         assertThat(nop.data()).containsExactly(0xC1, 0xC2, 0xF1);
         assertThat(nop.extension()).isEmpty();
     }
@@ -122,6 +122,96 @@ public class AfpReaderTest {
                 () -> read(bytes(0x5A, 0x00, 0x07, 0xD3, 0xEE, 0xEE, 0x00, 0x00, 0x00)));
 
         assertThat(e.getMessage()).contains("length 7");
+    }
+
+    @Test
+    public void lengthOverTheModcaMaximumFails() {
+        // SFLength is 8-32,767. 0x8000 = 32,768.
+        AfpFormatException e = assertThrows(AfpFormatException.class,
+                () -> read(bytes(0x5A, 0x80, 0x00, 0xD3, 0xEE, 0xEE, 0x00, 0x00, 0x00)));
+
+        assertThat(e.getMessage()).contains("length 32768 is more than the MO:DCA maximum of 32767");
+    }
+
+    @Test
+    public void maximumLengthIsAllowed() {
+        byte[] afp = AfpBytes.create().field(FieldType.NOP, new byte[32_767 - 8]).bytes();
+
+        StructuredField nop = read(afp).get(0);
+
+        assertEquals("length", 32_767, nop.length());
+        assertEquals("data", 32_759, nop.data().length);
+    }
+
+    @Test
+    public void paddingWithAOneByteLengthIsStripped() {
+        // Data C1 C2, then 3 bytes of padding whose last byte (03) is the padding length.
+        byte[] afp = AfpBytes.create()
+                .field(FieldType.NOP.id(), StructuredField.FLAG_PADDING, 0,
+                        bytes(0xC1, 0xC2, 0x40, 0x40, 0x03))
+                .bytes();
+
+        StructuredField nop = read(afp).get(0);
+
+        assertThat(nop.data()).containsExactly(0xC1, 0xC2);
+        assertEquals("length still counts the padding", 13, nop.length());
+    }
+
+    @Test
+    public void paddingWithAThreeByteLengthIsStripped() {
+        // 300 bytes of padding: the last 3 bytes are 01 2C (300) then 00.
+        byte[] padding = new byte[300];
+        padding[297] = 0x01;
+        padding[298] = 0x2C;
+        byte[] afp = AfpBytes.create()
+                .field(FieldType.NOP.id(), StructuredField.FLAG_PADDING, 0,
+                        AfpBytes.concat(bytes(0xC1), padding))
+                .bytes();
+
+        assertThat(read(afp).get(0).data()).containsExactly(0xC1);
+    }
+
+    @Test
+    public void paddingAfterAnExtensionIsStripped() {
+        byte[] afp = AfpBytes.create()
+                .field(FieldType.NOP.id(),
+                        StructuredField.FLAG_EXTENSION | StructuredField.FLAG_PADDING, 0,
+                        bytes(0x02, 0xAA, 0xC1, 0x01))
+                .bytes();
+
+        StructuredField nop = read(afp).get(0);
+
+        assertThat(nop.extension()).containsExactly(0xAA);
+        assertThat(nop.data()).containsExactly(0xC1);
+    }
+
+    @Test
+    public void paddingOfTheWholeDataLeavesNoData() {
+        byte[] afp = AfpBytes.create()
+                .field(FieldType.NOP.id(), StructuredField.FLAG_PADDING, 0, bytes(0x40, 0x02))
+                .bytes();
+
+        assertThat(read(afp).get(0).data()).isEmpty();
+    }
+
+    @Test
+    public void badPaddingFails() {
+        int pad = StructuredField.FLAG_PADDING;
+        assertThat(paddingError(AfpBytes.create().field(FieldType.NOP.id(), pad, 0).bytes()))
+                .contains("no data to hold the padding length");
+        assertThat(paddingError(AfpBytes.create()
+                .field(FieldType.NOP.id(), pad, 0, bytes(0xC1, 0x05)).bytes()))
+                .contains("padding length (5) is more than the 2 byte(s)");
+        assertThat(paddingError(AfpBytes.create()
+                .field(FieldType.NOP.id(), pad, 0, bytes(0xC1, 0x00, 0x02, 0x00)).bytes()))
+                .contains("3-byte padding length (2) is less than 3");
+        assertThat(paddingError(AfpBytes.create()
+                .field(FieldType.NOP.id(), pad, 0, bytes(0x00, 0x00)).bytes()))
+                .contains("3-byte padding length (0) is less than 3");
+    }
+
+    private static String paddingError(byte[] afp) {
+        return assertThrows(AfpFormatException.class, () -> read(afp)).getMessage();
     }
 
     @Test

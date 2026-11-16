@@ -15,7 +15,7 @@ import java.util.Arrays;
  *           .bytes();
  * </pre>
  * Each field gets the {@code 0x5A} introducer, the length (header plus data, not the 0x5A), flags
- * {@code 00} and sequence {@code 0000} unless given. Text is EBCDIC (IBM037).
+ * {@code 00} and reserved bytes {@code 0000} unless given. Text is EBCDIC (IBM037).
  */
 public final class AfpBytes {
 
@@ -28,12 +28,12 @@ public final class AfpBytes {
         return new AfpBytes();
     }
 
-    /** A field with flags 00 and sequence 0000. */
+    /** A field with flags 00 and reserved bytes 0000. */
     public AfpBytes field(FieldType type, byte... data) {
         return field(type.id(), 0, 0, data);
     }
 
-    public AfpBytes field(int typeId, int flags, int sequence, byte... data) {
+    public AfpBytes field(int typeId, int flags, int reserved, byte... data) {
         int length = 8 + data.length;
         out.write(0x5A);
         out.write(length >> 8);
@@ -42,8 +42,8 @@ public final class AfpBytes {
         out.write(typeId >> 8);
         out.write(typeId);
         out.write(flags);
-        out.write(sequence >> 8);
-        out.write(sequence);
+        out.write(reserved >> 8);
+        out.write(reserved);
         out.writeBytes(data);
         return this;
     }

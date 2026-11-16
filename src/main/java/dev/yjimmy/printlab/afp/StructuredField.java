@@ -5,33 +5,39 @@ import java.util.Arrays;
 /**
  * One MO:DCA structured field, as {@link AfpReader} found it in a file.
  *
- * <p>On disk a field is:
+ * <p>On disk a field is (MO:DCA Reference AFPC-0004-11, "MO:DCA Structured Field Syntax"):
  * <pre>
- *   5A        introducer (not counted in the length)
- *   LL LL     length, big-endian: counts itself and everything after it, but not the 5A
- *   D3 A8 A8  type ID: class, type, category (this one is BDT, Begin Document)
- *   FF        flags (bit 0x80: an extension follows the header)
- *   SS SS     sequence number (often 0000)
- *   ...       data: length - 8 bytes
+ *   5A        carriage-control byte AFP files put before each field; not part of MO:DCA, and
+ *             not counted in the length
+ *   LL LL     SFLength, big-endian, 8-32,767: the whole field, counting itself but not the 5A
+ *   D3 A8 A8  SFTypeID D3TTCC: class D3, type TT, category CC (this one is BDT, Begin Document)
+ *   FF        FlagByte: 80 extension, 20 segmented, 08 padding; other bits reserved
+ *   00 00     reserved; should be zero (some AFP applications put a sequence number here)
+ *   ...       extension (if flagged: a length byte counting itself, then up to 254 bytes),
+ *             data, then padding (if flagged)
  * </pre>
  *
- * @param offset   byte offset of the {@code 0x5A} introducer in the file
- * @param length   the field's length value: header (8 bytes) plus extension plus data
- * @param typeId   the 3-byte type ID as an int, e.g. {@code 0xD3A8A8}
- * @param flags    the flags byte
- * @param sequence the 2-byte sequence number
+ * @param offset    byte offset of the {@code 0x5A} in the file
+ * @param length    SFLength: header (8 bytes) plus extension, data and padding
+ * @param typeId    the 3-byte type ID as an int, e.g. {@code 0xD3A8A8}
+ * @param flags     the flag byte
+ * @param reserved  bytes 6-7, which MO:DCA reserves; often a sequence number in practice
  * @param extension the extension bytes after its own length byte; empty when the flag is off
- * @param data     the field's data, after any extension
+ * @param data      the field's data: after any extension, without any padding
  */
 public record StructuredField(
-        long offset, int length, int typeId, int flags, int sequence, byte[] extension,
+        long offset, int length, int typeId, int flags, int reserved, byte[] extension,
         byte[] data) {
 
-    /** Flag bit: an extension follows the 8-byte header; its first byte is its own length. */
+    /** Flag bit 0 (ExtFlag): an extension follows the header; its first byte is its length. */
     public static final int FLAG_EXTENSION = 0x80;
-    /** Flag bit: the data continues in the next field (segmented). Reported, not joined. */
+    /**
+     * Flag bit 2 (SegFlag): the data continues in the next structured field, which must follow
+     * immediately. The last segment has the flag off. {@link AfpReader} returns each segment as
+     * its own field; {@link AfpDump} checks the sequence.
+     */
     public static final int FLAG_SEGMENTED = 0x20;
-    /** Flag bit: the data ends with padding. Reported, not stripped. */
+    /** Flag bit 4 (PadFlag): padding follows the data. {@link AfpReader} strips it. */
     public static final int FLAG_PADDING = 0x08;
 
     private static final int TYPE_BEGIN = 0xA8;
@@ -72,6 +78,11 @@ public record StructuredField(
         return typeByte() == TYPE_END;
     }
 
+    /** True when the data continues in the next field (see {@link #FLAG_SEGMENTED}). */
+    public boolean isSegmented() {
+        return (flags & FLAG_SEGMENTED) != 0;
+    }
+
     /**
      * For a Begin field, the ID of the End field that closes it: the same class and category with
      * type {@code A9} (BNG {@code D3A8AD} → ENG {@code D3A9AD}).
@@ -91,7 +102,7 @@ public record StructuredField(
     public boolean equals(Object o) {
         return o instanceof StructuredField f
                 && offset == f.offset && length == f.length && typeId == f.typeId
-                && flags == f.flags && sequence == f.sequence
+                && flags == f.flags && reserved == f.reserved
                 && Arrays.equals(extension, f.extension) && Arrays.equals(data, f.data);
     }
 

@@ -21,6 +21,31 @@ public class FieldTypeTest {
     }
 
     @Test
+    public void listsEveryStructuredFieldInTheReference() {
+        // AFPC-0004-11, Appendix E, "MO:DCA Structured Fields Sorted by Identifier": 98 fields.
+        assertEquals("count", 98, FieldType.values().length);
+        assertEquals("print file", "Begin Print File", FieldType.BPF.description());
+        assertEquals("print file end", FieldType.EPF, FieldType.forId(0xD3A9A5).orElseThrow());
+        assertEquals("data", "OCD", FieldType.nameOf(0xD3EE92));
+    }
+
+    @Test
+    public void format1FieldsUseTheReferenceAcronym() {
+        assertEquals("PTD-1", "PTD-1", FieldType.nameOf(0xD3A69B));
+        assertEquals("PTD", "PTD", FieldType.nameOf(0xD3B19B));
+        assertEquals("MCF-1", "MCF-1", FieldType.MCF1.acronym());
+        assertThat(FieldType.PGP1.description()).contains("Format-1").contains("coexistence");
+    }
+
+    @Test
+    public void idsAreInTheReferenceOrder() {
+        FieldType[] types = FieldType.values();
+        for (int i = 1; i < types.length; i++) {
+            assertTrue(types[i] + " after " + types[i - 1], types[i].id() > types[i - 1].id());
+        }
+    }
+
+    @Test
     public void unknownIdRendersAsHex() {
         assertEquals("unknown", "D3EEFF", FieldType.nameOf(0xD3EEFF));
         assertEquals("leading zeros kept", "00A001", FieldType.nameOf(0x00A001));

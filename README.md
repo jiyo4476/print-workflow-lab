@@ -115,9 +115,10 @@ loading, with the step's name in the message. In double-quoted YAML a regex back
 
 ### Reading AFP
 
-An AFP (MO:DCA) file is a flat run of *structured fields*: `0x5A`, a 2-byte length that counts
-itself but not the `0x5A`, a 3-byte type ID (`D3A8AD` is BNG, Begin Named Page Group), a flags
-byte, a 2-byte sequence number, then data. Begin and End fields nest: document, page groups,
+An AFP (MO:DCA) file is a flat run of *structured fields*, each preceded by `0x5A`: a 2-byte
+length (8 to 32,767) that counts itself but not the `0x5A`, a 3-byte type ID (`D3A8AD` is BNG,
+Begin Named Page Group), a flags byte, two reserved bytes (often used as a sequence number),
+then data. The reader strips padding and splits off any extension. Begin and End fields nest: document, page groups,
 pages. In a statement run each page group is one customer, and the Tag Logical Elements (TLEs)
 at its start are that document's index. Text inside AFP is EBCDIC (code page IBM037 by default).
 
@@ -136,9 +137,12 @@ Offset    Length  Field
 ```
 
 Offsets are hex and lengths are each field's own length value. Problems are marked `!!` and don't
-stop the dump: an End with no Begin, a page group never closed, a TLE with no value. Bytes that
-aren't a structured field end it with their offset. The exit code is 1 when there are problems.
-For a file from another country pass its code page: `dump-afp file.afp IBM500`.
+stop the dump: an End with no Begin or with a different name, a page group never closed, a
+segmented field interrupted by another field, a TLE with no value. Bytes that aren't a structured
+field end it with their offset. The exit code is 1 when there are problems.
+For a file from another country pass its code page: `dump-afp file.afp IBM500`. A TLE that names
+its own code page (an `X'01'` triplet) uses that one. The rules follow the MO:DCA Reference,
+AFPC-0004-11.
 
 ### Web app on Tomcat
 
