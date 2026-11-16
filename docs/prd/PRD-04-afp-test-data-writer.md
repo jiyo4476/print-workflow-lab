@@ -24,7 +24,7 @@ are right.
 
 ## Goals
 
-- `AfpWriter` that computes lengths and sequence numbers.
+- `AfpWriter` that computes lengths and writes the reserved bytes as `0000`.
 - `StatementAfpGenerator` mirroring `StatementPdfGenerator`'s data for a given seed.
 - `generate-afp` CLI.
 
@@ -37,8 +37,9 @@ are right.
 ## Requirements
 
 **Functional**
-- **FR-1** `AfpWriter` writes a field from (type, flags, data), computing the length and an
-  incrementing sequence number.
+- **FR-1** `AfpWriter` writes a field from (type, flags, data), computing the length. Bytes 6-7
+  are written as `0000`: the MO:DCA Reference (AFPC-0004-11) reserves them and calls a sequence
+  number there an unarchitected use to avoid.
 - **FR-2** Data longer than the maximum field length (32,759 bytes) is rejected.
 - **FR-3** Each statement becomes BNG, TLE × 3 (`accountNumber`, `name`, `zip`), its pages
   (BPG … EPG), then ENG, all inside BDT … EDT.
@@ -63,7 +64,7 @@ are right.
 | # | Criterion | Verified by |
 |---|---|---|
 | AC-1 | Written fields read back identically | `AfpWriterTest.writtenFieldIsReadBackIdentically` |
-| AC-2 | Lengths are computed; oversize data rejected; sequence numbers increment | `AfpWriterTest.*` |
+| AC-2 | Lengths are computed; oversize data rejected; reserved bytes are `0000` | `AfpWriterTest.*` |
 | AC-3 | TLE encode → decode round-trips; bad characters rejected | `TleEncoderTest.*` |
 | AC-4 | Deterministic output; one group per statement with all three TLEs; balanced Begin/End | `StatementAfpGeneratorTest.*` |
 | AC-5 | Same statements as the PDF generator for the same seed | `contentMatchesPdfGeneratorForSameSeed` |
