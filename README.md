@@ -18,8 +18,11 @@ A billing system writes one big PDF containing hundreds of customer statements. 
    page header,
 3. **indexes** each statement: account number, name, address, zip and page count become
    document properties,
-4. **presorts** statements by zip code (postal presort),
-5. writes the ordered documents plus a `documents.csv` index to `output/<jobId>/`.
+4. **routes** each statement to a queue: a bad address (blank name, zip not five digits) goes to
+   `exceptions`, more than 6 pages to `large-envelope`, everything else to `standard`,
+5. **presorts** statements by zip code (postal presort),
+6. writes each queue's documents in order to `output/<jobId>/<queue>/`, plus one
+   `documents.csv` index for the whole job.
 
 ## Concept map
 
@@ -32,6 +35,7 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 | `Document` / `Document.properties()` | Documents and document properties |
 | `SplitPdfStep` | Identifying PDF documents by page regions |
 | `SortDocumentsStep` | Sorting documents for postal presort |
+| `RouteDocumentsStep` / `when:` | Connectors with rules |
 | `RunExternalProgramStep` | External steps calling other programs |
 | `documents.csv` | Document properties file |
 | `afp/` (planned) | AFP page groups and TLEs as document properties |
@@ -45,6 +49,7 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ```bash
 ./mvnw verify                                     # build + tests
 ./mvnw -q exec:java -Dexec.args="generate 200 run.pdf"   # make a fake 200-statement print run
+./mvnw -q exec:java -Dexec.args="generate 50 bad.pdf 5"  # ...50 statements, 5 with bad addresses
 ./mvnw -q exec:java                               # start watching ./hotfolder
 ```
 
@@ -61,12 +66,14 @@ an unknown lifecycle phase:
 | Folder | What's in it |
 |---|---|
 | `work/<jobId>/` | The input file while it's processed, intermediate documents, and `job.json` |
-| `output/<jobId>/` | The finished documents in presort order, plus `documents.csv` |
+| `output/<jobId>/<queue>/` | One queue's finished documents (`standard`, `exceptions`, ...) in presort order, from `00001.pdf` |
+| `output/<jobId>/documents.csv` | One row per document with its properties, including `queue`; `file` is the path below `output/<jobId>/` |
 | `error/<jobId>/` | Only for failed jobs: the input file and `error.txt` |
 
 `job.json` is rewritten after every step, so it always shows how far a job has got: its id,
 state, current step, error message (if it failed), job properties, document count, and each
-step's start and finish time and outcome (`COMPLETED` or `FAILED`). It's written to a temp file and then moved into place, so it's
+step's start and finish time and outcome (`COMPLETED`, `FAILED`, or `SKIPPED` when the step's
+`when:` was false). It's written to a temp file and then moved into place, so it's
 never half-written.
 
 When a step throws, the job stops there: later steps don't run, the input file moves to
@@ -82,6 +89,28 @@ Error:  No 'accountNumber' found on page 1
 
 Each failed job gets its own folder, so two failed files with the same name never overwrite each
 other. If the input can't be moved, `error.txt` adds a `Note:` line saying where it was left.
+
+### Routing rules
+
+A `RouteDocuments` step sets each document's `queue` property. Routes are checked in order and
+the first match wins; documents that match none go to `default` (without a `default`, they fail
+the job). Any step can also take a `when:`, tested against the job's properties, and is skipped
+when it's false. See `workflows/statements.yaml`.
+
+A condition is `{ property, operator, value }`, or `{ all: [...] }` / `{ any: [...] }`, nested as
+deep as needed (an empty `all` is true, an empty `any` false). Operators:
+
+| Operator | True when |
+|---|---|
+| `equals` / `notEquals` | the value is / isn't exactly `value` |
+| `matches` / `notMatches` | the **whole** value does / doesn't match the regex `value` |
+| `greaterThan` / `lessThan` | compared as numbers when both sides are numbers (`10 > 9`), else as text |
+| `missing` | the property is absent or blank (takes no `value`) |
+
+An absent property never equals, matches or compares, so `notEquals` and `notMatches` are true
+for it. Mistakes in rules (unknown operator, bad regex, no `value`) stop the workflow from
+loading, with the step's name in the message. In double-quoted YAML a regex backslash is doubled
+(`"\\d{5}"`); in single quotes it isn't (`'\d{5}'`).
 
 ### Web app on Tomcat
 
@@ -123,7 +152,8 @@ all three together.
 src/main/java/dev/yjimmy/printlab/
   App.java                 entry point: run | generate
   workflow/                Job, Document, Step, WorkflowDefinition, WorkflowEngine, StepRegistry
-  steps/                   SplitPdf, SortDocuments, RunExternalProgram, WriteOutput
+  workflow/rules/          Condition, Rule, RuleParser: routing rules and `when:`
+  steps/                   SplitPdf, RouteDocuments, SortDocuments, RunExternalProgram, WriteOutput
   input/HotFolderWatcher   folder intake
   testdata/                fake statement print-run generator (PDFBox)
   afp/                     AFP support (planned, see package-info.java)
@@ -146,7 +176,7 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
 - [x] PDF split + region-based indexing, zip presort, output with document index
 - [ ] **AFP:** structured-field reader and dump tool, test-data writer with page groups + TLEs,
       `SplitAfp` step that reads document properties from TLEs
-- [ ] Routing rules: send documents to an exception queue (e.g. invalid zip), flag large
+- [x] Routing rules: send documents to an exception queue (e.g. invalid zip), flag large
       documents for a different envelope
 - [ ] Barcode step (ZXing) for inserter control
 - [x] Tomcat WAR, `/api/health`, Marionette 4 dashboard shell

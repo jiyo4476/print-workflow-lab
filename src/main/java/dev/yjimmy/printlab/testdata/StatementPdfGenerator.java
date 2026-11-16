@@ -2,8 +2,13 @@ package dev.yjimmy.printlab.testdata;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.IntStream;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -23,6 +28,9 @@ import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
  *       the zip alone at (500, 148)</li>
  * </ul>
  * The {@code statements.yaml} workflow's regions match these positions.
+ *
+ * <p>Optionally some statements get a bad address, for the exception queue: alternately a blank
+ * name and a 4-digit zip. Which statements are bad depends only on the seed and the counts.
  */
 public final class StatementPdfGenerator {
 
@@ -39,13 +47,28 @@ public final class StatementPdfGenerator {
             new String[] {"Phoenix", "AZ", "850"}, new String[] {"Austin", "TX", "787"},
             new String[] {"Seattle", "WA", "981"});
 
+    private final long seed;
     private final Random random;
 
     public StatementPdfGenerator(long seed) {
+        this.seed = seed;
         this.random = new Random(seed);
     }
 
     public void generate(int statements, Path out) throws IOException {
+        generate(statements, 0, out);
+    }
+
+    /**
+     * @param badAddresses how many statements get a blank name or a 4-digit zip (alternately, in
+     *     statement order), at most {@code statements}
+     */
+    public void generate(int statements, int badAddresses, Path out) throws IOException {
+        if (badAddresses < 0 || badAddresses > statements) {
+            throw new IllegalArgumentException("badAddresses must be 0.." + statements
+                    + ", got " + badAddresses);
+        }
+        List<Integer> bad = new ArrayList<>(badStatements(statements, badAddresses));
         PDType1Font font = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
         PDType1Font bold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
 
@@ -57,6 +80,14 @@ public final class StatementPdfGenerator {
                 String[] city = CITIES.get(random.nextInt(CITIES.size()));
                 String zip = city[2] + String.format("%02d", random.nextInt(100));
                 int pages = 1 + random.nextInt(3);
+                // Bad values replace good ones after they're drawn, so the rest of the run is the
+                // same with or without bad addresses.
+                int badIndex = bad.indexOf(s);
+                if (badIndex >= 0 && badIndex % 2 == 0) {
+                    name = "";
+                } else if (badIndex >= 0) {
+                    zip = zip.substring(0, 4);
+                }
 
                 for (int p = 1; p <= pages; p++) {
                     PDPage page = new PDPage(PDRectangle.LETTER);
@@ -67,7 +98,9 @@ public final class StatementPdfGenerator {
                         text(cs, font, 10, 400, 40, account);
                         text(cs, font, 9, 400, 54, "Page " + p + " of " + pages);
                         if (p == 1) {
-                            text(cs, font, 11, 72, 120, name);
+                            if (!name.isEmpty()) {
+                                text(cs, font, 11, 72, 120, name);
+                            }
                             text(cs, font, 11, 72, 134, street);
                             text(cs, font, 11, 72, 148, city[0] + ", " + city[1] + " " + zip);
                             text(cs, font, 8, 500, 148, zip);
@@ -83,6 +116,16 @@ public final class StatementPdfGenerator {
             }
             doc.save(out.toFile());
         }
+    }
+
+    /**
+     * The 0-based statements that get a bad address, in order. Drawn from their own seeded
+     * {@link Random} so they don't disturb the main one.
+     */
+    private Set<Integer> badStatements(int statements, int count) {
+        List<Integer> all = new ArrayList<>(IntStream.range(0, statements).boxed().toList());
+        Collections.shuffle(all, new Random(~seed));
+        return new TreeSet<>(all.subList(0, count));
     }
 
     /** Draws text with its baseline at {@code yFromTop} points below the top of the page. */

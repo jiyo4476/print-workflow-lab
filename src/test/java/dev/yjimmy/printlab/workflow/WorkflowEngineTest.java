@@ -2,6 +2,7 @@ package dev.yjimmy.printlab.workflow;
 
 import static dev.yjimmy.printlab.testsupport.TestWorkflows.step;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
@@ -15,6 +16,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -215,5 +217,100 @@ public class WorkflowEngineTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new WorkflowEngine(TestWorkflows.of(step("nope", "Nope")),
                         StepRegistry.withBuiltIns(), errorDir, TickingClock.oneSecondTicks()));
+    }
+
+    private static WorkflowDefinition.StepDefinition stepWhen(
+            String name, String type, Map<String, Object> when) {
+        return new WorkflowDefinition.StepDefinition(name, type, Map.of(), when);
+    }
+
+    private static final Map<String, Object> SMALL_JOB =
+            Map.of("property", "documentCount", "operator", "lessThan", "value", 50);
+
+    @Test
+    public void stepWithFalseWhenIsSkippedAndRecordedAsSkipped() throws Exception {
+        registry.register("A", new RecordingStep("A", trace).factory());
+        registry.register("B", new RecordingStep("B", trace).factory());
+
+        Job job = newJob("j9");
+        job.properties().put("documentCount", "500");
+        run(job, TestWorkflows.of(step("a", "A"), stepWhen("b", "B", SMALL_JOB), step("c", "A")));
+
+        assertEquals("the step whose 'when' is false should not run", List.of("A", "A"), trace);
+        assertEquals(JobState.COMPLETE, job.state());
+        assertThat(job.stepRecords()).extracting(StepRecord::name, StepRecord::outcome)
+                .containsExactly(
+                        tuple("a", StepOutcome.COMPLETED),
+                        tuple("b", StepOutcome.SKIPPED),
+                        tuple("c", StepOutcome.COMPLETED));
+        JobSummary summary =
+                JobSummaryWriter.read(job.workDir().resolve(JobSummaryWriter.FILE_NAME));
+        assertEquals(StepOutcome.SKIPPED, summary.steps().get(1).outcome());
+    }
+
+    @Test
+    public void stepWithTrueWhenRuns() throws Exception {
+        registry.register("B", new RecordingStep("B", trace).factory());
+
+        Job job = newJob("j10");
+        job.properties().put("documentCount", "9");
+        run(job, TestWorkflows.of(stepWhen("b", "B", SMALL_JOB)));
+
+        assertEquals(List.of("B"), trace);
+        assertEquals(StepOutcome.COMPLETED, job.stepRecords().get(0).outcome());
+    }
+
+    @Test
+    public void whenSeesPropertiesSetByEarlierSteps() throws Exception {
+        registry.register("Count", params -> job -> job.properties().put("documentCount", "3"));
+        registry.register("B", new RecordingStep("B", trace).factory());
+
+        Job job = newJob("j11");
+        run(job, TestWorkflows.of(step("count", "Count"), stepWhen("b", "B", SMALL_JOB)));
+
+        assertEquals(List.of("B"), trace);
+    }
+
+    @Test
+    public void invalidWhenFailsAtStartupWithStepName() {
+        registry.register("B", new RecordingStep("B", trace).factory());
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> new WorkflowEngine(
+                        TestWorkflows.of(stepWhen("presort", "B",
+                                Map.of("property", "documentCount", "operator", "fewerThan",
+                                        "value", 50))),
+                        registry, errorDir, TickingClock.oneSecondTicks()));
+
+        assertThat(e).hasMessageContaining("Step 'presort'")
+                .hasMessageContaining("Unknown operator 'fewerThan'");
+    }
+
+    @Test
+    public void whenIsReadFromWorkflowYaml() throws Exception {
+        Path yaml = Files.writeString(tmp.resolve("w.yaml"), """
+                name: w
+                steps:
+                  - name: b
+                    type: B
+                    when: { property: documentCount, operator: lessThan, value: 50 }
+                """);
+        registry.register("B", new RecordingStep("B", trace).factory());
+
+        Job job = newJob("j12");
+        job.properties().put("documentCount", "50");
+        run(job, WorkflowDefinition.load(yaml));
+
+        assertEquals(StepOutcome.SKIPPED, job.stepRecords().get(0).outcome());
+    }
+
+    @Test
+    public void badStepParamsFailWithStepName() {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> new WorkflowEngine(TestWorkflows.of(step("presort", "SortDocuments")),
+                        StepRegistry.withBuiltIns(), errorDir, TickingClock.oneSecondTicks()));
+
+        assertThat(e).hasMessage(
+                "Step 'presort' (SortDocuments): Missing required step param 'by'");
     }
 }

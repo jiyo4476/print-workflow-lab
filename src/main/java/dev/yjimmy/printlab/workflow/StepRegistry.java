@@ -1,5 +1,6 @@
 package dev.yjimmy.printlab.workflow;
 
+import dev.yjimmy.printlab.steps.RouteDocumentsStep;
 import dev.yjimmy.printlab.steps.RunExternalProgramStep;
 import dev.yjimmy.printlab.steps.SortDocumentsStep;
 import dev.yjimmy.printlab.steps.SplitPdfStep;
@@ -17,6 +18,7 @@ public final class StepRegistry {
         StepRegistry registry = new StepRegistry();
         registry.register("SplitPdf", SplitPdfStep::new);
         registry.register("SortDocuments", SortDocumentsStep::new);
+        registry.register("RouteDocuments", RouteDocumentsStep::new);
         registry.register("RunExternalProgram", RunExternalProgramStep::new);
         registry.register("WriteOutput", WriteOutputStep::new);
         return registry;
@@ -32,6 +34,12 @@ public final class StepRegistry {
             throw new IllegalArgumentException(
                     "Unknown step type '" + def.type() + "' in step '" + def.name() + "'");
         }
-        return factory.apply(def.params());
+        try {
+            return factory.apply(def.params());
+        } catch (IllegalArgumentException e) {
+            // Steps validate their own params; this says which step in the YAML is wrong.
+            throw new IllegalArgumentException(
+                    "Step '" + def.name() + "' (" + def.type() + "): " + e.getMessage(), e);
+        }
     }
 }

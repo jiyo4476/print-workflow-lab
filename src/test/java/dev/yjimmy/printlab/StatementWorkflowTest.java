@@ -62,12 +62,14 @@ public class StatementWorkflowTest {
         Path jobOut = outputDir.resolve(job.id());
         List<String> csv = Files.readAllLines(jobOut.resolve("documents.csv"));
         assertEquals(26, csv.size());
-        assertTrue(Files.exists(jobOut.resolve("00025.pdf")));
+        // No bad addresses and no statement over 6 pages, so everything is in the standard queue.
+        assertTrue(docs.stream().allMatch(d -> "standard".equals(d.property("queue"))));
+        assertTrue(Files.exists(jobOut.resolve("standard/00025.pdf")));
 
         JobSummary summary = JobSummaryWriter.read(job.workDir().resolve(JobSummaryWriter.FILE_NAME));
         assertEquals(JobState.COMPLETE, summary.state());
         assertEquals(25, summary.documentCount());
-        assertEquals(List.of("split-and-index", "presort", "write-output"),
+        assertEquals(List.of("split-and-index", "route", "presort", "write-output"),
                 summary.steps().stream().map(StepRecord::name).toList());
     }
 }

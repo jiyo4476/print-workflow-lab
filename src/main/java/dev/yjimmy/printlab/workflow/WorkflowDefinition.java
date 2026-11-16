@@ -14,9 +14,18 @@ import java.util.Map;
  */
 public record WorkflowDefinition(String name, String description, List<StepDefinition> steps) {
 
-    public record StepDefinition(String name, String type, Map<String, Object> params) {
+    /**
+     * @param when optional condition on the job's properties; the step is skipped when it's false
+     *     (see {@code rules.RuleParser} for the syntax), or {@code null} to always run
+     */
+    public record StepDefinition(
+            String name, String type, Map<String, Object> params, Map<String, Object> when) {
         public StepDefinition {
             params = params == null ? Map.of() : params;
+        }
+
+        public StepDefinition(String name, String type, Map<String, Object> params) {
+            this(name, type, params, null);
         }
     }
 

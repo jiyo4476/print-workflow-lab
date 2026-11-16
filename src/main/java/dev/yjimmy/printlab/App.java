@@ -18,7 +18,9 @@ import java.util.concurrent.Executors;
  *
  * <pre>
  *   run [workflow.yaml]          watch ./hotfolder and process each PDF that lands there
- *   generate &lt;count&gt; &lt;out.pdf&gt;   write a fake statement print run for testing
+ *   generate &lt;count&gt; &lt;out.pdf&gt; [badAddresses]
+ *                                write a fake statement print run for testing, optionally with
+ *                                some bad addresses for the exception queue
  * </pre>
  */
 public final class App {
@@ -33,8 +35,9 @@ public final class App {
                     return;
                 }
                 Path out = Path.of(args[2]);
+                int bad = args.length > 3 ? Integer.parseInt(args[3]) : 0;
                 new StatementPdfGenerator(System.currentTimeMillis())
-                        .generate(Integer.parseInt(args[1]), out);
+                        .generate(Integer.parseInt(args[1]), bad, out);
                 System.out.println("Wrote " + out.toAbsolutePath());
             }
             default -> usage();
@@ -87,6 +90,8 @@ public final class App {
         System.out.println("""
                 Usage:
                   run [workflow.yaml]          watch ./hotfolder and process PDFs
-                  generate <count> <out.pdf>   write a fake statement print run""");
+                  generate <count> <out.pdf> [badAddresses]
+                                               write a fake statement print run, optionally
+                                               with some bad addresses""");
     }
 }
