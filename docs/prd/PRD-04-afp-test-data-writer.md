@@ -72,7 +72,7 @@ are right.
 ## Test plan
 
 - Unit — `AfpWriterTest`: `writtenFieldIsReadBackIdentically`, `lengthIsComputedFromData`,
-  `rejectsDataLongerThanMaxFieldLength`, `sequenceNumbersIncrement`
+  `rejectsDataLongerThanMaxFieldLength`, `reservedBytesAreZero`
 - Unit — `TleEncoderTest`: `encodeThenDecodeRoundTrips`, `rejectsCharactersNotInCodePage`
 - Integration — `StatementAfpGeneratorTest`: `sameSeedProducesIdenticalBytes`,
   `groupCountEqualsStatementCount`, `everyGroupHasAccountNumberNameAndZipTles`,
@@ -83,10 +83,33 @@ are right.
 
 Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-03). Record the answers there and here.
 
+- **Decided (Q-03, 2026-11-17):** build the writer (option A). The Q-02 cross-check against an
+  independently produced AFP file is still open.
+- The font is referenced by name only: code page `T1V10037` with character set `C0D0GT10`
+  (Gothic Text, 10 pitch). Confirm the viewer finds or substitutes it during the manual check.
+- A bad-address statement writes `name` as an empty TLE rather than leaving the TLE out. PRD-05
+  decides whether an empty value counts as missing for `requiredProperties`.
+
 - A viewer may reject minimal pages (no AEG, or missing descriptors). If so, add the minimal
   descriptors the viewer needs and note it.
 - **Shortcut:** if time is short, skip this PRD. Check a sample AFP file with page groups and
   TLEs into `fixtures/afp/` and test PRD-05 against it.
+
+## Manual check (2026-11-18)
+
+`generate-afp 3 run.afp 1 42` opened in **Papyrus AFP Viewer 7.7 SP3** (free edition):
+
+- No structural errors: the viewer accepted the minimal pages (AEG with MCF, PGD and PTD) with
+  no extra descriptors.
+- It reports **3 documents and 8 pages**, matching `dump-afp`: three named page groups
+  (`S0000001`-`S0000003`) with 3, 3 and 2 pages. So the viewer treats each BNG as a document,
+  which is what PRD-05's split relies on.
+- The font doesn't resolve: `Open error for file 'T1V10037'` and `'C0D0GT10'`, then "Default
+  font used". Expected, since IBM's fonts aren't installed with the free viewer; it substitutes
+  and draws text at the PTOCA positions. Installing the fonts or mapping them in the viewer's
+  options would show real glyphs.
+
+![Generated run in Papyrus AFP Viewer](../screenshots/pr04-papyrus-viewer.png)
 
 ## Definition of done
 

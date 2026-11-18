@@ -315,7 +315,7 @@ connectors with rules.
   - `writtenFieldIsReadBackIdentically` (writer → reader, field by field)
   - `lengthIsComputedFromData`
   - `rejectsDataLongerThanMaxFieldLength` (32,759 bytes)
-  - `sequenceNumbersIncrement`
+  - `reservedBytesAreZero`
 - Unit — `TleEncoderTest`
   - `encodeThenDecodeRoundTrips` (shares cases with `TleDecoderTest`)
   - `rejectsCharactersNotInCodePage`

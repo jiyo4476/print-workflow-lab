@@ -38,7 +38,8 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 | `RouteDocumentsStep` / `when:` | Connectors with rules |
 | `RunExternalProgramStep` | External steps calling other programs |
 | `documents.csv` | Document properties file |
-| `afp/`: `AfpReader`, `TleDecoder`, `dump-afp` | AFP page groups and TLEs as document properties (the split step is planned) |
+| `afp/`: `AfpReader`, `AfpWriter`, `TleDecoder`, `TleEncoder`, `dump-afp` | AFP page groups and TLEs as document properties (the split step is planned) |
+| `generate-afp` | AFP print files from a composition system, with index tags per document |
 | WAR on Tomcat, `/api/*` servlets | The workflow server and its web services |
 | Marionette dashboard (`src/main/webapp/`) | The operator web interface |
 
@@ -50,6 +51,8 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw verify                                     # build + tests
 ./mvnw -q exec:java -Dexec.args="generate 200 run.pdf"   # make a fake 200-statement print run
 ./mvnw -q exec:java -Dexec.args="generate 50 bad.pdf 5"  # ...50 statements, 5 with bad addresses
+./mvnw -q exec:java -Dexec.args="generate-afp 200 run.afp"  # the same kind of run as AFP
+./mvnw -q exec:java -Dexec.args="generate-afp 50 run.afp 5 42"  # 5 bad addresses, seed 42
 ./mvnw -q exec:java                               # start watching ./hotfolder
 ./mvnw -q exec:java -Dexec.args="dump-afp statement.afp"  # print an AFP file's structure
 ```
@@ -144,6 +147,15 @@ For a file from another country pass its code page: `dump-afp file.afp IBM500`. 
 its own code page (an `X'01'` triplet) uses that one. The rules follow the MO:DCA Reference,
 AFPC-0004-11.
 
+`generate-afp <count> <out.afp> [badAddresses] [seed]` writes AFP test input. Each statement is a
+named page group (`BNG S0000001`) with three TLEs (`accountNumber`, `name`, `zip`), then its
+pages. Each page has an environment group (a font reference by name, page and text
+descriptors) and one presentation text object (PTOCA). `generate` takes the same optional seed,
+and the same seed gives the same statements in both formats, so a PDF run and an AFP run can be
+compared document by document. A bad-address statement has an empty `name` TLE or a 4-digit
+`zip`. Output is byte-identical for a seed; the PDF isn't, because PDFBox writes a random file
+ID.
+
 ### Web app on Tomcat
 
 The project builds a WAR (`target/print-workflow-lab.war`) for Apache Tomcat 10.1
@@ -182,13 +194,14 @@ all three together.
 
 ```
 src/main/java/dev/yjimmy/printlab/
-  App.java                 entry point: run | generate | dump-afp
+  App.java                 entry point: run | generate | generate-afp | dump-afp
   workflow/                Job, Document, Step, WorkflowDefinition, WorkflowEngine, StepRegistry
   workflow/rules/          Condition, Rule, RuleParser: routing rules and `when:`
   steps/                   SplitPdf, RouteDocuments, SortDocuments, RunExternalProgram, WriteOutput
   input/HotFolderWatcher   folder intake
-  testdata/                fake statement print-run generator (PDFBox)
-  afp/                     AFP reader, field names, EBCDIC, TLE decoder, dump tool
+  testdata/                fake statement print runs: shared data and layout, PDF and AFP writers
+  afp/                     AFP reader and writer, field names, EBCDIC, TLE decoder and encoder,
+                           dump tool
   web/                     servlets (HealthServlet)
 src/main/webapp/
   index.html               dashboard page; loads WebJars, then js/

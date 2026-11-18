@@ -3,6 +3,7 @@ package dev.yjimmy.printlab;
 import dev.yjimmy.printlab.afp.AfpDump;
 import dev.yjimmy.printlab.afp.Ebcdic;
 import dev.yjimmy.printlab.input.HotFolderWatcher;
+import dev.yjimmy.printlab.testdata.StatementAfpGenerator;
 import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
 import dev.yjimmy.printlab.workflow.Job;
 import dev.yjimmy.printlab.workflow.StepRegistry;
@@ -22,9 +23,12 @@ import java.util.concurrent.Executors;
  *
  * <pre>
  *   run [workflow.yaml]          watch ./hotfolder and process each PDF that lands there
- *   generate &lt;count&gt; &lt;out.pdf&gt; [badAddresses]
+ *   generate &lt;count&gt; &lt;out.pdf&gt; [badAddresses] [seed]
  *                                write a fake statement print run for testing, optionally with
  *                                some bad addresses for the exception queue
+ *   generate-afp &lt;count&gt; &lt;out.afp&gt; [badAddresses] [seed]
+ *                                the same run as AFP, one page group with TLEs per statement;
+ *                                the same seed gives the same statements as generate
  *   dump-afp &lt;file.afp&gt; [codePage]
  *                                print an AFP file's structured fields and TLEs; exits 1 if
  *                                the file has structural problems
@@ -36,16 +40,21 @@ public final class App {
         String command = args.length > 0 ? args[0] : "run";
         switch (command) {
             case "run" -> run(Path.of(args.length > 1 ? args[1] : "workflows/statements.yaml"));
-            case "generate" -> {
+            case "generate", "generate-afp" -> {
                 if (args.length < 3) {
                     usage();
                     return;
                 }
+                int count = Integer.parseInt(args[1]);
                 Path out = Path.of(args[2]);
                 int bad = args.length > 3 ? Integer.parseInt(args[3]) : 0;
-                new StatementPdfGenerator(System.currentTimeMillis())
-                        .generate(Integer.parseInt(args[1]), bad, out);
-                System.out.println("Wrote " + out.toAbsolutePath());
+                long seed = args.length > 4 ? Long.parseLong(args[4]) : System.currentTimeMillis();
+                if (command.equals("generate")) {
+                    new StatementPdfGenerator(seed).generate(count, bad, out);
+                } else {
+                    new StatementAfpGenerator(seed).generate(count, bad, out);
+                }
+                System.out.println("Wrote " + out.toAbsolutePath() + " (seed " + seed + ")");
             }
             case "dump-afp" -> {
                 if (args.length < 2) {
@@ -111,9 +120,12 @@ public final class App {
         System.out.println("""
                 Usage:
                   run [workflow.yaml]          watch ./hotfolder and process PDFs
-                  generate <count> <out.pdf> [badAddresses]
+                  generate <count> <out.pdf> [badAddresses] [seed]
                                                write a fake statement print run, optionally
                                                with some bad addresses
+                  generate-afp <count> <out.afp> [badAddresses] [seed]
+                                               the same run as AFP (same seed, same
+                                               statements)
                   dump-afp <file.afp> [codePage]
                                                print an AFP file's structured fields and TLEs;
                                                code page defaults to IBM037""");

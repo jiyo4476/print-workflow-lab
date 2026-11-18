@@ -1,6 +1,7 @@
 package dev.yjimmy.printlab.afp;
 
 import java.nio.charset.Charset;
+import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
@@ -17,6 +18,8 @@ public final class Ebcdic {
 
     /** EBCDIC code page 037, US/Canada. Ships in the JDK's {@code jdk.charsets} module. */
     public static final Charset IBM037 = Charset.forName("IBM037");
+    /** The space character, {@code 0x40}, in the single-byte EBCDIC code pages. */
+    public static final byte SPACE = 0x40;
 
     private Ebcdic() {
     }
@@ -34,6 +37,26 @@ public final class Ebcdic {
     }
 
     public static byte[] encode(String text, Charset codePage) {
+        return text.getBytes(codePage);
+    }
+
+    /**
+     * Like {@link #encode(String, Charset)}, but fails instead of writing a substitute character
+     * for characters the code page doesn't have.
+     *
+     * @throws IllegalArgumentException naming the first character that can't be encoded
+     */
+    public static byte[] encodeStrict(String text, Charset codePage) {
+        CharsetEncoder encoder = codePage.newEncoder();
+        for (int i = 0; i < text.length(); i = text.offsetByCodePoints(i, 1)) {
+            int c = text.codePointAt(i);
+            String character = new String(Character.toChars(c));
+            if (!encoder.canEncode(character)) {
+                throw new IllegalArgumentException(String.format(Locale.ROOT,
+                        "'%s' (U+%04X) at index %d of \"%s\" isn't in code page %s",
+                        character, c, i, text, codePage.name()));
+            }
+        }
         return text.getBytes(codePage);
     }
 

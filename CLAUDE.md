@@ -20,6 +20,7 @@ Use `./mvnw` (or `mvnw.cmd` on Windows); it downloads Maven on first use.
 ./mvnw test -Dtest=WorkflowEngineTest#someMethod  # one test method
 ./mvnw -q exec:java -Dexec.args="generate 200 run.pdf"  # fake 200-statement print run
 ./mvnw -q exec:java -Dexec.args="generate 50 bad.pdf 5" # ...with 5 bad addresses
+./mvnw -q exec:java -Dexec.args="generate-afp 50 run.afp 5 42" # same run as AFP; seed 42
 ./mvnw -q exec:java                             # watch ./hotfolder with workflows/statements.yaml
 ./mvnw package cargo:run [-Dtomcat.port=8095]   # WAR on Tomcat at http://localhost:8080/
 
@@ -73,9 +74,14 @@ report's line total rounded *down* to two decimals, in its own commit.
   lists all 98 structured fields from Appendix E; Begin/End is the middle ID byte (`A8`/`A9`).
   `TleDecoder` reads triplets `01` (code page), `02` type `0B` (name) and `36` (value); text is
   EBCDIC via `Ebcdic` (IBM037 default, code page is a parameter).
-  `AfpDump` backs `App dump-afp` and reports structural problems instead of stopping. The
-  writer (PRD-04) and `SplitAfp` step (PRD-05) are next. Build AFP test input with
-  `testsupport/AfpBytes`.
+  `AfpDump` backs `App dump-afp` and reports structural problems instead of stopping.
+  `AfpWriter` and `TleEncoder` are the inverses (lengths computed, reserved bytes `0000`,
+  `Ebcdic.encodeStrict` rejects characters the code page lacks). The `SplitAfp` step (PRD-05) is
+  next. Build small AFP test input with `testsupport/AfpBytes`.
+- **`testdata/`**: `StatementDataGenerator` draws the statements for a seed, `StatementLayout`
+  places their text, and `StatementPdfGenerator` / `StatementAfpGenerator` write them, so one
+  seed gives the same statements in both formats. Its draw order is fixed: changing it changes
+  every seeded run. The package is excluded from the coverage gate.
 - **Dashboard** (`src/main/webapp/`): plain browser scripts with no JS build. `index.html` loads
   the libraries from WebJars (`/webjars/<name>/<version>/...`) as globals, in a fixed order, then
   `js/*.js` (an IIFE namespace `PrintLab`; `main.js` starts the app). The tests in
