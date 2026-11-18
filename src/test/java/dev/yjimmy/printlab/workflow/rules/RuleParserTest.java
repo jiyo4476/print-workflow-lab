@@ -119,6 +119,9 @@ public class RuleParserTest {
                 () -> RuleParser.parse(Map.of("operator", "missing"))))
                 .hasMessageContaining("needs a 'property'");
         assertThat(assertThrows(IllegalArgumentException.class,
+                () -> RuleParser.parse(Map.of("property", "  ", "operator", "missing"))))
+                .hasMessageContaining("needs a 'property'");
+        assertThat(assertThrows(IllegalArgumentException.class,
                 () -> RuleParser.parse(Map.of("property", "zip"))))
                 .hasMessageContaining("needs an 'operator'");
     }

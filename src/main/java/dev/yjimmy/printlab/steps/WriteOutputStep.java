@@ -42,7 +42,7 @@ public final class WriteOutputStep implements Step {
         job.documents().forEach(d -> columns.addAll(d.properties().keySet()));
 
         List<String> lines = new ArrayList<>();
-        lines.add(String.join(",", columns));
+        lines.add(String.join(",", columns.stream().map(WriteOutputStep::csv).toList()));
         Map<String, Integer> positions = new HashMap<>();
         for (Document doc : job.documents()) {
             String queue = doc.property(RouteDocumentsStep.QUEUE);
@@ -67,8 +67,10 @@ public final class WriteOutputStep implements Step {
         job.properties().put("outputDir", jobOut.toString());
     }
 
-    private static String csv(String value) {
-        if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
+    /** Quotes a CSV field when it contains a comma, quote, or line break (RFC 4180). */
+    static String csv(String value) {
+        if (value.contains(",") || value.contains("\"") || value.contains("\n")
+                || value.contains("\r")) {
             return "\"" + value.replace("\"", "\"\"") + "\"";
         }
         return value;

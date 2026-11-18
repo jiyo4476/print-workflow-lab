@@ -313,4 +313,42 @@ public class WorkflowEngineTest {
         assertThat(e).hasMessage(
                 "Step 'presort' (SortDocuments): Missing required step param 'by'");
     }
+
+    @Test
+    public void workflowWithNoStepsFailsToLoad() throws Exception {
+        for (String yaml : new String[] {"name: empty\nsteps: []\n", "name: empty\n"}) {
+            Path file = Files.writeString(tmp.resolve("empty.yaml"), yaml);
+
+            IllegalArgumentException e = assertThrows(yaml, IllegalArgumentException.class,
+                    () -> WorkflowDefinition.load(file));
+
+            assertThat(e).hasMessage("Workflow 'empty' has no steps");
+        }
+    }
+
+    @Test
+    public void unknownKeyInWorkflowYamlFailsToLoad() throws Exception {
+        Path file = Files.writeString(tmp.resolve("typo.yaml"), """
+                name: typo
+                stpes:
+                  - name: a
+                    type: A
+                """);
+
+        assertThat(assertThrows(Exception.class, () -> WorkflowDefinition.load(file)))
+                .hasMessageContaining("stpes");
+    }
+
+    @Test
+    public void errorFolderThatCannotBeWrittenStillLeavesTheJobInError() throws Exception {
+        registerOkAndBoom();
+        Files.writeString(errorDir, "a file where the error folder should be");
+
+        Job job = newJob("j13");
+        run(job, TestWorkflows.of(step("boom", "Boom")));
+
+        assertEquals(JobState.ERROR, job.state());
+        assertEquals("bad page", job.errorMessage());
+        assertTrue("input stays where it was", Files.exists(job.inputFile()));
+    }
 }
