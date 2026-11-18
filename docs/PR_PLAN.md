@@ -267,10 +267,10 @@ connectors with rules.
 
 **Goal:** read any AFP file as a sequence of structured fields.
 
-- `StructuredField` record: offset, length, type ID (3 bytes), flags, sequence number, data.
+- `StructuredField` record: offset, length, type ID (3 bytes), flags, reserved bytes, data.
 - `AfpReader` implementing `Iterator<StructuredField>` over an `InputStream`: expects `0x5A`,
   reads the 2-byte big-endian length (counts itself but not the `0x5A`), the 3-byte ID, flag
-  byte, 2-byte sequence, then `length - 8` data bytes. Errors include the byte offset.
+  byte, 2 reserved bytes, then `length - 8` data bytes. Errors include the byte offset.
 - `FieldType` enum mapping IDs to names (BDT/EDT, BNG/ENG, BPG/EPG, BAG/EAG, BRG/ERG, TLE, PTX,
   NOP, IMM, IPO, MCF, PGD, …). Unknown IDs print as hex.
 - `Ebcdic` helper (`Charset.forName("IBM037")`) and a TLE decoder (triplet `0x02` for the
@@ -305,7 +305,7 @@ connectors with rules.
 
 **Goal:** generate AFP statement runs with the same content as the PDF generator.
 
-- `AfpWriter` that emits structured fields (computes lengths, sequence numbers).
+- `AfpWriter` that emits structured fields (computes lengths; reserved bytes `0000`).
 - `StatementAfpGenerator`: one BNG/ENG page group per statement, TLEs for `accountNumber`,
   `name`, `zip`; pages with minimal PTOCA text using a standard coded font reference.
 - CLI: `App generate-afp <count> <out.afp>`.

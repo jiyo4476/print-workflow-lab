@@ -1,11 +1,15 @@
 package dev.yjimmy.printlab;
 
+import dev.yjimmy.printlab.afp.AfpDump;
+import dev.yjimmy.printlab.afp.Ebcdic;
 import dev.yjimmy.printlab.input.HotFolderWatcher;
 import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
 import dev.yjimmy.printlab.workflow.Job;
 import dev.yjimmy.printlab.workflow.StepRegistry;
 import dev.yjimmy.printlab.workflow.WorkflowDefinition;
 import dev.yjimmy.printlab.workflow.WorkflowEngine;
+import java.io.InputStream;
+import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -21,6 +25,9 @@ import java.util.concurrent.Executors;
  *   generate &lt;count&gt; &lt;out.pdf&gt; [badAddresses]
  *                                write a fake statement print run for testing, optionally with
  *                                some bad addresses for the exception queue
+ *   dump-afp &lt;file.afp&gt; [codePage]
+ *                                print an AFP file's structured fields and TLEs; exits 1 if
+ *                                the file has structural problems
  * </pre>
  */
 public final class App {
@@ -39,6 +46,20 @@ public final class App {
                 new StatementPdfGenerator(System.currentTimeMillis())
                         .generate(Integer.parseInt(args[1]), bad, out);
                 System.out.println("Wrote " + out.toAbsolutePath());
+            }
+            case "dump-afp" -> {
+                if (args.length < 2) {
+                    usage();
+                    return;
+                }
+                Charset codePage = args.length > 2 ? Charset.forName(args[2]) : Ebcdic.IBM037;
+                int problems;
+                try (InputStream in = Files.newInputStream(Path.of(args[1]))) {
+                    problems = new AfpDump(codePage).dump(in, System.out);
+                }
+                if (problems > 0) {
+                    System.exit(1);
+                }
             }
             default -> usage();
         }
@@ -92,6 +113,9 @@ public final class App {
                   run [workflow.yaml]          watch ./hotfolder and process PDFs
                   generate <count> <out.pdf> [badAddresses]
                                                write a fake statement print run, optionally
-                                               with some bad addresses""");
+                                               with some bad addresses
+                  dump-afp <file.afp> [codePage]
+                                               print an AFP file's structured fields and TLEs;
+                                               code page defaults to IBM037""");
     }
 }

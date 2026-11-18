@@ -1,2 +1,7 @@
 mvnw text eol=lf
 *.cmd text eol=crlf
+
+# Test fixtures: AFP files are binary, and golden dumps always use LF line endings.
+*.afp binary
+*.dump.txt text eol=lf
+*.pdf binary

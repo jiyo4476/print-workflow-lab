@@ -41,9 +41,11 @@ concrete evidence of AFP knowledge.
 ## Requirements
 
 **Functional**
-- **FR-1** Each field: offset, length, 3-byte type ID, flags, sequence number, data.
-- **FR-2** The reader expects `0x5A`, then a 2-byte big-endian length that **counts itself but
-  not the `0x5A`**, then ID (3), flags (1), sequence (2), and `length - 8` data bytes.
+- **FR-1** Each field: offset, length, 3-byte type ID, flags, the 2 reserved bytes, extension,
+  data. *(Revised: was "sequence number"; MO:DCA reserves bytes 6-7.)*
+- **FR-2** The reader expects `0x5A`, then a 2-byte big-endian length (8-32,767) that **counts
+  itself but not the `0x5A`**, then ID (3), flags (1), reserved (2), and `length - 8` bytes of
+  extension, data and padding. *(Revised: added the length range, extension and padding.)*
 - **FR-3** Zero-length data is valid.
 - **FR-4** A missing introducer or a truncated field throws an exception naming the byte offset.
 - **FR-5** An empty file yields no fields.
@@ -97,6 +99,53 @@ Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTION
   IBM037 as the default.
 - Finding a freely shareable real AFP sample may be hard. If so, the manual check uses PRD-04
   output, and the PR says so.
+
+## Implementation notes
+
+Decisions made while building this PR, beyond the requirements above:
+
+- `AfpReader` is an `Iterator<StructuredField>`, so it throws unchecked exceptions:
+  `AfpFormatException` (with `offset()`) for bad bytes, `UncheckedIOException` for I/O. After an
+  error `hasNext()` is false. `readAll` is a convenience for small inputs.
+- Checked against the MO:DCA Reference, AFPC-0004-11 (August 2026), "MO:DCA Structured Field
+  Syntax". That changed FR-1 and FR-2: bytes 6-7 are **reserved** (MO:DCA calls a sequence
+  number there unarchitected), so the record component is `reserved()`; the `0x5A` is a
+  platform carriage-control byte, not part of MO:DCA; SFLength must be 8-32,767.
+- The extension flag (`0x80`) is handled: the extension is split off into
+  `StructuredField.extension()`. Padding (`0x08`) is stripped, using the 1-byte or 3-byte
+  padding length at the end of the field, so `data()` is always the field's real data.
+  Segmented fields (`0x20`) are returned one by one, not joined; `dump-afp` reports a segment
+  that isn't directly followed by the next one, as MO:DCA requires.
+- Begin/End is decided by the middle ID byte (`A8` Begin, `A9` End), not by the `FieldType`
+  list, so nesting works for fields the enum doesn't name. `matchingEndId()` gives the End for a
+  Begin.
+- `FieldType` lists all 98 structured fields in the reference's Appendix E table, in its order,
+  with the reference's acronyms (`PTD-1`, `MCF-1`, `PGP-1`) and coexistence/obsolete notes.
+  `everyBeginTypeHasItsEndType` and `idsAreInTheReferenceOrder` guard the list.
+- `TleDecoder` accepts only an attribute name in FQN format `00` (character string); another
+  format (an OID or URL) fails with its offset instead of decoding as unreadable text.
+- `TleDecoder` follows the TLE and triplet definitions: triplets are 3-254 bytes, an FQN at
+  least 5 and an Attribute Value at least 4; the attribute name and value must each occur
+  exactly once; a CGCSGID (X'01') triplet sets the code page for the triplets after it (by
+  CPGID, or by CCSID, including UTF-8 and UTF-16). IS/3 requires that support. A CGCSGID on an
+  enclosing Begin field, which would apply to the whole envelope, is not applied yet.
+- `dump-afp` shows each Begin field's 8-character name, and reports problems on `!!` lines
+  instead of stopping: an End with no matching Begin, an End whose name differs from its Begin's
+  (an End name starting `FFFF` matches any), a Begin never closed, an interrupted segment, a TLE
+  that won't decode, and the offset of bytes that aren't a field. It doesn't check which fields
+  each envelope may contain (the "data stream states" in the reference). The last line counts fields and problems;
+  the exit code is 1 when there are any. This is the "won't split" support scenario.
+- A missing-introducer error says files copied from a mainframe sometimes have a record header
+  before each field (a common reason a file "isn't AFP").
+- The code page is a parameter everywhere (`dump-afp <file> [codePage]`), IBM037 by default.
+- Extra tests beyond the plan: `truncatedHeaderFailsWithOffset`, `lengthShorterThanHeaderFails`,
+  `extensionIsSeparatedFromData`, `extensionLongerThanFieldFails`, `readsOneFieldAtATime`
+  (NFR-1), `ioErrorsAreUnchecked`, `otherCodePagesCanBeUsed`, `missingNameTripletFails`,
+  `tripletRunningPastTheDataFails`, and the dump problem cases.
+- Golden-file fixture: `minimal.afp` comes from a small Python script (`cp037` codec), not from
+  this project's code; a test rebuilds it with `AfpBytes` and compares the bytes. That's an
+  independent cross-check of the byte layout, but not the real-world sample Q-02 asks for, so
+  the manual check against a production AFP file and viewer is still open.
 
 ## Definition of done
 

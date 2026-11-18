@@ -38,7 +38,7 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 | `RouteDocumentsStep` / `when:` | Connectors with rules |
 | `RunExternalProgramStep` | External steps calling other programs |
 | `documents.csv` | Document properties file |
-| `afp/` (planned) | AFP page groups and TLEs as document properties |
+| `afp/`: `AfpReader`, `TleDecoder`, `dump-afp` | AFP page groups and TLEs as document properties (the split step is planned) |
 | WAR on Tomcat, `/api/*` servlets | The workflow server and its web services |
 | Marionette dashboard (`src/main/webapp/`) | The operator web interface |
 
@@ -51,6 +51,7 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw -q exec:java -Dexec.args="generate 200 run.pdf"   # make a fake 200-statement print run
 ./mvnw -q exec:java -Dexec.args="generate 50 bad.pdf 5"  # ...50 statements, 5 with bad addresses
 ./mvnw -q exec:java                               # start watching ./hotfolder
+./mvnw -q exec:java -Dexec.args="dump-afp statement.afp"  # print an AFP file's structure
 ```
 
 Then move `run.pdf` into `hotfolder/` and look in `output/`. On Windows use `mvnw.cmd`. In
@@ -112,6 +113,37 @@ for it. Mistakes in rules (unknown operator, bad regex, no `value`) stop the wor
 loading, with the step's name in the message. In double-quoted YAML a regex backslash is doubled
 (`"\\d{5}"`); in single quotes it isn't (`'\d{5}'`).
 
+### Reading AFP
+
+An AFP (MO:DCA) file is a flat run of *structured fields*, each preceded by `0x5A`: a 2-byte
+length (8 to 32,767) that counts itself but not the `0x5A`, a 3-byte type ID (`D3A8AD` is BNG,
+Begin Named Page Group), a flags byte, two reserved bytes (often used as a sequence number),
+then data. The reader strips padding and splits off any extension. Begin and End fields nest: document, page groups,
+pages. In a statement run each page group is one customer, and the Tag Logical Elements (TLEs)
+at its start are that document's index. Text inside AFP is EBCDIC (code page IBM037 by default).
+
+`dump-afp` prints one line per field, indented between each Begin and its End, with TLE values
+inline:
+
+```
+Offset    Length  Field
+00000000      16  BDT  Begin Document  "STMTRUN "
+00000011      16    BNG  Begin Named Page Group  "G0000001"
+00000022      49      TLE  Tag Logical Element  accountNumber = "1234567890"
+00000054      32      TLE  Tag Logical Element  name = "AVERY NGUYEN"
+0000008E      16      BPG  Begin Page  "P0000001"
+...
+17 fields, 0 problems
+```
+
+Offsets are hex and lengths are each field's own length value. Problems are marked `!!` and don't
+stop the dump: an End with no Begin or with a different name, a page group never closed, a
+segmented field interrupted by another field, a TLE with no value. Bytes that aren't a structured
+field end it with their offset. The exit code is 1 when there are problems.
+For a file from another country pass its code page: `dump-afp file.afp IBM500`. A TLE that names
+its own code page (an `X'01'` triplet) uses that one. The rules follow the MO:DCA Reference,
+AFPC-0004-11.
+
 ### Web app on Tomcat
 
 The project builds a WAR (`target/print-workflow-lab.war`) for Apache Tomcat 10.1
@@ -150,13 +182,13 @@ all three together.
 
 ```
 src/main/java/dev/yjimmy/printlab/
-  App.java                 entry point: run | generate
+  App.java                 entry point: run | generate | dump-afp
   workflow/                Job, Document, Step, WorkflowDefinition, WorkflowEngine, StepRegistry
   workflow/rules/          Condition, Rule, RuleParser: routing rules and `when:`
   steps/                   SplitPdf, RouteDocuments, SortDocuments, RunExternalProgram, WriteOutput
   input/HotFolderWatcher   folder intake
   testdata/                fake statement print-run generator (PDFBox)
-  afp/                     AFP support (planned, see package-info.java)
+  afp/                     AFP reader, field names, EBCDIC, TLE decoder, dump tool
   web/                     servlets (HealthServlet)
 src/main/webapp/
   index.html               dashboard page; loads WebJars, then js/
@@ -174,8 +206,10 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
 - [x] Workflow engine, YAML workflows, step registry
 - [x] Hot folder intake that waits for files to finish copying
 - [x] PDF split + region-based indexing, zip presort, output with document index
-- [ ] **AFP:** structured-field reader and dump tool, test-data writer with page groups + TLEs,
-      `SplitAfp` step that reads document properties from TLEs
+- [ ] **AFP:**
+  - [x] Structured-field reader and dump tool
+  - [ ] Test-data writer with page groups + TLEs
+  - [ ] `SplitAfp` step that reads document properties from TLEs
 - [x] Routing rules: send documents to an exception queue (e.g. invalid zip), flag large
       documents for a different envelope
 - [ ] Barcode step (ZXing) for inserter control
