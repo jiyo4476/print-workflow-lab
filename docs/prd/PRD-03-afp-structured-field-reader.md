@@ -98,7 +98,8 @@ Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTION
 - Real AFP files may use a different code page than IBM037. Make the code page a parameter, with
   IBM037 as the default.
 - Finding a freely shareable real AFP sample may be hard. If so, the manual check uses PRD-04
-  output, and the PR says so.
+  output, and the PR says so. **Resolved (Q-02):** a public sample is used but kept local-only;
+  see "Manual check" below.
 
 ## Implementation notes
 
@@ -144,8 +145,26 @@ Decisions made while building this PR, beyond the requirements above:
   `tripletRunningPastTheDataFails`, and the dump problem cases.
 - Golden-file fixture: `minimal.afp` comes from a small Python script (`cp037` codec), not from
   this project's code; a test rebuilds it with `AfpBytes` and compares the bytes. That's an
-  independent cross-check of the byte layout, but not the real-world sample Q-02 asks for, so
-  the manual check against a production AFP file and viewer is still open.
+  independent cross-check of the byte layout, but not the real-world sample Q-02 asks for.
+
+## Manual check (2026-11-18, closes Q-02)
+
+The AFPWorld "Example Healthcare document" (`01_Health_Coverage.afp`, written by Timitoo
+Formatter Fox, kept local-only in `samples/afpworld/`) compared with **Papyrus AFP Viewer 7.7
+SP3** (free edition):
+
+- `dump-afp` reads all 12,784 bytes as 25 fields with 0 problems: BPF, an inline resource group
+  (BRG) with the JPEG logo in an object container, then BDT with one page.
+- Papyrus shows the same: one document, one page.
+- Papyrus reports `TTF file 'Arial Bold' not found in library ''`. That matches the dump: the
+  page's MDR maps TrueType fonts by name (Arial Bold, Segoe UI, Arial) instead of using an MCF.
+  It's a viewer setting (no TrueType library path), not a reading error. An older viewer,
+  AFPviewer 2.51, fails on the same file with "Missing Character Set Resource" because it
+  doesn't support TrueType fonts mapped through an MDR.
+- The golden dump is `afpworld-health-coverage.dump.txt`, checked by
+  `DumpAfpTest.afpWorldHealthCoverageSampleMatchesGoldenDump` when the sample is present.
+
+The sample has no named page groups or TLEs, so it confirms the reader, not PRD-05's split.
 
 ## Definition of done
 

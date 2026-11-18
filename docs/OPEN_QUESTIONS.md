@@ -18,7 +18,7 @@ are suggestions, not decisions: the PR that answers the question makes the call.
 | ID | PRD | Question | Recommended | Status |
 |---|---|---|---|---|
 | [Q-01](#q-01--exception-and-queue-csv-layout) | [PRD-02](prd/PRD-02-routing-rules-and-exception-queue.md) | One CSV per queue, or one CSV with a `queue` column? | One combined CSV | **Decided:** one combined CSV |
-| [Q-02](#q-02--real-afp-sample-for-the-manual-check) | [PRD-03](prd/PRD-03-afp-structured-field-reader.md) | Where does a real AFP file for the manual check come from? | Generate one with Apache FOP | Open |
+| [Q-02](#q-02--real-afp-sample-for-the-manual-check) | [PRD-03](prd/PRD-03-afp-structured-field-reader.md) | Where does a real AFP file for the manual check come from? | Generate one with Apache FOP | **Decided:** AFPWorld sample, local only |
 | [Q-03](#q-03--build-the-afp-writer-or-check-in-a-sample) | [PRD-04](prd/PRD-04-afp-test-data-writer.md) | Build the AFP test-data writer, or check in a sample AFP file? | Build the writer; keep the FOP file as a cross-check | Decided |
 | [Q-04](#q-04--tle-name-mapping) | [PRD-05](prd/PRD-05-split-afp-step.md) | Add an optional `rename:` map for TLE names? | Not yet; configurable key names only | Open |
 | [Q-05](#q-05--require-the-postgresql-ci-job) | [PRD-13](prd/PRD-13-persistence.md) | Make the Testcontainers PostgreSQL job required? | Required from the start | **Decided:** required, in Jenkins |
@@ -75,8 +75,17 @@ Where does that file come from?
 `src/test/resources/afp/`, and note in the PR how it was made. Fall back to B if FOP's output
 lacks what's needed.
 
-- **Answer:** —
-- **Status:** Open · **PR:** —
+- **Answer:** A, kept local-only. The "Example Healthcare document" from
+  [AFPWorld's sample files](https://www.afpworld.com/educate/sample-afp-files.html) (written by
+  Timitoo Formatter Fox) lives in the gitignored `samples/afpworld/`, since it has no
+  redistribution license. Only our golden dump of it is checked in
+  (`afpworld-health-coverage.dump.txt`); `DumpAfpTest` compares against it when the file is
+  present and skips otherwise. Checked on 2026-11-18 in Papyrus AFP Viewer 7.7 SP3: one
+  document, one page, as in the dump (BPF/BRG/BDT, no page groups), and the viewer's missing
+  font errors name the TrueType fonts (`Arial Bold`) the dump shows in the MDR. The sample has
+  no page groups or TLEs, so PRD-05's split is still checked only against our own writer; the
+  FOP file (option C) stays an option if that needs an independent cross-check.
+- **Status:** Decided (2026-11-18) · **PR:** #12 (sample and golden dump)
 
 ## PRD-04 — AFP test-data writer
 
