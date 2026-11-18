@@ -83,8 +83,9 @@ are right.
 
 Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-03). Record the answers there and here.
 
-- **Decided (Q-03, 2026-11-17):** build the writer (option A). The Q-02 cross-check against an
-  independently produced AFP file is still open.
+- **Decided (Q-03, 2026-11-17):** build the writer (option A). Q-02 was closed on 2026-11-18
+  with a third-party sample checked against the reader; it has no page groups or TLEs, so the
+  writer's group and TLE encoding is checked by the reader and a viewer, not another tool.
 - The font is referenced by name only: code page `T1V10037` with character set `C0D0GT10`
   (Gothic Text, 10 pitch). Confirm the viewer finds or substitutes it during the manual check.
 - A bad-address statement writes `name` as an empty TLE rather than leaving the TLE out. PRD-05
