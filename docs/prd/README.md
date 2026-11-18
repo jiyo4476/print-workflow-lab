@@ -21,7 +21,7 @@ their order: PRD-19 lands right after PRD-00.
 | [02](PRD-02-routing-rules-and-exception-queue.md) | Routing rules and exception queue | Core | M | 01 |
 | [03](PRD-03-afp-structured-field-reader.md) | AFP structured-field reader + dump tool | AFP | M | 00 |
 | [04](PRD-04-afp-test-data-writer.md) | AFP test-data writer (page groups + TLEs) | AFP | M | 03 |
-| [05](PRD-05-split-afp-step.md) | `SplitAfp` step: TLEs become document properties | AFP | M | 04 |
+| [05](PRD-05-split-afp-step.md) | `SplitAfp` step: TLEs become document properties; `MapProperties` renaming | AFP | M | 04 |
 | [06](PRD-06-multiple-input-devices.md) | Multiple input devices | AFP | S | 05 |
 | [07](PRD-07-pdf-object-reader.md) | PDF object reader + dump tool | PDF | L | 00 |
 | [08](PRD-08-modern-pdf-structure.md) | Modern PDF structure: xref streams, object streams, incremental updates | PDF | M | 07 |

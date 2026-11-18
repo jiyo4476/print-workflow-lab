@@ -20,7 +20,7 @@ are suggestions, not decisions: the PR that answers the question makes the call.
 | [Q-01](#q-01--exception-and-queue-csv-layout) | [PRD-02](prd/PRD-02-routing-rules-and-exception-queue.md) | One CSV per queue, or one CSV with a `queue` column? | One combined CSV | **Decided:** one combined CSV |
 | [Q-02](#q-02--real-afp-sample-for-the-manual-check) | [PRD-03](prd/PRD-03-afp-structured-field-reader.md) | Where does a real AFP file for the manual check come from? | Generate one with Apache FOP | **Decided:** AFPWorld sample, local only |
 | [Q-03](#q-03--build-the-afp-writer-or-check-in-a-sample) | [PRD-04](prd/PRD-04-afp-test-data-writer.md) | Build the AFP test-data writer, or check in a sample AFP file? | Build the writer; keep the FOP file as a cross-check | Decided |
-| [Q-04](#q-04--tle-name-mapping) | [PRD-05](prd/PRD-05-split-afp-step.md) | Add an optional `rename:` map for TLE names? | Not yet; configurable key names only | Open |
+| [Q-04](#q-04--tle-name-mapping) | [PRD-05](prd/PRD-05-split-afp-step.md) | Add an optional `rename:` map for TLE names? | Not yet; configurable key names only | **Decided:** a reusable `MapProperties` step |
 | [Q-05](#q-05--require-the-postgresql-ci-job) | [PRD-13](prd/PRD-13-persistence.md) | Make the Testcontainers PostgreSQL job required? | Required from the start | **Decided:** required, in Jenkins |
 | [Q-06](#q-06--reprint-across-jobs) | [PRD-15](prd/PRD-15-reprint-and-retry.md) | Can one reprint combine documents from different jobs? | Not yet: one job per reprint | Open |
 | [Q-07](#q-07--marking-afp-reprints) | [PRD-15](prd/PRD-15-reprint-and-retry.md) | How are reprinted AFP documents marked? | A `Reprint` TLE now; a visible mark later | Open |
@@ -125,8 +125,12 @@ C if time is short; B only as a last resort.
 **Recommendation:** A now. If a real file needs renaming, prefer C over B, since that's the
 ProcessDirector concept worth showing.
 
-- **Answer:** —
-- **Status:** Open · **PR:** —
+- **Answer:** C, add renaming as a separate, reusable `MapProperties` step with a `rename:` map
+  and an optional `requiredProperties` checked after renaming. It's built in PR 5, alongside
+  `SplitAfp`. To exercise it end to end, `App generate-afp --tle-names legacy` writes
+  production-style TLE names (`ACCT_NO`, `CUST_NAME`, `ZIP_CODE`), and
+  `workflows/statements-afp-legacy.yaml` maps them back. See PRD-05 FR-8 to FR-10.
+- **Status:** Decided (2026-11-18) · **PR:** plan PR 5 (`feature/05-split-afp`)
 
 ## PRD-13 — Persistence
 

@@ -23,7 +23,7 @@ starting a PR and record the answer there.
 | 2 | Routing rules and exception queue | Core | M | 1 |
 | 3 | AFP structured-field reader + dump tool | AFP | M | 0 |
 | 4 | AFP test-data writer (page groups + TLEs) | AFP | M | 3 |
-| 5 | `SplitAfp` step: TLEs become document properties | AFP | M | 4 |
+| 5 | `SplitAfp` step: TLEs become document properties; `MapProperties` renaming | AFP | M | 4 |
 | 6 | Multiple input devices (folder → workflow mapping) | AFP | S | 5 |
 | 7 | PDF object reader + dump tool | PDF | L | 0 |
 | 8 | Modern PDF structure: xref streams, object streams, incremental updates | PDF | M | 7 |
@@ -330,7 +330,7 @@ connectors with rules.
 > Short on time? Skip this PR and test PR 5 against a sample AFP file with page groups and TLEs
 > checked into `fixtures/afp/`.
 
-### PR 5 — `SplitAfp` step `M`
+### PR 5 — `SplitAfp` step and property mapping `M`
 
 **Goal:** the AFP equivalent of `SplitPdf` — no guessing from text positions.
 
@@ -340,6 +340,12 @@ connectors with rules.
 - Param `requiredProperties`: a group missing one is **marked** (`indexError` property), so PR 2's
   rules route it to `exceptions` instead of failing the job.
 - `workflows/statements-afp.yaml` mirroring the PDF workflow.
+- A reusable `MapProperties` step that renames document properties with a `rename:` map, plus an
+  optional `requiredProperties` checked after renaming
+  ([Q-04](OPEN_QUESTIONS.md#q-04--tle-name-mapping)). A different value already under the new
+  name marks the document (`indexError`) instead of overwriting it.
+- `App generate-afp --tle-names legacy` writes `ACCT_NO`, `CUST_NAME` and `ZIP_CODE` TLEs, and
+  `workflows/statements-afp-legacy.yaml` maps them back with `MapProperties`.
 
 **Tests**
 - Unit — `SplitAfpStepTest`
@@ -355,6 +361,16 @@ connectors with rules.
 - Workflow — `AfpStatementWorkflowTest`
   - `afpAndPdfWorkflowsProduceSameIndexForSameSeed` (same document count, properties, zip order)
   - `missingTleRoutesToExceptions` (with PR 2 rules)
+  - `legacyTleNamesGiveSameIndexAfterMapping`
+- Unit — `MapPropertiesStepTest`
+  - `renamesListedProperties`
+  - `keepsUnlistedProperties`
+  - `missingOldNameIsSkipped`
+  - `conflictingValueMarksIndexErrorAndKeepsBoth`
+  - `requiredPropertiesAreCheckedAfterRenaming`
+  - `renamesApplyTogetherSoOrderDoesNotMatter`
+  - `twoOldNamesToOneNewNameFailsAtLoad`
+- Unit — `StatementAfpGeneratorTest.legacyTleNamesOptionWritesProductionStyleNames`
 
 ### PR 6 — Multiple input devices `S`
 
