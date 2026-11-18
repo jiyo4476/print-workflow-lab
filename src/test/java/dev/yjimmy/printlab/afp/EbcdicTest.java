@@ -51,6 +51,33 @@ public class EbcdicTest {
     }
 
     @Test
+    public void strictEncodingMatchesEncodeForCharactersInTheCodePage() {
+        String text = "Café 80202-1234 <x@y.z>";
+
+        assertThat(Ebcdic.encodeStrict(text, Ebcdic.IBM037)).isEqualTo(Ebcdic.encode(text));
+    }
+
+    @Test
+    public void strictEncodingRejectsWhatEncodeWouldSubstitute() {
+        // IBM037 predates the euro; IBM01140 is the same code page with it.
+        assertThat(Ebcdic.encode("€5")[0]).as("encode substitutes").isEqualTo((byte) 0x3F);
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> Ebcdic.encodeStrict("€5", Ebcdic.IBM037));
+
+        assertThat(e.getMessage()).contains("U+20AC").contains("index 0").contains("IBM037");
+        assertThat(Ebcdic.encodeStrict("€5", Ebcdic.forCodePage(1140))).hasSize(2);
+    }
+
+    @Test
+    public void strictEncodingNamesCharactersOutsideTheBasicPlane() {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> Ebcdic.encodeStrict("ok 😀", Ebcdic.IBM037));
+
+        assertThat(e.getMessage()).contains("U+1F600").contains("index 3");
+    }
+
+    @Test
     public void unknownCodePageFails() {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> Ebcdic.forCodePage(65534));

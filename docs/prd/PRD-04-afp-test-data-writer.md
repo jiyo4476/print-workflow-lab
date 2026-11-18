@@ -72,7 +72,7 @@ are right.
 ## Test plan
 
 - Unit — `AfpWriterTest`: `writtenFieldIsReadBackIdentically`, `lengthIsComputedFromData`,
-  `rejectsDataLongerThanMaxFieldLength`, `sequenceNumbersIncrement`
+  `rejectsDataLongerThanMaxFieldLength`, `reservedBytesAreZero`
 - Unit — `TleEncoderTest`: `encodeThenDecodeRoundTrips`, `rejectsCharactersNotInCodePage`
 - Integration — `StatementAfpGeneratorTest`: `sameSeedProducesIdenticalBytes`,
   `groupCountEqualsStatementCount`, `everyGroupHasAccountNumberNameAndZipTles`,
@@ -82,6 +82,13 @@ are right.
 ## Risks and open questions
 
 Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-03). Record the answers there and here.
+
+- **Decided (Q-03, 2026-11-17):** build the writer (option A). The Q-02 cross-check against an
+  independently produced AFP file is still open.
+- The font is referenced by name only: code page `T1V10037` with character set `C0D0GT10`
+  (Gothic Text, 10 pitch). Confirm the viewer finds or substitutes it during the manual check.
+- A bad-address statement writes `name` as an empty TLE rather than leaving the TLE out. PRD-05
+  decides whether an empty value counts as missing for `requiredProperties`.
 
 - A viewer may reject minimal pages (no AEG, or missing descriptors). If so, add the minimal
   descriptors the viewer needs and note it.

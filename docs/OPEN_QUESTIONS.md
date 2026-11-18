@@ -19,7 +19,7 @@ are suggestions, not decisions: the PR that answers the question makes the call.
 |---|---|---|---|---|
 | [Q-01](#q-01--exception-and-queue-csv-layout) | [PRD-02](prd/PRD-02-routing-rules-and-exception-queue.md) | One CSV per queue, or one CSV with a `queue` column? | One combined CSV | **Decided:** one combined CSV |
 | [Q-02](#q-02--real-afp-sample-for-the-manual-check) | [PRD-03](prd/PRD-03-afp-structured-field-reader.md) | Where does a real AFP file for the manual check come from? | Generate one with Apache FOP | Open |
-| [Q-03](#q-03--build-the-afp-writer-or-check-in-a-sample) | [PRD-04](prd/PRD-04-afp-test-data-writer.md) | Build the AFP test-data writer, or check in a sample AFP file? | Build the writer; keep the FOP file as a cross-check | Open |
+| [Q-03](#q-03--build-the-afp-writer-or-check-in-a-sample) | [PRD-04](prd/PRD-04-afp-test-data-writer.md) | Build the AFP test-data writer, or check in a sample AFP file? | Build the writer; keep the FOP file as a cross-check | Decided |
 | [Q-04](#q-04--tle-name-mapping) | [PRD-05](prd/PRD-05-split-afp-step.md) | Add an optional `rename:` map for TLE names? | Not yet; configurable key names only | Open |
 | [Q-05](#q-05--require-the-postgresql-ci-job) | [PRD-13](prd/PRD-13-persistence.md) | Make the Testcontainers PostgreSQL job required? | Required from the start | **Decided:** required, in Jenkins |
 | [Q-06](#q-06--reprint-across-jobs) | [PRD-15](prd/PRD-15-reprint-and-retry.md) | Can one reprint combine documents from different jobs? | Not yet: one job per reprint | Open |
@@ -96,8 +96,9 @@ C if time is short; B only as a last resort.
 
 **Knock-on:** with B, PRD-10's `IndexParityTest` compares DPart with region only (see PRD-10).
 
-- **Answer:** —
-- **Status:** Open · **PR:** —
+- **Answer:** A, build the writer. Decided 2026-11-17 when starting PR 4; the FOP cross-check
+  (Q-02) stays open.
+- **Status:** Decided (2026-11-17) · **PR:** plan PR 4 (`feature/04-afp-writer`)
 
 ## PRD-05 — Split AFP step
 
