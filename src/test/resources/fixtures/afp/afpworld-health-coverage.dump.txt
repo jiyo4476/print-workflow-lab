@@ -1,0 +1,27 @@
+Offset    Length  Field
+00000000      34  BPF  Begin Print File  ".\\..\\etc"
+00000023       8    BRG  Begin Resource Group
+0000002C      52      BRS  Begin Resource  "I0000001"
+00000061      40        BOC  Begin Object Container  "I0000001"
+0000008A    5516          OCD  Object Container Data
+00001617       8        EOC  End Object Container
+00001620      18      ERS  End Resource
+00001633       8    ERG  End Resource Group
+0000163C      23    BDT  Begin Document  ".\\..\\etc"
+00001654      16      BPG  Begin Page  "P0000001"
+00001665      16        BAG  Begin Active Environment Group  "AEG00001"
+00001676     225          MDR  Map Data Resource
+00001758      23          PGD  Page Descriptor
+00001770      20          PTD  Presentation Text Data Descriptor
+00001785       8        EAG  End Active Environment Group
+0000178E       8        BPT  Begin Presentation Text Object
+00001797     421          PTX  Presentation Text Data
+0000193D       8        EPT  End Presentation Text Object
+00001946      79        IOB  Include Object
+00001996       8        BPT  Begin Presentation Text Object
+0000199F    6188          PTX  Presentation Text Data
+000031CC       8        EPT  End Presentation Text Object
+000031D5       8      EPG  End Page
+000031DE       8    EDT  End Document
+000031E7       8  EPF  End Print File
+25 fields, 0 problems

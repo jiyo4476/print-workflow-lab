@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assume.assumeTrue;
 
 import dev.yjimmy.printlab.testsupport.AfpBytes;
 import java.io.ByteArrayInputStream;
@@ -15,6 +16,8 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.Test;
 
@@ -34,6 +37,31 @@ public class DumpAfpTest {
         }
 
         assertEquals("dump of " + MINIMAL, expected, out.toString());
+        assertEquals("problems", 0, problems);
+    }
+
+    /**
+     * A real AFP file written by another tool (AFPWorld's health-coverage sample, made with
+     * Timitoo Formatter Fox), so the reader is checked against AFP this project didn't write.
+     * The sample has no redistribution license, so it isn't checked in: download it from
+     * https://www.afpworld.com/educate/sample-afp-files.html into the gitignored
+     * {@code samples/afpworld/} folder. Without it the test is skipped. Only the golden dump (this
+     * project's own output) is checked in.
+     */
+    @Test
+    public void afpWorldHealthCoverageSampleMatchesGoldenDump() throws IOException {
+        Path sample = Path.of("samples", "afpworld", "01_Health_Coverage.afp");
+        assumeTrue("Download the AFPWorld sample into " + sample + " to run this test",
+                Files.isRegularFile(sample));
+        String expected = resourceText("/fixtures/afp/afpworld-health-coverage.dump.txt");
+
+        StringBuilder out = new StringBuilder();
+        int problems;
+        try (InputStream in = Files.newInputStream(sample)) {
+            problems = new AfpDump().dump(in, out);
+        }
+
+        assertEquals("dump of " + sample, expected, out.toString());
         assertEquals("problems", 0, problems);
     }
 
