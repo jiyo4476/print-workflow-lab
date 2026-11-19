@@ -26,8 +26,14 @@ public final class Job {
     private String currentStep;
     private String errorMessage;
 
+    /**
+     * A new job ID: the first 12 hex digits of a random UUID, which are all random (the version
+     * digit comes after them), so 48 bits. Short enough to read and type; across a million jobs
+     * the chance of any two sharing an ID is about 0.2%. With 8 digits (32 bits) that chance was
+     * already reached at about 4,000 jobs.
+     */
     public static String newId() {
-        return UUID.randomUUID().toString().substring(0, 8);
+        return UUID.randomUUID().toString().replace("-", "").substring(0, 12);
     }
 
     public Job(String id, Path inputFile, Path workDir) {

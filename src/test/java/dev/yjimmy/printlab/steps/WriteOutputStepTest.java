@@ -117,4 +117,37 @@ public class WriteOutputStepTest {
     private String csv() throws Exception {
         return Files.readString(outputDir.resolve(job.id()).resolve("documents.csv"));
     }
+
+    @Test
+    public void outputKeepsEachDocumentsExtension() throws Exception {
+        Path afp = Files.writeString(tmp.resolve("doc-1.AFP"), "afp");
+        job.documents().add(new Document(1, afp, new LinkedHashMap<>(Map.of("queue", "mail"))));
+        addDocument("p", Map.of());
+
+        write();
+
+        Path jobOut = outputDir.resolve(job.id());
+        assertEquals("afp", "afp", Files.readString(jobOut.resolve("mail/00001.afp")));
+        assertEquals("pdf", "p", Files.readString(jobOut.resolve("00001.pdf")));
+        assertThat(csv()).contains(",mail/00001.afp,").contains(",00001.pdf,");
+    }
+
+    @Test
+    public void extensionIsLowercasedAndMayBeAbsent() {
+        assertEquals(".afp", WriteOutputStep.extension(Path.of("x", "doc.AFP")));
+        assertEquals("", WriteOutputStep.extension(Path.of("x", "doc")));
+        assertEquals("a dot file has no extension", "",
+                WriteOutputStep.extension(Path.of(".hidden")));
+    }
+
+    @Test
+    public void aPropertyNamedLikeAReservedColumnFailsBeforeWritingAnything() throws Exception {
+        addDocument("a", Map.of("zip", "80202"));
+        addDocument("b", Map.of("file", "statement.pdf"));
+
+        IllegalStateException e = assertThrows(IllegalStateException.class, this::write);
+
+        assertThat(e.getMessage()).contains("Document 2").contains("'file'");
+        assertThat(outputDir.resolve(job.id())).doesNotExist();
+    }
 }

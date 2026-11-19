@@ -7,8 +7,11 @@ steps:
   - name: split-and-index
     type: SplitPdf
     params:
-      # A new statement starts whenever the account number in the page header changes.
+      # A new statement starts whenever the account number in the page header changes...
       splitOn: accountNumber
+      # ...or on a "Page 1 of N" page, so two statements in a row for the same account (a
+      # corrected statement, say) aren't merged into one.
+      newDocumentWhen: { property: pageNumber, operator: matches, value: 'Page 1 of \d+' }
       # [x, y, width, height] in points from the top-left of the page.
       # These match the layout written by StatementPdfGenerator.
       regions:
@@ -17,6 +20,7 @@ steps:
         street:        [70, 122, 260, 16]
         cityStateZip:  [70, 136, 260, 16]
         zip:           [495, 138, 70, 14]
+        pageNumber:    [395, 44, 130, 14]
 
   # Decide where each statement goes. Routes are checked in order; the first match wins.
   - name: route

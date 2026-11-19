@@ -92,6 +92,7 @@ public class ErrorHandlingTest {
                 .contains("No 'accountNumber' found on page 1")
                 // split-and-index is the first step: start at t0, fail at t0 + 1s.
                 .contains("Time:   2026-01-01T00:00:01Z")
+                .contains("Work:   " + job.workDir().toAbsolutePath())
                 .doesNotContain("Note:");
     }
 

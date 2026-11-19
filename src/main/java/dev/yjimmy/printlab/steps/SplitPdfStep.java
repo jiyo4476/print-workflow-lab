@@ -3,7 +3,10 @@ package dev.yjimmy.printlab.steps;
 import dev.yjimmy.printlab.workflow.Document;
 import dev.yjimmy.printlab.workflow.Job;
 import dev.yjimmy.printlab.workflow.Step;
+import dev.yjimmy.printlab.workflow.rules.Condition;
+import dev.yjimmy.printlab.workflow.rules.RuleParser;
 import java.awt.geom.Rectangle2D;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -21,13 +24,25 @@ import org.apache.pdfbox.text.PDFTextStripperByArea;
  * the next (e.g. the account number printed in every page header). Each region is
  * {@code [x, y, width, height]} in points, measured from the <b>top-left</b> of the page.
  *
+ * <p>That alone merges two statements in a row with the same value (two statements for one
+ * account). The optional {@code newDocumentWhen} condition, in the same syntax as routing rules,
+ * fixes that: it's tested against each page's region values, and a page where it's true starts a
+ * new document even if {@code splitOn} didn't change:
+ * <pre>
+ *   regions:
+ *     pageNumber: [395, 44, 130, 14]       # "Page 1 of 3"
+ *   newDocumentWhen: { property: pageNumber, operator: matches, value: 'Page 1 of \d+' }
+ * </pre>
+ *
  * <p>This is the PDF counterpart of AFP indexing: PDF has no built-in document boundaries or index
- * tags, so we infer them from where text sits on the page.
+ * tags, so we infer them from where text sits on the page. A PDF with no pages fails the job.
  */
 public final class SplitPdfStep implements Step {
 
     private final String splitOn;
     private final Map<String, Rectangle2D> regions = new LinkedHashMap<>();
+    /** Starts a document on a page where it's true; {@code null} when not configured. */
+    private final Condition newDocumentWhen;
 
     public SplitPdfStep(Map<String, Object> rawParams) {
         Params params = new Params(rawParams);
@@ -35,6 +50,12 @@ public final class SplitPdfStep implements Step {
         params.map("regions").forEach((name, value) -> regions.put(name, toRect(name, value)));
         if (!regions.containsKey(splitOn)) {
             throw new IllegalArgumentException("splitOn '" + splitOn + "' must also be a region");
+        }
+        Object when = rawParams.get("newDocumentWhen");
+        try {
+            this.newDocumentWhen = when == null ? null : RuleParser.parse(when);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid 'newDocumentWhen': " + e.getMessage(), e);
         }
     }
 
@@ -49,10 +70,15 @@ public final class SplitPdfStep implements Step {
     @Override
     public void execute(Job job) throws Exception {
         Path docsDir = job.workDir().resolve("documents");
-        java.nio.file.Files.createDirectories(docsDir);
+        Files.createDirectories(docsDir);
 
         try (PDDocument source = Loader.loadPDF(job.inputFile().toFile())) {
-            job.properties().put("totalPages", String.valueOf(source.getNumberOfPages()));
+            int totalPages = source.getNumberOfPages();
+            if (totalPages == 0) {
+                throw new IllegalStateException("The PDF has no pages, so there are no documents"
+                        + " to split out");
+            }
+            job.properties().put("totalPages", String.valueOf(totalPages));
 
             PDFTextStripperByArea stripper = new PDFTextStripperByArea();
             regions.forEach(stripper::addRegion);
@@ -60,21 +86,26 @@ public final class SplitPdfStep implements Step {
             List<PDPage> currentPages = new ArrayList<>();
             Map<String, String> currentProps = null;
             String currentKey = null;
+            int pageNumber = 0;
 
             for (PDPage page : source.getPages()) {
+                pageNumber++;
                 stripper.extractRegions(page);
-                String key = stripper.getTextForRegion(splitOn).strip();
+                Map<String, String> pageValues = new LinkedHashMap<>();
+                for (String region : regions.keySet()) {
+                    pageValues.put(region, stripper.getTextForRegion(region).strip());
+                }
+                String key = pageValues.get(splitOn);
                 if (key.isEmpty()) {
                     throw new IllegalStateException("No '" + splitOn + "' found on page "
-                            + (source.getPages().indexOf(page) + 1));
+                            + pageNumber);
                 }
-                if (!key.equals(currentKey)) {
+                boolean starts = !key.equals(currentKey)
+                        || (newDocumentWhen != null && newDocumentWhen.test(pageValues));
+                if (starts) {
                     flush(job, source, currentPages, currentProps, docsDir);
                     currentPages = new ArrayList<>();
-                    currentProps = new LinkedHashMap<>();
-                    for (String region : regions.keySet()) {
-                        currentProps.put(region, stripper.getTextForRegion(region).strip());
-                    }
+                    currentProps = pageValues;
                     currentKey = key;
                 }
                 currentPages.add(page);

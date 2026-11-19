@@ -15,7 +15,8 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 
 1. picks it up once the file has finished copying,
 2. **splits** it into one PDF per statement, detecting boundaries from the account number in each
-   page header,
+   page header (and a "Page 1 of N" line, so two statements in a row for one account stay
+   separate),
 3. **indexes** each statement: account number, name, address, zip and page count become
    document properties,
 4. **routes** each statement to a queue: a bad address (blank name, zip not five digits) goes to
@@ -54,10 +55,15 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw -q exec:java -Dexec.args="generate-afp 200 run.afp"  # the same kind of run as AFP
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 run.afp 5 42"  # 5 bad addresses, seed 42
 ./mvnw -q exec:java                               # start watching ./hotfolder
+./mvnw -q exec:java -Dexec.args="run workflows/statements.yaml *.pdf"  # same, explicitly
 ./mvnw -q exec:java -Dexec.args="dump-afp statement.afp"  # print an AFP file's structure
 ```
 
-Then move `run.pdf` into `hotfolder/` and look in `output/`. On Windows use `mvnw.cmd`. In
+Then move `run.pdf` into `hotfolder/` and look in `output/`. The glob ignores case, so `RUN.PDF`
+is picked up too. A file that can't be claimed yet (Windows reports it as in use while another
+program still has it open) stays in the hot folder and is retried every 5 seconds; the folder is
+also rescanned at once if the operating system drops file events in a burst. On Windows use
+`mvnw.cmd`. In
 PowerShell, quote any `-D` argument; otherwise PowerShell splits it at the dot and Maven reports
 an unknown lifecycle phase:
 
@@ -70,8 +76,8 @@ an unknown lifecycle phase:
 | Folder | What's in it |
 |---|---|
 | `work/<jobId>/` | The input file while it's processed, intermediate documents, and `job.json` |
-| `output/<jobId>/<queue>/` | One queue's finished documents (`standard`, `exceptions`, ...) in presort order, from `00001.pdf` |
-| `output/<jobId>/documents.csv` | One row per document with its properties, including `queue`; `file` is the path below `output/<jobId>/` |
+| `output/<jobId>/<queue>/` | One queue's finished documents (`standard`, `exceptions`, ...) in presort order, from `00001.pdf` (the extension follows the document's format) |
+| `output/<jobId>/documents.csv` | One row per document with its properties, including `queue`; `file` is the path below `output/<jobId>/`. `position`, `sequence` and `file` are reserved: a property with one of those names fails the job |
 | `error/<jobId>/` | Only for failed jobs: the input file and `error.txt` |
 
 `job.json` is rewritten after every step, so it always shows how far a job has got: its id,
@@ -84,12 +90,17 @@ When a step throws, the job stops there: later steps don't run, the input file m
 `error/<jobId>/`, and `error.txt` says which step failed, when, and why:
 
 ```
-Job:    3fc8bd7b
+Job:    3fc8bd7b41e0
 Input:  blank.pdf
 Step:   split-and-index
 Time:   2026-11-12T19:13:04.699Z
 Error:  No 'accountNumber' found on page 1
+Work:   C:\print-workflow-lab\work\3fc8bd7b41e0
 ```
+
+`Work:` is where `job.json` and any partial output were left. Job IDs are 12 hex digits. If the
+program is stopped while a job runs, the job fails the same way, with an error saying it was
+interrupted, so its input can be dropped in the hot folder again.
 
 Each failed job gets its own folder, so two failed files with the same name never overwrite each
 other. If the input can't be moved, `error.txt` adds a `Note:` line saying where it was left.

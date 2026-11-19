@@ -24,8 +24,16 @@ import java.util.Set;
  * {@code file} is the path relative to {@code <jobId>/}. There's still one {@code documents.csv}
  * for the whole job, with a {@code queue} column. Documents without a queue go in
  * {@code <jobId>/} itself.
+ *
+ * <p>Output files keep the extension of the document's own file ({@code 00001.pdf},
+ * {@code 00001.afp}). The CSV's first columns, {@code position}, {@code sequence} and
+ * {@code file}, are reserved: a document property with one of those names fails the job rather
+ * than being silently replaced.
  */
 public final class WriteOutputStep implements Step {
+
+    /** The columns every row starts with; a document property can't use these names. */
+    static final List<String> RESERVED_COLUMNS = List.of("position", "sequence", "file");
 
     private final Path outputDir;
 
@@ -35,10 +43,21 @@ public final class WriteOutputStep implements Step {
 
     @Override
     public void execute(Job job) throws IOException {
+        for (Document doc : job.documents()) {
+            for (String reserved : RESERVED_COLUMNS) {
+                if (doc.properties().containsKey(reserved)) {
+                    // Checked before anything is copied, so a failed job leaves no partial output.
+                    throw new IllegalStateException("Document " + doc.sequence() + " has a '"
+                            + reserved + "' property, but documents.csv reserves that column for"
+                            + " its own " + reserved + "; rename the property (a SplitPdf region,"
+                            + " say) in the workflow");
+                }
+            }
+        }
         Path jobOut = outputDir.resolve(job.id());
         Files.createDirectories(jobOut);
 
-        Set<String> columns = new LinkedHashSet<>(List.of("position", "sequence", "file"));
+        Set<String> columns = new LinkedHashSet<>(RESERVED_COLUMNS);
         job.documents().forEach(d -> columns.addAll(d.properties().keySet()));
 
         List<String> lines = new ArrayList<>();
@@ -48,7 +67,7 @@ public final class WriteOutputStep implements Step {
             String queue = doc.property(RouteDocumentsStep.QUEUE);
             String folder = queue == null ? "" : RouteDocumentsStep.checkQueueName(queue) + "/";
             int position = positions.merge(folder, 1, Integer::sum);
-            String fileName = folder + String.format("%05d.pdf", position);
+            String fileName = folder + String.format("%05d", position) + extension(doc.file());
             Path target = jobOut.resolve(fileName);
             Files.createDirectories(target.getParent());
             Files.copy(doc.file(), target);
@@ -65,6 +84,16 @@ public final class WriteOutputStep implements Step {
         }
         Files.write(jobOut.resolve("documents.csv"), lines);
         job.properties().put("outputDir", jobOut.toString());
+    }
+
+    /**
+     * The document file's extension with its dot, lowercased ({@code .pdf}, {@code .afp}), or
+     * nothing if it has none: output keeps the format the split step wrote.
+     */
+    static String extension(Path file) {
+        String name = file.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        return dot <= 0 ? "" : name.substring(dot).toLowerCase(java.util.Locale.ROOT);
     }
 
     /** Quotes a CSV field when it contains a comma, quote, or line break (RFC 4180). */

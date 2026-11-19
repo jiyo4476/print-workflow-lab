@@ -1,5 +1,8 @@
 package dev.yjimmy.printlab;
 
+import java.util.Comparator;
+import dev.yjimmy.printlab.testdata.StatementDataGenerator;
+import dev.yjimmy.printlab.testdata.Statement;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -71,5 +74,34 @@ public class StatementWorkflowTest {
         assertEquals(25, summary.documentCount());
         assertEquals(List.of("split-and-index", "route", "presort", "write-output"),
                 summary.steps().stream().map(StepRecord::name).toList());
+    }
+
+    @Test
+    public void twoStatementsInARowForTheSameAccountStaySeparate() throws Exception {
+        Path tmp = folder.getRoot().toPath();
+        List<Statement> drawn = new StatementDataGenerator(42).generate(3, 0);
+        Statement first = drawn.get(0);
+        // A second statement for the same customer (a corrected one, say), with other pages.
+        Statement again = new Statement(first.accountNumber(), first.name(), first.street(),
+                first.city(), first.state(), first.zip(), drawn.get(1).pages());
+        List<Statement> run = List.of(first, again, drawn.get(2));
+        Path input = tmp.resolve("same-account.pdf");
+        StatementPdfGenerator.write(run, input);
+
+        Job job = TestJobs.newJob(tmp, input);
+        new WorkflowEngine(TestWorkflows.load("statements", tmp.resolve("output")),
+                StepRegistry.withBuiltIns(), tmp.resolve("error"), TickingClock.oneSecondTicks())
+                .run(job);
+
+        assertEquals(job.errorMessage(), JobState.COMPLETE, job.state());
+        List<Document> docs = job.documents().stream()
+                .sorted(Comparator.comparingInt(Document::sequence)).toList();
+        assertEquals("documents", 3, docs.size());
+        for (int i = 0; i < run.size(); i++) {
+            assertEquals("document " + (i + 1) + " account", run.get(i).accountNumber(),
+                    docs.get(i).property("accountNumber"));
+            assertEquals("document " + (i + 1) + " pages",
+                    String.valueOf(run.get(i).pageCount()), docs.get(i).property("pageCount"));
+        }
     }
 }
