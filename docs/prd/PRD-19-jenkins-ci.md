@@ -11,9 +11,9 @@
 ## Summary
 
 Run the project's CI in a Jenkins controller that runs locally in Docker. A `Jenkinsfile` in the
-repository defines the pipeline. Jenkins itself is defined as code under `ci/jenkins/`: its
-image, plugins and configuration. Anyone can start the same Jenkins with one command, and
-nothing is set up by clicking through the UI.
+repository defines the pipeline. Jenkins itself is a machine-level service shared by all
+projects, kept outside this repository (today in `Documents\containers\jenkins`), so this repository
+ships only the pipeline and `docs/CI.md`, which states exactly what that Jenkins must provide.
 
 ## Why
 
@@ -31,40 +31,42 @@ nothing is set up by clicking through the UI.
   the result back as a commit status. Jenkins is the only CI; GitHub Actions is removed because
   its minutes cost money
   ([Q-10](../OPEN_QUESTIONS.md#q-10--github-actions-alongside-jenkins)).
-- **Developer** on a new machine runs `docker compose -f ci/jenkins/compose.yml up -d` and gets the
-  same Jenkins, plugins and job.
+- **Developer** on a new machine with that shared Jenkins running follows `docs/CI.md`: checks
+  the required plugins, adds the credentials by ID, and creates the multibranch job.
 
 ## Goals
 
-- `ci/jenkins/`:
-  - A `Dockerfile` based on a pinned `jenkins/jenkins` LTS JDK 21 image.
-  - `plugins.txt` with pinned plugin versions.
-  - A Configuration as Code (JCasC) file.
-  - A Compose file that starts Jenkins in Docker with a `docker:dind` sidecar, reached at
-    `tcp://docker:2376` over TLS
-    ([Q-17](../OPEN_QUESTIONS.md#q-17--how-jenkins-reaches-the-local-docker)). This setup
-    already runs locally; this PR moves it into the repository.
+- Use the existing shared Jenkins, which runs in Docker with a `docker:dind` sidecar reached at
+  `tcp://docker:2376` over TLS
+  ([Q-17](../OPEN_QUESTIONS.md#q-17--how-jenkins-reaches-the-local-docker)). Its Compose file,
+  image and plugins stay outside this repository.
 - Two places to run build containers
   ([Q-11](../OPEN_QUESTIONS.md#q-11--docker-access-for-jenkins)): Docker, and the k3s cluster
   through the Kubernetes plugin.
 - A declarative `Jenkinsfile` at the repository root.
-- A multibranch pipeline job for this repository, created by JCasC (or Job DSL), not by hand.
+- A multibranch pipeline job for this repository in that Jenkins. `docs/CI.md` gives its exact
+  settings (repository, credential IDs, polling interval), so it can be recreated in minutes.
 - Required stages: build and Java tests, dashboard tests, PostgreSQL integration tests (from
   PRD-13 on), coverage report.
-- `docs/CI.md`: how to start Jenkins, add the GitHub and k3s credentials, and read a build.
+- `docs/CI.md`: what the shared Jenkins must provide (Jenkins and plugin versions it was tested
+  with, the dind sidecar, `TESTCONTAINERS_HOST_OVERRIDE`), the credential IDs to add, how to
+  create the job, and how to read a build.
 - Remove `.github/workflows/ci.yml` once the Jenkins pipeline is green on `main`.
 
 ## Non-goals
 
 - Deployment, image publishing or k3s; those are PRD-20.
 - Jenkins high availability, distributed agents, or exposing Jenkins to the internet.
+- Defining or versioning Jenkins itself (its image, plugins, Compose file or JCasC) in this
+  repository; it's a shared service outside it (Q-17).
 - Building the Docker image or the Compose smoke test; PRD-18 adds those stages.
 
 ## Requirements
 
 **Functional**
-- **FR-1** `docker compose -f ci/jenkins/compose.yml up -d` starts a configured Jenkins: plugins
-  installed, the multibranch job present, and no setup wizard.
+- **FR-1** Following `docs/CI.md` on the shared Jenkins gives a working multibranch job for this
+  repository. The `Jenkinsfile` fails early with a clear message if a required plugin or the
+  Docker connection is missing.
 - **FR-2** Each stage runs in a pinned container image, either as a Docker agent or as a pod
   on k3s (Kubernetes plugin). Stages that need a Docker daemon (Testcontainers, image builds)
   run on Docker. The images:
@@ -89,7 +91,8 @@ nothing is set up by clicking through the UI.
   Jenkins credential store. Config files reference them by ID and never contain values.
 
 **Non-functional**
-- **NFR-1** Every image tag and plugin version is pinned; upgrades are their own PR.
+- **NFR-1** Every container image the `Jenkinsfile` uses is pinned; upgrades are their own PR.
+  `docs/CI.md` records the Jenkins and plugin versions the pipeline was last tested with.
 - **NFR-2** Maven and npm caches persist between builds (a named volume), so a no-change build
   takes under ~3 minutes on the developer machine.
 - **NFR-3** Jenkins is reachable only from the local machine or LAN; nothing is exposed
@@ -115,7 +118,7 @@ nothing is set up by clicking through the UI.
 
 | # | Criterion | Verified by |
 |---|---|---|
-| AC-1 | A fresh `compose up` produces a working Jenkins with the job, no manual steps | Manual: from an empty volume, noted in the PR |
+| AC-1 | Following `docs/CI.md` on the shared Jenkins creates a working job | Manual: delete and recreate the job from the doc, noted in the PR |
 | AC-2 | A green branch runs every stage and publishes test results and coverage | Jenkins build page (screenshot in the PR) |
 | AC-3 | A failing Java test, Mocha test or PostgreSQL test each fail the build | Manual: three throwaway commits on a test branch |
 | AC-4 | No credential value appears in the repository | `git grep` for token patterns; review |
@@ -124,7 +127,7 @@ nothing is set up by clicking through the UI.
 ## Test plan
 
 - Manual, recorded in the PR:
-  1. Start Jenkins from an empty volume and confirm the job exists.
+  1. Delete the job and recreate it by following `docs/CI.md` exactly.
   2. Run a green build and confirm test results, coverage and timing.
   3. Break a Java test, a Mocha test and (once PRD-13 lands) a PostgreSQL test, one at a time,
      and confirm each fails the right stage.
@@ -138,8 +141,9 @@ Q-10, Q-11, Q-17). Record the answers there and here.
 
 - Docker Desktop on Windows and Docker on Linux differ in socket paths and networking, which
   affects Testcontainers inside Jenkins. Test on the machine that will run Jenkins.
-- Jenkins plugins update often and sometimes break each other; pinning (NFR-1) is the
-  mitigation.
+- Jenkins plugins update often and sometimes break each other. Plugin versions are managed by
+  the shared Jenkins, not this repository; `docs/CI.md` records the tested versions, so a break
+  can be traced to an upgrade.
 
 ## Definition of done
 

@@ -780,7 +780,7 @@ DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
 - `DashboardApp` (`Marionette.Application`, `region: '#app'`, `channelName: 'dashboard'`) shows
   the `ShellView` (header, nav and main regions) and starts `Backbone.history`.
 - `DashboardRouter` (`Backbone.Router`) maps hash routes to the app:
-  `#jobs`, `#jobs/:id`, `#search?property=...&value=...`, `#documents/:id/structure`. Route
+  `#jobs`, `#jobs/:id`, `#search?property=...&value=...&offset=...`, `#documents/:id/structure`. Route
   handlers only call app methods; the app picks a controller and shows its View in `main`.
 - Entities (`js/entities/`): `Job` / `JobCollection` (`url: 'api/jobs'`), `Document` /
   `DocumentCollection`, `StructureNode` with child nodes for nested AFP groups and PDF objects.
@@ -823,6 +823,9 @@ DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
   - `newSearchAbortsPreviousRequest`
   - `encodesQueryValues`
   - `emptyResultShowsMessage`
+  - `showsRangeAndTotalFromHeader` ("Showing 1–50 of N" from `X-Total-Count`)
+  - `nextAndPreviousChangeOffset`, `pagingButtonsDisabledAtEnds`
+  - `offsetInUrlRestoresPage` (back, forward and bookmarks return to the same page)
 - `structure.test.mjs`
   - `rendersNestedAfpGroupsAndPdfObjects` (from fixture JSON)
   - `collapsingANodeHidesItsChildren`
@@ -891,9 +894,10 @@ Decisions are in `OPEN_QUESTIONS.md` (Q-05, Q-10 to Q-17).
 
 ### PR 19 — Jenkins CI, running locally in Docker `M` (land right after PR 0)
 
-- `ci/jenkins/`: a pinned Jenkins LTS (JDK 21) image, pinned `plugins.txt`, a Configuration as
-  Code file and a Compose file that runs Jenkins with a `docker:dind` sidecar over TLS (Q-17). `docker compose -f ci/jenkins/compose.yml up -d` gives a ready
-  Jenkins with a multibranch job for this repository and no setup wizard.
+- Uses the existing shared Jenkins, which runs in Docker with a `docker:dind` sidecar over TLS
+  (Q-17) and lives outside this repository. The repository ships the `Jenkinsfile` and
+  `docs/CI.md`: required plugins and tested versions, credential IDs, and how to create the
+  multibranch job.
 - A declarative `Jenkinsfile`, each stage in a pinned container: checkout → `./mvnw -B verify`
   → `npm ci && npm test` → PostgreSQL integration (Testcontainers, required, added by PR 13) →
   coverage report.
@@ -904,7 +908,7 @@ Decisions are in `OPEN_QUESTIONS.md` (Q-05, Q-10 to Q-17).
 - Credentials only in the Jenkins credential store. `docs/CI.md` explains setup.
 
 **Tests**
-- Manual, recorded in the PR: Jenkins from an empty volume has the job; a green build publishes
+- Manual, recorded in the PR: recreating the job from `docs/CI.md` works; a green build publishes
   results and coverage; a broken Java, Mocha and PostgreSQL test each fail the right stage;
   no containers are left running afterwards.
 

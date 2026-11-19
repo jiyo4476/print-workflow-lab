@@ -393,6 +393,8 @@ side, how does the Jenkins container reach a Docker daemon? This is what Testcon
 **Recommendation:** B.
 
 - **Answer:** B. Jenkins runs in Docker, with a privileged `docker:dind` sidecar that it reaches
-  at `tcp://docker:2376` over TLS. This setup already runs locally; PR 19 moves its Compose
-  file into `ci/jenkins/` and sets `TESTCONTAINERS_HOST_OVERRIDE=docker` for Testcontainers.
+  at `tcp://docker:2376` over TLS. This setup already runs locally and stays outside this
+  repository, as a shared service for all projects (today in `Documents\containers\jenkins`). PR 19 ships
+  only the `Jenkinsfile` and `docs/CI.md`, and sets `TESTCONTAINERS_HOST_OVERRIDE=docker` for
+  Testcontainers.
 - **Status:** Decided (2026-11-18) · **PR:** plan PR 19

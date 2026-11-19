@@ -45,7 +45,7 @@ the place the Java and JavaScript skills show up together.
 
 **Functional**
 - **FR-1** Routes: `#jobs` (default and unknown routes), `#jobs/:id`,
-  `#search?property=…&value=…`, `#documents/:id/structure`. Back and forward buttons work.
+  `#search?property=…&value=…&offset=…`, `#documents/:id/structure`. Back and forward buttons work.
 - **FR-2** The jobs list shows a state badge and the current step for each job, and an empty
   state when there are none. Selecting a row navigates to its detail.
 - **FR-3** The jobs list refreshes every 5 s. Starting a refresh aborts the previous in-flight
@@ -56,6 +56,10 @@ the place the Java and JavaScript skills show up together.
 - **FR-6** A failed load shows an error with **Retry**.
 - **FR-7** Search encodes query values. A new search aborts the previous request. An empty result
   shows a message.
+- **FR-7a** Search results come a page at a time (`limit` 50, PRD-14 FR-4). The view shows
+  "Showing 1–50 of N" from the `X-Total-Count` header, with **Previous** and **Next** buttons,
+  disabled on the first and last page. The page's `offset` is in the URL, so back and forward
+  buttons and a bookmarked link return to the same page.
 - **FR-8** The structure view renders nested AFP groups and PDF objects from the API, and nodes
   collapse and expand.
 - **FR-9** Every data value renders as text; no `<%=` anywhere in `src/main/webapp/js/`.
@@ -93,7 +97,7 @@ the place the Java and JavaScript skills show up together.
 | AC-1 | Entities build URLs correctly and parse the API contract fixture | `entities.test.mjs` |
 | AC-2 | Jobs list renders, shows the empty state, navigates, refreshes safely, and stops polling on teardown | `jobs.test.mjs` |
 | AC-3 | Queue switching filters without refetch; failed load offers Retry | `job-detail.test.mjs` |
-| AC-4 | Search aborts stale requests, encodes values, handles empty results | `search.test.mjs` |
+| AC-4 | Search aborts stale requests, encodes values, handles empty results, and pages with Previous / Next | `search.test.mjs` |
 | AC-5 | Structure view nests and collapses | `structure.test.mjs` |
 | AC-6 | Each route shows its view; unknown routes show jobs | `router.test.mjs` |
 | AC-7 | Values render as text in every view; no `<%=` in source | `security.test.mjs` |
@@ -110,7 +114,8 @@ Mocha specs in jsdom (`npm test`), `Backbone.ajax` stubbed, no network and no sl
 - `job-detail.test.mjs`: `switchingQueueFiltersDocumentsWithoutRefetch`,
   `failedLoadShowsErrorWithRetry`
 - `search.test.mjs`: `newSearchAbortsPreviousRequest`, `encodesQueryValues`,
-  `emptyResultShowsMessage`
+  `emptyResultShowsMessage`, `showsRangeAndTotalFromHeader`, `nextAndPreviousChangeOffset`,
+  `pagingButtonsDisabledAtEnds`, `offsetInUrlRestoresPage`
 - `structure.test.mjs`: `rendersNestedAfpGroupsAndPdfObjects`, `collapsingANodeHidesItsChildren`
 - `router.test.mjs`: `eachRouteShowsItsView`, `unknownRouteShowsJobs`
 - `security.test.mjs`: `rendersValuesAsTextNotHtml` (every view),
