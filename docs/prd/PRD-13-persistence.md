@@ -46,7 +46,8 @@ Plain JDBC rather than an ORM is deliberate practice in SQL schema design and qu
     `job_id`
   - `document_properties` (name/value rows, indexed on `(name, value)`)
 - **FR-2** Migrations apply to an empty database, and a second run is a no-op.
-- **FR-3** `JobRepository`: insert, find by id, update state/current step, ordered step history,
+- **FR-3** `JobRepository`: insert, find by id, update state/phase/current step, ordered step
+  history (with each step's phase),
   list newest first with paging, filter by state.
 - **FR-4** `DocumentRepository`: insert with properties, find by job, find by property value, find
   by queue.

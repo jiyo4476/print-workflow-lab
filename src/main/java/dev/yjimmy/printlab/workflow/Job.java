@@ -23,6 +23,7 @@ public final class Job {
     private final List<Document> documents = new ArrayList<>();
     private final List<StepRecord> stepRecords = new ArrayList<>();
     private JobState state = JobState.RECEIVED;
+    private Phase phase = Phase.RECEIVE;
     private String currentStep;
     private String errorMessage;
 
@@ -49,6 +50,8 @@ public final class Job {
     public Map<String, String> properties() { return properties; }
     public List<Document> documents() { return documents; }
     public JobState state() { return state; }
+    /** The workflow phase the job is in: receive until its first step, complete once finished. */
+    public Phase phase() { return phase; }
     public String currentStep() { return currentStep; }
     public String errorMessage() { return errorMessage; }
 
@@ -59,8 +62,9 @@ public final class Job {
         stepRecords.add(record);
     }
 
-    void moveTo(JobState state, String step) {
+    void moveTo(JobState state, Phase phase, String step) {
         this.state = state;
+        this.phase = phase;
         this.currentStep = step;
     }
 
@@ -72,6 +76,7 @@ public final class Job {
 
     @Override
     public String toString() {
-        return "Job[" + id + " " + inputFile.getFileName() + " " + state + "]";
+        return "Job[" + id + " " + inputFile.getFileName() + " " + state + " " + phase.yamlName()
+                + "]";
     }
 }

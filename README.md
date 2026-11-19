@@ -76,6 +76,38 @@ an unknown lifecycle phase:
 .\mvnw.cmd -q exec:java "-Dexec.args=generate 200 run.pdf"
 ```
 
+### Workflow phases
+
+Like Ricoh ProcessDirector, every workflow groups its steps into the same six phases, which
+always run in this order. A phase can be empty, as `assemble` and `insert` are for now:
+
+| Phase | What happens there | In `statements.yaml` |
+|---|---|---|
+| `receive` | Accept the input: set job properties, detect the data stream | (empty) |
+| `prepare` | Turn the input into documents: split, index, map, route, sort | `split-and-index`, `route`, `presort` |
+| `assemble` | Build what will be printed from the documents | (empty) |
+| `print` | Send the job to the printer; here, write it to the output folder | `write-output` |
+| `insert` | Reconcile what the inserter finished against what was printed | (empty) |
+| `complete` | Notify, retain, clean up | (empty) |
+
+```yaml
+phases:
+  receive: []
+  prepare:
+    - name: split-and-index
+      type: SplitPdf
+      params: { ... }
+  print:
+    - name: write-output
+      type: WriteOutput
+```
+
+Phases must be listed in that order, each at most once, and names ignore case. A phase can be
+left out entirely. A workflow that lists `steps:` directly, or puts phases out of order, fails
+to load with a message saying so. The job's phase is the phase of the step it's on: a new job is
+in `receive`, a finished one is in `complete`, and a failed one stays in the phase where it
+failed. `job.json`, `error.txt` and the log all show it.
+
 ### Where a job's files go
 
 | Folder | What's in it |
@@ -86,8 +118,8 @@ an unknown lifecycle phase:
 | `error/<jobId>/` | Only for failed jobs: the input file and `error.txt` |
 
 `job.json` is rewritten after every step, so it always shows how far a job has got: its id,
-state, current step, error message (if it failed), job properties, document count, and each
-step's start and finish time and outcome (`COMPLETED`, `FAILED`, or `SKIPPED` when the step's
+state, phase, current step, error message (if it failed), job properties, document count, and
+each step's phase, start and finish time and outcome (`COMPLETED`, `FAILED`, or `SKIPPED` when the step's
 `when:` was false). It's written to a temp file and then moved into place, so it's
 never half-written.
 
@@ -97,6 +129,7 @@ When a step throws, the job stops there: later steps don't run, the input file m
 ```
 Job:    3fc8bd7b41e0
 Input:  blank.pdf
+Phase:  prepare
 Step:   split-and-index
 Time:   2026-11-12T19:13:04.699Z
 Error:  No 'accountNumber' found on page 1
@@ -286,6 +319,8 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
 - [ ] Barcode step (ZXing) for inserter control
 - [x] Tomcat WAR, `/api/health`, Marionette 4 dashboard shell
 - [ ] Persist jobs and documents (PostgreSQL), REST API (servlets on Tomcat)
-- [ ] Marionette dashboard: jobs by step, document search, single-document reprint
+- [x] Workflow phases (receive, prepare, assemble, print, insert, complete), as in
+      ProcessDirector
+- [ ] Marionette dashboard: jobs by phase and step, document search, single-document reprint
 - [ ] Docker Compose setup
 - [ ] CI/CD: Jenkins running locally in Docker, deploying to a k3s server on ARM

@@ -47,6 +47,6 @@ public final class TestWorkflows {
         }
         Map<String, Object> params = new LinkedHashMap<>(s.params());
         params.put("outputDir", outputDir.toString());
-        return new StepDefinition(s.name(), s.type(), params);
+        return new StepDefinition(s.name(), s.type(), s.phase(), params, s.when());
     }
 }
