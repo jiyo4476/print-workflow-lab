@@ -70,6 +70,25 @@ public final class AfpWriter implements Closeable, Flushable {
         return this;
     }
 
+    /**
+     * Writes a field read by {@link AfpReader}, for copying fields from one file to another. The
+     * type, extension, data and segmented flag are kept. The reader has stripped any padding,
+     * so the copy has none and its padding flag is off; reserved bytes are {@code 0000}.
+     */
+    public AfpWriter write(StructuredField field) throws IOException {
+        int flags = field.flags() & ~StructuredField.FLAG_PADDING;
+        byte[] data = field.data();
+        if ((flags & StructuredField.FLAG_EXTENSION) != 0) {
+            byte[] extension = field.extension();
+            byte[] withExtension = new byte[1 + extension.length + data.length];
+            withExtension[0] = (byte) (1 + extension.length);
+            System.arraycopy(extension, 0, withExtension, 1, extension.length);
+            System.arraycopy(data, 0, withExtension, 1 + extension.length, data.length);
+            data = withExtension;
+        }
+        return write(field.typeId(), flags, data);
+    }
+
     /** Writes a Begin field whose data is its name, padded with EBCDIC spaces to 8 bytes. */
     public AfpWriter begin(FieldType type, String name) throws IOException {
         return write(type, name(name));

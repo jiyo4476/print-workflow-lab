@@ -112,6 +112,35 @@ and PDF jobs alike.
 - In workflows that rename, put `requiredProperties` on `MapProperties`, so it checks the new
   names. `requiredProperties` on `SplitAfp` checks the TLE names as they are in the file.
 
+**As built (PR 5):**
+- Each output is: every field before the first BNG (the BDT, inline resource groups), then any
+  fields between the previous ENG and this BNG (an IMM, a NOP), then the group, then an End for
+  each Begin still open around it, named like its Begin. Fields after the last group are not
+  copied. One document (BDT ... EDT) per file: content after the EDT fails the job.
+- Fields are copied through `AfpWriter.write(StructuredField)`: type, flags, extension and data
+  are kept, padding is dropped (the reader strips it), reserved bytes are written as `0000`.
+- Only TLEs directly inside the top-level group become properties; TLEs inside pages or nested
+  groups are ignored. `pageCount` counts every BPG in the group, nested groups included.
+- "Missing" means absent or blank, the same test as the `missing` rule operator, so an empty
+  `name` TLE is missing. `indexError` values are appended with `; ` (`missing: name, zip`,
+  `rename conflict: ACCT_NO -> accountNumber`), so an earlier step's mark is kept.
+- A TLE repeated in a group with a different value keeps the first value and marks
+  `indexError` (`TLE 'name' repeated with another value`).
+- The job fails, with the byte offset, for: bytes that aren't AFP (`AfpFormatException`), an End
+  that doesn't close the innermost Begin, a Begin never closed, a BPG outside any group, and a
+  TLE that can't be decoded. An optional `codePage` param (a Java charset name, default IBM037)
+  decodes TLE text.
+- In `MapProperties`, the same value under the old and the new name is not a conflict (the old
+  name is dropped). A conflicting rename stays put, and a rename onto its old name is then
+  checked against it too.
+- Extra tests beyond the plan: `SplitAfpStepTest` (`repeatedTleWithAnotherValueKeepsTheFirstAndIsMarked`,
+  `closingEndsAreNamedLikeTheirBegins`, `unclosedGroupAtEndOfFileFailsWithOffset`,
+  `endWithNoBeginFails`, `pageOutsideAnyGroupFails`, `contentAfterTheDocumentEndsFails`,
+  `undecodableTleFailsWithOffset`, `bytesThatAreNotAfpFailWithOffset`,
+  `unknownCodePageFailsAtLoad`), `MapPropertiesStepTest` (`sameValueUnderBothNamesIsNoConflict`,
+  `conflictThatBlocksAnotherRenameMarksBoth`, `indexErrorFromAnEarlierStepIsKept`,
+  `badRenameParamsFailAtLoad`), and `AfpWriterTest.copiedFieldKeepsItsExtensionAndDropsPadding`.
+
 ## Acceptance criteria
 
 | # | Criterion | Verified by |

@@ -3,6 +3,7 @@ package dev.yjimmy.printlab.testdata;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import dev.yjimmy.printlab.afp.AfpDump;
@@ -82,6 +83,33 @@ public class StatementAfpGeneratorTest {
         assertThat(groups).filteredOn(g -> g.tles().get("zip").length() == 4).hasSize(2);
         assertThat(groups).allSatisfy(g -> assertThat(g.tles()).containsOnlyKeys(
                 "accountNumber", "name", "zip"));
+    }
+
+    @Test
+    public void legacyTleNamesOptionWritesProductionStyleNames() throws IOException {
+        List<Statement> statements = new StatementDataGenerator(SEED).generate(5, 0);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        StatementAfpGenerator.write(statements, StatementAfpGenerator.TleNames.LEGACY, out);
+
+        List<Group> groups = groups(AfpReader.readAll(new ByteArrayInputStream(out.toByteArray())));
+        for (int i = 0; i < groups.size(); i++) {
+            Statement statement = statements.get(i);
+            assertEquals("group " + i + " TLEs", Map.of(
+                    "ACCT_NO", statement.accountNumber(),
+                    "CUST_NAME", statement.name(),
+                    "ZIP_CODE", statement.zip()), groups.get(i).tles());
+        }
+        // Only the names differ: the pages are the same as with the default names.
+        assertEquals(groups(fields(statements)).stream().map(Group::pages).toList(),
+                groups.stream().map(Group::pages).toList());
+        assertEquals(StatementAfpGenerator.TleNames.LEGACY,
+                StatementAfpGenerator.TleNames.named("legacy"));
+        assertEquals(StatementAfpGenerator.TleNames.PROPERTY_NAMES,
+                StatementAfpGenerator.TleNames.named("property"));
+        assertThat(assertThrows(IllegalArgumentException.class,
+                () -> StatementAfpGenerator.TleNames.named("LEGACY")).getMessage())
+                .contains("'property' or 'legacy'");
     }
 
     @Test

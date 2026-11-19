@@ -24,7 +24,7 @@ import java.util.Locale;
  *     BNG S0000001                  one group per statement
  *       TLE accountNumber = ...
  *       TLE name = ...              empty for a "bad address" statement
- *       TLE zip = ...
+ *       TLE zip = ...               (or ACCT_NO, CUST_NAME, ZIP_CODE: see TleNames)
  *       BPG P0000001                one page; repeated per page
  *         BAG                       the page's environment:
  *           MCF                       font local ID 1 = code page T1V10037, character set C0D0GT10
@@ -92,23 +92,58 @@ public final class StatementAfpGenerator {
      *     statement order), at most {@code statements}
      */
     public void generate(int statements, int badAddresses, Path out) throws IOException {
+        generate(statements, badAddresses, TleNames.PROPERTY_NAMES, out);
+    }
+
+    /** As {@link #generate(int, int, Path)}, with the TLEs named {@code names}. */
+    public void generate(int statements, int badAddresses, TleNames names, Path out)
+            throws IOException {
         List<Statement> run = data.generate(statements, badAddresses);
         try (OutputStream file = Files.newOutputStream(out)) {
-            write(run, file);
+            write(run, names, file);
+        }
+    }
+
+    /**
+     * The names of the three TLEs in each page group. Real files name the same index values
+     * differently depending on the application that composed them.
+     */
+    public record TleNames(String accountNumber, String name, String zip) {
+
+        /** The document property names the workflows use: the default. */
+        public static final TleNames PROPERTY_NAMES = new TleNames("accountNumber", "name", "zip");
+        /** Production-style names, which {@code statements-afp-legacy.yaml} maps back. */
+        public static final TleNames LEGACY = new TleNames("ACCT_NO", "CUST_NAME", "ZIP_CODE");
+
+        /** {@code property} or {@code legacy}, as {@code generate-afp --tle-names} takes them. */
+        public static TleNames named(String option) {
+            return switch (option) {
+                case "property" -> PROPERTY_NAMES;
+                case "legacy" -> LEGACY;
+                default -> throw new IllegalArgumentException("--tle-names is 'property' or"
+                        + " 'legacy', got '" + option + "'");
+            };
         }
     }
 
     /** Writes {@code statements} as one AFP document to {@code out}, without closing it. */
     public static void write(List<Statement> statements, OutputStream out) throws IOException {
+        write(statements, TleNames.PROPERTY_NAMES, out);
+    }
+
+    /** As {@link #write(List, OutputStream)}, with the TLEs named {@code names}. */
+    public static void write(List<Statement> statements, TleNames names, OutputStream out)
+            throws IOException {
         AfpWriter afp = new AfpWriter(out);
         afp.begin(FieldType.BDT, "PRINTRUN");
         int pageNumber = 0;
         for (int s = 0; s < statements.size(); s++) {
             Statement statement = statements.get(s);
             afp.begin(FieldType.BNG, token('S', s + 1));
-            afp.write(FieldType.TLE, TleEncoder.encode("accountNumber", statement.accountNumber()));
-            afp.write(FieldType.TLE, TleEncoder.encode("name", statement.name()));
-            afp.write(FieldType.TLE, TleEncoder.encode("zip", statement.zip()));
+            afp.write(FieldType.TLE, TleEncoder.encode(names.accountNumber(),
+                    statement.accountNumber()));
+            afp.write(FieldType.TLE, TleEncoder.encode(names.name(), statement.name()));
+            afp.write(FieldType.TLE, TleEncoder.encode(names.zip(), statement.zip()));
             for (int p = 1; p <= statement.pageCount(); p++) {
                 afp.begin(FieldType.BPG, token('P', ++pageNumber));
                 writeEnvironment(afp);

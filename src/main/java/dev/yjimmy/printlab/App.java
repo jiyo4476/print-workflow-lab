@@ -16,6 +16,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -28,9 +31,11 @@ import java.util.concurrent.Executors;
  *   generate &lt;count&gt; &lt;out.pdf&gt; [badAddresses] [seed]
  *                                write a fake statement print run for testing, optionally with
  *                                some bad addresses for the exception queue
- *   generate-afp &lt;count&gt; &lt;out.afp&gt; [badAddresses] [seed]
+ *   generate-afp &lt;count&gt; &lt;out.afp&gt; [badAddresses] [seed] [--tle-names legacy]
  *                                the same run as AFP, one page group with TLEs per statement;
- *                                the same seed gives the same statements as generate
+ *                                the same seed gives the same statements as generate.
+ *                                --tle-names legacy names the TLEs ACCT_NO, CUST_NAME and
+ *                                ZIP_CODE (workflows/statements-afp-legacy.yaml maps them)
  *   dump-afp &lt;file.afp&gt; [codePage]
  *                                print an AFP file's structured fields and TLEs; exits 1 if
  *                                the file has structural problems
@@ -44,6 +49,18 @@ public final class App {
             case "run" -> run(Path.of(args.length > 1 ? args[1] : "workflows/statements.yaml"),
                     args.length > 2 ? args[2] : "*.pdf");
             case "generate", "generate-afp" -> {
+                StatementAfpGenerator.TleNames names = StatementAfpGenerator.TleNames.PROPERTY_NAMES;
+                int flag = Arrays.asList(args).indexOf("--tle-names");
+                if (flag >= 0) {
+                    if (command.equals("generate") || flag + 1 >= args.length) {
+                        usage();
+                        return;
+                    }
+                    names = StatementAfpGenerator.TleNames.named(args[flag + 1]);
+                    List<String> rest = new ArrayList<>(Arrays.asList(args));
+                    rest.subList(flag, flag + 2).clear();
+                    args = rest.toArray(String[]::new);
+                }
                 if (args.length < 3) {
                     usage();
                     return;
@@ -55,7 +72,7 @@ public final class App {
                 if (command.equals("generate")) {
                     new StatementPdfGenerator(seed).generate(count, bad, out);
                 } else {
-                    new StatementAfpGenerator(seed).generate(count, bad, out);
+                    new StatementAfpGenerator(seed).generate(count, bad, names, out);
                 }
                 System.out.println("Wrote " + out.toAbsolutePath() + " (seed " + seed + ")");
             }
@@ -123,9 +140,10 @@ public final class App {
                   generate <count> <out.pdf> [badAddresses] [seed]
                                                write a fake statement print run, optionally
                                                with some bad addresses
-                  generate-afp <count> <out.afp> [badAddresses] [seed]
+                  generate-afp <count> <out.afp> [badAddresses] [seed] [--tle-names legacy]
                                                the same run as AFP (same seed, same
-                                               statements)
+                                               statements); legacy names the TLEs ACCT_NO,
+                                               CUST_NAME and ZIP_CODE
                   dump-afp <file.afp> [codePage]
                                                print an AFP file's structured fields and TLEs;
                                                code page defaults to IBM037""");

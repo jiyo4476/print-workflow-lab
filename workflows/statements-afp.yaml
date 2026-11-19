@@ -1,0 +1,39 @@
+# Statement run from AFP: split a billing print file into one AFP document per customer, take
+# each statement's index from its TLEs, presort by zip, and write the results out. The same run
+# as statements.yaml, for files written by `generate-afp`.
+#
+#   ./mvnw -q exec:java -Dexec.args="run workflows/statements-afp.yaml *.afp"
+name: statements-afp
+description: Split an AFP statement run on its page groups, index from TLEs, and presort
+
+steps:
+  # One document per named page group (BNG ... ENG). Its TLEs become document properties, plus
+  # pageCount and format. No page regions: AFP carries the index itself.
+  - name: split-and-index
+    type: SplitAfp
+    params:
+      # A group without one of these (or with it blank) is marked indexError, not failed, so the
+      # route step can send it to the exception queue while the rest of the job completes.
+      requiredProperties: [accountNumber, name, zip]
+
+  - name: route
+    type: RouteDocuments
+    params:
+      routes:
+        # A missing TLE (indexError) or a bad zip can't be mailed.
+        - queue: exceptions
+          when: { any: [ { property: indexError, operator: matches, value: '.+' },
+                         { property: zip, operator: notMatches, value: '\d{5}' } ] }
+        - queue: large-envelope
+          when: { property: pageCount, operator: greaterThan, value: 6 }
+      default: standard
+
+  - name: presort
+    type: SortDocuments
+    params:
+      by: zip
+
+  - name: write-output
+    type: WriteOutput
+    params:
+      outputDir: output

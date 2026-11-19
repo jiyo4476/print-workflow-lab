@@ -1,0 +1,44 @@
+# statements-afp.yaml for AFP from an application whose TLEs have other names, as written by
+# `generate-afp ... --tle-names legacy`. A MapProperties step after the split renames them to
+# the property names the rest of the workflow uses; nothing after it changes.
+#
+#   ./mvnw -q exec:java -Dexec.args="run workflows/statements-afp-legacy.yaml *.afp"
+name: statements-afp-legacy
+description: The AFP statement run for files with ACCT_NO, CUST_NAME and ZIP_CODE TLEs
+
+steps:
+  # No requiredProperties here: they would check the names as they are in the file.
+  - name: split-and-index
+    type: SplitAfp
+
+  - name: map-properties
+    type: MapProperties
+    params:
+      # TLE name in the file: document property name.
+      rename:
+        ACCT_NO: accountNumber
+        CUST_NAME: name
+        ZIP_CODE: zip
+      # Checked after renaming, so these are the new names.
+      requiredProperties: [accountNumber, name, zip]
+
+  - name: route
+    type: RouteDocuments
+    params:
+      routes:
+        - queue: exceptions
+          when: { any: [ { property: indexError, operator: matches, value: '.+' },
+                         { property: zip, operator: notMatches, value: '\d{5}' } ] }
+        - queue: large-envelope
+          when: { property: pageCount, operator: greaterThan, value: 6 }
+      default: standard
+
+  - name: presort
+    type: SortDocuments
+    params:
+      by: zip
+
+  - name: write-output
+    type: WriteOutput
+    params:
+      outputDir: output
