@@ -59,12 +59,22 @@ report's line total rounded *down* to two decimals, in its own commit.
   add a step type: implement `Step`, register it in `StepRegistry.withBuiltIns()`, and use it from YAML.
   `SplitPdfStep` finds document boundaries and properties from text in page regions
   (`[x, y, w, h]` in points from the top-left). The regions in `statements.yaml` match the
-  layout `testdata/StatementPdfGenerator` writes, so change both together. `RouteDocuments` sets
-  the `queue` document property; `WriteOutput` writes each queue to `output/<jobId>/<queue>/`
-  and one `documents.csv` for the job.
-- **`input/HotFolderWatcher`** hands off a file only once its size stops changing. `App.run`
-  moves each file into `work/<jobId>/` before processing it, so a file is never picked up twice,
-  and runs jobs one at a time on a single-thread executor.
+  layout `testdata/StatementLayout` describes, so change both together. Its optional
+  `newDocumentWhen` (rule syntax, tested against the page's region values) starts a document even
+  when `splitOn` repeats; a PDF with no pages fails. `RouteDocuments` sets the `queue` document
+  property; `WriteOutput` writes each queue to `output/<jobId>/<queue>/`, keeping each
+  document's file extension, and one `documents.csv` for the job, whose `position`, `sequence`
+  and `file` columns are reserved (a property with one of those names fails the step).
+- **`input/HotFolderWatcher`** hands off a file only once its size stops changing. Its handler
+  must **claim** the file (move it out of the folder) before returning; `JobIntake.claim` moves
+  it into `work/<jobId>/`. Because anything still in the folder is unclaimed, the watcher can
+  safely rescan: at once on `OVERFLOW`, and every 5 s so a file whose claim failed (locked on
+  Windows) is retried. The glob ignores case. `App.run [workflow] [glob]` runs jobs one at a time
+  on a single-thread executor.
+- **Interrupts:** `WorkflowEngine` fails an interrupted job (an `InterruptedException`, or any
+  exception while the flag is set) with an "interrupted" message, clears the flag while it writes
+  the error folder, then restores it. `RunExternalProgram` kills the program and its children on
+  interrupt or timeout.
 - **`web/`** holds the servlets, registered with `@WebServlet` (there is no `web.xml`). Currently
   only `GET /api/health`.
 - **`afp/`** reads MO:DCA, following the MO:DCA Reference AFPC-0004-11. `AfpReader` is a

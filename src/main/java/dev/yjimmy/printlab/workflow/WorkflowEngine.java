@@ -20,6 +20,9 @@ import org.slf4j.LoggerFactory;
  * <p>Every step is timed and recorded on the job, and {@code work/<jobId>/job.json} is rewritten
  * after each one. When a step throws, the job goes to ERROR, later steps don't run, and the input
  * file moves to the {@link ErrorFolder} with an {@code error.txt}.
+ *
+ * <p>An interrupted thread (a shutdown, say) fails the job the same way, saying it was
+ * interrupted, and {@link #run} returns with the thread's interrupt flag still set.
  */
 public final class WorkflowEngine {
 
@@ -65,8 +68,15 @@ public final class WorkflowEngine {
         log.info("{} starting workflow '{}'", job, definition.name());
         for (NamedStep s : steps) {
             job.moveTo(JobState.PROCESSING, s.name());
-            log.info("{} -> step '{}'", job.id(), s.name());
             Instant startedAt = clock.instant();
+            if (Thread.interrupted()) {
+                // Interrupted between steps: don't start another one.
+                fail(job, s.name(), startedAt, "interrupted before the step started; resubmit"
+                        + " the input to run it again", null);
+                Thread.currentThread().interrupt();
+                return;
+            }
+            log.info("{} -> step '{}'", job.id(), s.name());
             if (s.when() != null && !s.when().test(job.properties())) {
                 log.info("{} skipped step '{}': its 'when' is false", job.id(), s.name());
                 job.addStepRecord(
@@ -80,7 +90,21 @@ public final class WorkflowEngine {
                 // StackOverflowError: PDFBox can recurse too deep on a deeply nested or malformed
                 // PDF. LinkageError: a missing or broken class. Both are about this one job, so
                 // the job fails cleanly. Other Errors (OutOfMemoryError, ...) are left to escape.
-                fail(job, s.name(), startedAt, e);
+                //
+                // An interrupt means someone wants this thread to stop (a shutdown, say). The job
+                // can't finish, so it fails like any other and its input goes to the error folder
+                // to be resubmitted. The interrupt flag is cleared while the error folder is
+                // written (an interrupted thread can't write files through NIO channels) and
+                // then restored, so the caller still sees it.
+                boolean interrupted = Thread.interrupted() || e instanceof InterruptedException;
+                String message = interrupted
+                        ? "interrupted before the step finished (" + describe(e)
+                                + "); resubmit the input to run it again"
+                        : describe(e);
+                fail(job, s.name(), startedAt, message, e);
+                if (interrupted) {
+                    Thread.currentThread().interrupt();
+                }
                 return;
             }
             job.addStepRecord(
@@ -92,9 +116,8 @@ public final class WorkflowEngine {
         log.info("{} complete: {} documents", job, job.documents().size());
     }
 
-    private void fail(Job job, String step, Instant startedAt, Throwable e) {
+    private void fail(Job job, String step, Instant startedAt, String message, Throwable e) {
         Instant failedAt = clock.instant();
-        String message = describe(e);
         job.fail(step, message);
         job.addStepRecord(new StepRecord(step, startedAt, failedAt, StepOutcome.FAILED));
         log.error("{} failed in step '{}': {}", job.id(), step, message, e);

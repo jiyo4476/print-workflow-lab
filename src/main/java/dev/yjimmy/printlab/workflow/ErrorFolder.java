@@ -49,7 +49,9 @@ public final class ErrorFolder {
                 .append("Input:  ").append(input.getFileName()).append('\n')
                 .append("Step:   ").append(step).append('\n')
                 .append("Time:   ").append(failedAt).append('\n')
-                .append("Error:  ").append(message).append('\n');
+                .append("Error:  ").append(message).append('\n')
+                // job.json and any partial output stay in the work folder.
+                .append("Work:   ").append(job.workDir().toAbsolutePath()).append('\n');
         if (moveProblem != null) {
             text.append("Note:   ").append(moveProblem).append('\n');
         }

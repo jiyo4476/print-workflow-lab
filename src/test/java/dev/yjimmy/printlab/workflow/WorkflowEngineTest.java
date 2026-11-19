@@ -1,5 +1,6 @@
 package dev.yjimmy.printlab.workflow;
 
+import java.nio.channels.ClosedByInterruptException;
 import static dev.yjimmy.printlab.testsupport.TestWorkflows.step;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -350,5 +351,78 @@ public class WorkflowEngineTest {
         assertEquals(JobState.ERROR, job.state());
         assertEquals("bad page", job.errorMessage());
         assertTrue("input stays where it was", Files.exists(job.inputFile()));
+    }
+
+    @Test
+    public void interruptFailsTheJobAndKeepsTheInterruptFlag() throws Exception {
+        registry.register("Ok", new RecordingStep("Ok", trace).factory());
+        registry.register("Wait", new RecordingStep("Wait", trace)
+                .failingOnCall(1, new InterruptedException()).factory());
+
+        Job job = newJob("j20");
+        boolean flagRestored;
+        try {
+            run(job, TestWorkflows.of(step("wait", "Wait"), step("ok", "Ok")));
+        } finally {
+            // Clear it so it doesn't leak into other tests.
+            flagRestored = Thread.interrupted();
+        }
+
+        assertTrue("interrupt flag restored", flagRestored);
+        assertEquals("no step after the interrupt", List.of("Wait"), trace);
+        assertEquals(JobState.ERROR, job.state());
+        assertThat(job.errorMessage()).startsWith("interrupted before the step finished")
+                .contains("resubmit");
+        assertTrue("input in the error folder",
+                Files.exists(errorDir.resolve("j20").resolve("j20-in.pdf")));
+    }
+
+    @Test
+    public void interruptSeenAsAnIoErrorStillWritesTheErrorFolder() throws Exception {
+        // NIO reports an interrupt during file I/O as ClosedByInterruptException with the flag
+        // set. The engine must clear it while writing error.txt, or that write fails too.
+        registry.register("Io", params -> job -> {
+            Thread.currentThread().interrupt();
+            throw new ClosedByInterruptException();
+        });
+
+        Job job = newJob("j21");
+        boolean flagRestored;
+        try {
+            run(job, TestWorkflows.of(step("io", "Io")));
+        } finally {
+            flagRestored = Thread.interrupted();
+        }
+
+        assertTrue("interrupt flag restored", flagRestored);
+        assertThat(job.errorMessage()).startsWith("interrupted before the step finished");
+        assertTrue("error.txt written", Files.exists(
+                errorDir.resolve("j21").resolve(ErrorFolder.ERROR_FILE_NAME)));
+    }
+
+    @Test
+    public void interruptBetweenStepsStopsBeforeTheNextStep() throws Exception {
+        registry.register("Ok", new RecordingStep("Ok", trace).factory());
+        registry.register("Interrupt", params -> job -> Thread.currentThread().interrupt());
+
+        Job job = newJob("j22");
+        boolean flagRestored;
+        try {
+            run(job, TestWorkflows.of(step("interrupt", "Interrupt"), step("ok", "Ok")));
+        } finally {
+            flagRestored = Thread.interrupted();
+        }
+
+        assertTrue("interrupt flag restored", flagRestored);
+        assertEquals("the next step never ran", List.of(), trace);
+        assertEquals(JobState.ERROR, job.state());
+        assertEquals("ok", job.currentStep());
+        assertThat(job.errorMessage()).startsWith("interrupted before the step started");
+    }
+
+    @Test
+    public void newIdsAreTwelveHexDigits() {
+        assertThat(Job.newId()).matches("[0-9a-f]{12}");
+        assertThat(Job.newId()).isNotEqualTo(Job.newId());
     }
 }

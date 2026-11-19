@@ -44,8 +44,16 @@ public final class RunExternalProgramStep implements Step {
                 .redirectOutput(logFile.toFile())
                 .start();
 
-        if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
-            process.destroyForcibly();
+        boolean finished;
+        try {
+            finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            // Don't leave the program running after the job has given up on it.
+            stop(process);
+            throw e;
+        }
+        if (!finished) {
+            stop(process);
             throw new IllegalStateException("Timed out after " + timeoutSeconds + "s: " + resolved);
         }
         int exit = process.exitValue();
@@ -54,5 +62,14 @@ public final class RunExternalProgramStep implements Step {
             throw new IllegalStateException("Exit code " + exit + " from " + resolved
                     + " (see " + logFile.getFileName() + ")");
         }
+    }
+
+    /**
+     * Kills the program and anything it started (a shell's child, say): killing only the
+     * process itself would leave its children running.
+     */
+    private static void stop(Process process) {
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        process.destroyForcibly();
     }
 }

@@ -1,5 +1,6 @@
 package dev.yjimmy.printlab.steps;
 
+import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
@@ -114,5 +115,41 @@ public class RunExternalProgramStepTest {
     private List<String> log() throws Exception {
         return Files.readAllLines(job.workDir().resolve("external-ext.log"),
                 StandardCharsets.UTF_8);
+    }
+    @Test
+    public void interruptStopsTheProgramAndIsRethrown() throws Exception {
+        RunExternalProgramStep step = new RunExternalProgramStep(
+                params(FakeProgram.command("sleep", "60000")));
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        Thread runner = new Thread(() -> {
+            try {
+                step.execute(job);
+            } catch (Throwable e) {
+                thrown.set(e);
+            }
+        });
+        runner.start();
+        ProcessHandle program = awaitChildProcess();
+
+        runner.interrupt();
+        runner.join(10_000);
+
+        assertThat(thrown.get()).isInstanceOf(InterruptedException.class);
+        program.onExit().get(10, java.util.concurrent.TimeUnit.SECONDS);
+        assertThat(program.isAlive()).as("program still running").isFalse();
+    }
+
+    /** The program the step started: this JVM's only child process. */
+    private static ProcessHandle awaitChildProcess() throws InterruptedException {
+        long deadline = System.nanoTime() + 10_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            var child = ProcessHandle.current().children().filter(ProcessHandle::isAlive)
+                    .findFirst();
+            if (child.isPresent()) {
+                return child.get();
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("the external program never started");
     }
 }

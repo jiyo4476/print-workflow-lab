@@ -1,5 +1,11 @@
 package dev.yjimmy.printlab.steps;
 
+import org.junit.rules.TemporaryFolder;
+import org.junit.Rule;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import java.nio.file.Path;
+import dev.yjimmy.printlab.workflow.Job;
+import dev.yjimmy.printlab.testsupport.TestJobs;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertThrows;
 
@@ -8,11 +14,15 @@ import java.util.Map;
 import org.junit.Test;
 
 /**
- * Config validation. Splitting real PDFs is covered end to end by {@code StatementWorkflowTest}.
+ * Config validation and edge cases. Splitting real PDFs is covered end to end by
+ * {@code StatementWorkflowTest}.
  */
 public class SplitPdfStepTest {
 
     private static final List<Integer> RECT = List.of(0, 0, 100, 20);
+
+    @Rule
+    public TemporaryFolder folder = new TemporaryFolder();
 
     @Test
     public void validConfigIsAccepted() {
@@ -48,5 +58,31 @@ public class SplitPdfStepTest {
         assertThat(assertThrows(IllegalArgumentException.class,
                 () -> new SplitPdfStep(Map.of("splitOn", "a"))).getMessage())
                 .contains("'regions'");
+    }
+
+    @Test
+    public void aPdfWithNoPagesFailsTheStep() throws Exception {
+        Path tmp = folder.getRoot().toPath();
+        Path input = tmp.resolve("empty.pdf");
+        try (PDDocument doc = new PDDocument()) {
+            doc.save(input.toFile());
+        }
+        Job job = TestJobs.newJob(tmp, input);
+        SplitPdfStep step = new SplitPdfStep(Map.of("splitOn", "a", "regions", Map.of("a", RECT)));
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> step.execute(job));
+
+        assertThat(e.getMessage()).contains("no pages");
+        assertThat(job.documents()).isEmpty();
+    }
+
+    @Test
+    public void invalidNewDocumentWhenFailsAtLoad() {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> new SplitPdfStep(Map.of("splitOn", "a", "regions", Map.of("a", RECT),
+                        "newDocumentWhen", Map.of("property", "a", "operator", "bogus"))));
+
+        assertThat(e.getMessage()).contains("'newDocumentWhen'").contains("bogus");
     }
 }
