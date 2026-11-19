@@ -23,7 +23,7 @@ starting a PR and record the answer there.
 | 2 | Routing rules and exception queue | Core | M | 1 |
 | 3 | AFP structured-field reader + dump tool | AFP | M | 0 |
 | 4 | AFP test-data writer (page groups + TLEs) | AFP | M | 3 |
-| 5 | `SplitAfp` step: TLEs become document properties | AFP | M | 4 |
+| 5 | `SplitAfp` step: TLEs become document properties; `MapProperties` renaming | AFP | M | 4 |
 | 6 | Multiple input devices (folder → workflow mapping) | AFP | S | 5 |
 | 7 | PDF object reader + dump tool | PDF | L | 0 |
 | 8 | Modern PDF structure: xref streams, object streams, incremental updates | PDF | M | 7 |
@@ -33,17 +33,19 @@ starting a PR and record the answer there.
 | 12 | Barcode step for inserter control | Print features | M | 0 |
 | 13 | Persistence: jobs and documents in PostgreSQL | Platform | L | 1, 19 |
 | 14 | REST API on Tomcat (read-only servlets) | Platform | M | 13 |
-| 15 | Reprint and retry | Platform | M | 14 |
+| 15 | Reprint and retry (AFP reprints marked with a text object per page) | Platform | M | 14 |
 | 16 | Marionette 4 dashboard: jobs, documents, search | Dashboard | L | 14 |
 | 17 | Dashboard actions: reprint, retry, exception queue | Dashboard | M | 15, 16 |
 | 18 | Docker Compose, demo script, README polish | Presentation | S | 17 |
 | 19 | Jenkins CI, running locally in Docker (land right after 0) | Foundation | M | 0 |
 | 20 | Deploy to k3s on ARM | Delivery | M | 18, 19 |
+| 21 | Mark AFP reprints with a page overlay | AFP | M | 15 |
 
 ```
 0 ──► 1 ──► 2
 │     └──► 13 ──► 14 ──► 15 ──► 17 ──► 18 ──► 20
-│          ▲       └──► 16 ──┘              ▲
+│          ▲       │     └──► 21            ▲
+│          │       └──► 16 ──┘              │
 ├──► 19 ───┴────────────────────────────────┘
 ├──► 3 ──► 4 ──► 5 ──► 6
 ├──► 7 ──► 8 ──► 10
@@ -57,8 +59,9 @@ starting a PR and record the answer there.
 routing — the most interview-relevant topics — without the platform work. Then 12 (barcodes), and
 13 → 14 → 16 for a visible dashboard.
 
-PRs 19 and 20 were added after the plan was written (CI/CD moved to Jenkins and k3s), so their
-numbers don't show their order: PR 19 lands right after PR 0, and PR 20 comes last.
+PRs 19, 20 and 21 were added after the plan was written (CI/CD moved to Jenkins and k3s, and the
+AFP overlay was split out of PR 15), so their numbers don't show their order: PR 19 lands right
+after PR 0, PR 21 any time after PR 15, and PR 20 comes last.
 
 Branch naming: `feature/NN-short-name` (e.g. `feature/03-afp-reader`).
 
@@ -330,7 +333,7 @@ connectors with rules.
 > Short on time? Skip this PR and test PR 5 against a sample AFP file with page groups and TLEs
 > checked into `fixtures/afp/`.
 
-### PR 5 — `SplitAfp` step `M`
+### PR 5 — `SplitAfp` step and property mapping `M`
 
 **Goal:** the AFP equivalent of `SplitPdf` — no guessing from text positions.
 
@@ -340,6 +343,12 @@ connectors with rules.
 - Param `requiredProperties`: a group missing one is **marked** (`indexError` property), so PR 2's
   rules route it to `exceptions` instead of failing the job.
 - `workflows/statements-afp.yaml` mirroring the PDF workflow.
+- A reusable `MapProperties` step that renames document properties with a `rename:` map, plus an
+  optional `requiredProperties` checked after renaming
+  ([Q-04](OPEN_QUESTIONS.md#q-04--tle-name-mapping)). A different value already under the new
+  name marks the document (`indexError`) instead of overwriting it.
+- `App generate-afp --tle-names legacy` writes `ACCT_NO`, `CUST_NAME` and `ZIP_CODE` TLEs, and
+  `workflows/statements-afp-legacy.yaml` maps them back with `MapProperties`.
 
 **Tests**
 - Unit — `SplitAfpStepTest`
@@ -355,6 +364,17 @@ connectors with rules.
 - Workflow — `AfpStatementWorkflowTest`
   - `afpAndPdfWorkflowsProduceSameIndexForSameSeed` (same document count, properties, zip order)
   - `missingTleRoutesToExceptions` (with PR 2 rules)
+  - `legacyTleNamesGiveSameIndexAfterMapping`
+- Unit — `MapPropertiesStepTest`
+  - `renamesListedProperties`
+  - `keepsUnlistedProperties`
+  - `missingOldNameIsSkipped`
+  - `conflictingValueMarksIndexErrorAndKeepsBoth`
+  - `requiredPropertiesAreCheckedAfterRenaming`
+  - `renamesApplyTogetherSoOrderDoesNotMatter`
+  - `twoOldNamesToOneNewNameFailsAtLoad`
+  - `mapsArbitraryNamesFromWorkflowConfig` (no names hardcoded; everything comes from the YAML)
+- Unit — `StatementAfpGeneratorTest.legacyTleNamesOptionWritesProductionStyleNames`
 
 ### PR 6 — Multiple input devices `S`
 
@@ -636,7 +656,8 @@ inside it.
   - `GET /api/jobs?state=&limit=`: newest first
   - `GET /api/jobs/{id}`: job, properties, step history
   - `GET /api/jobs/{id}/documents?queue=`
-  - `GET /api/documents?property=accountNumber&value=...`: search
+  - `GET /api/documents?property=&value=&queue=&limit=&offset=`: search across jobs by property
+    or queue, paged, with `X-Total-Count` ([Q-08](OPEN_QUESTIONS.md#q-08--exceptions-endpoint))
   - `GET /api/documents/{id}/file`: streams the PDF/AFP
   - `GET /api/documents/{id}/structure`: the document's structure as JSON, built from the
     `dump-afp` / `dump-pdf` readers (structured fields, or object tree + page operators)
@@ -659,7 +680,10 @@ inside it.
 - Integration — `DocumentsApiTest`
   - `listsDocumentsForJobFilteredByQueue`
   - `searchByAccountNumberReturnsMatch`
-  - `searchWithoutPropertyReturns400`
+  - `searchWithoutAnyFilterReturns400`
+  - `filtersByQueueAcrossJobs`
+  - `limitAndOffsetPageResultsWithTotalCount`
+  - `invalidLimitOrOffsetReturns400`
   - `fileEndpointStreamsPdfWithCorrectContentType`
   - `fileEndpointDoesNotServePathsOutsideOutputDir` (path traversal guard)
   - `structureEndpointReturnsFieldsForAfpAndObjectsForPdf`
@@ -684,13 +708,19 @@ inside it.
   job records its parent job id.
 - `POST /api/jobs/{id}/retry` → re-runs a failed job from the step that failed.
 - Both actions are recorded in `job_steps` for an audit trail.
+- **AFP reprints** (Q-07) get a `Reprint` TLE and a separate "REPRINT" text object
+  (`BPT`/`PTX`/`EPT`) on every page, positioned in the page's own units from its `PGD`. Existing
+  text is never edited. New AFP building blocks: `PageBuilder` (encoders moved out of
+  `StatementAfpGenerator`) and `AfpRewriter` for streaming field-by-field edits. A page overlay
+  comes later, in PR 21.
 
 **Tests**
 - Unit — `ReprintServiceTest`
   - `createsChildJobWithOnlySelectedDocuments`
   - `childJobRecordsParentId`
   - `originalJobIsUnchanged`
-  - `documentsFromDifferentJobsCanBeReprintedTogether` (or are rejected — decide and test it)
+  - `documentsFromDifferentJobsAreRejected` (one source job per reprint, Q-06; extending
+    across jobs is a noted follow-up)
   - `unknownDocumentIdFailsWholeRequest` (no partial reprint)
 - Unit — `RetryServiceTest`
   - `retriesFromFailedStepNotFromStart` (`RecordingStep` shows steps 1 was not re-run)
@@ -703,6 +733,38 @@ inside it.
   - `doubleSubmitRetryDoesNotRunTwice` (idempotency)
 - Workflow — `ReprintWorkflowTest`
   - `reprintedPdfHasReprintMarkerOnEveryPage`
+- Unit — `ReprintAfpTest`
+  - `reprintedAfpHasReprintTleOnEveryDocument`
+  - `everyPageGetsOneReprintTextObject`, `markPositionUsesPageUnitsFromPgd`
+  - `pageWithoutFontMappingGetsMcfEntry`
+  - `reprintingTwiceDoesNotDuplicateTheMark`
+  - `reprintedAfpReadsBackCleanly`, `originalPageFieldsAreUnchanged`
+- Unit — `AfpRewriterTest`, `PageBuilderTest`
+- Manual: "REPRINT" shows in Papyrus AFP Viewer (screenshot in the PR).
+
+### PR 21 — Mark AFP reprints with a page overlay `M` (any time after PR 15)
+
+**Goal:** the production way to mark pages: a `REPRINT` overlay defined once as a resource and
+referenced from every page ([PRD-21](prd/PRD-21-afp-reprint-overlay.md), Q-07).
+
+- `OverlayWriter`: a `BRS`/`BMO … EMO`/`ERS` resource in the document's inline resource group,
+  created if missing, added to if present, never duplicated.
+- `MPO` in each page's environment group and `IPO` after it, at the same position as PR 15's
+  mark. Both are decoded by `dump-afp`.
+- A `mark: text | overlay` param on the reprint step; the default stays `text` until the overlay
+  is checked in a viewer. The `Reprint` TLE is added either way.
+- Medium overlays (form definitions) are out of scope, but the difference is a design note.
+
+**Tests**
+- Unit — `ReprintOverlayTest`
+  - `overlayResourceIsInlineOnce`, `existingResourceGroupGetsOverlayAdded`
+  - `everyPageMapsAndIncludesTheOverlay`
+  - `reprintingTwiceDoesNotDuplicateTheOverlay`
+  - `reprintedAfpReadsBackCleanly`, `originalPageFieldsAreUnchanged`
+- Unit — `OverlayWriterTest.writesBalancedOverlayResource`,
+  `SplitAfpStepTest.overlayInResourceGroupSurvivesSplit`,
+  `DumpAfpTest.dumpShowsOverlayNameAndPositionForMpoAndIpo`
+- Manual: both marks show in the same place in Papyrus AFP Viewer (screenshots in the PR).
 
 ---
 
@@ -718,7 +780,7 @@ DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
 - `DashboardApp` (`Marionette.Application`, `region: '#app'`, `channelName: 'dashboard'`) shows
   the `ShellView` (header, nav and main regions) and starts `Backbone.history`.
 - `DashboardRouter` (`Backbone.Router`) maps hash routes to the app:
-  `#jobs`, `#jobs/:id`, `#search?property=...&value=...`, `#documents/:id/structure`. Route
+  `#jobs`, `#jobs/:id`, `#search?property=...&value=...&offset=...`, `#documents/:id/structure`. Route
   handlers only call app methods; the app picks a controller and shows its View in `main`.
 - Entities (`js/entities/`): `Job` / `JobCollection` (`url: 'api/jobs'`), `Document` /
   `DocumentCollection`, `StructureNode` with child nodes for nested AFP groups and PDF objects.
@@ -761,6 +823,9 @@ DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
   - `newSearchAbortsPreviousRequest`
   - `encodesQueryValues`
   - `emptyResultShowsMessage`
+  - `showsRangeAndTotalFromHeader` ("Showing 1–50 of N" from `X-Total-Count`)
+  - `nextAndPreviousChangeOffset`, `pagingButtonsDisabledAtEnds`
+  - `offsetInUrlRestoresPage` (back, forward and bookmarks return to the same page)
 - `structure.test.mjs`
   - `rendersNestedAfpGroupsAndPdfObjects` (from fixture JSON)
   - `collapsingANodeHidesItsChildren`
@@ -789,7 +854,9 @@ DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
   - `showsErrorMessageWhenApiFails`
   - `successfulReprintRefreshesJobsAndNavigatesToChild`
   - `leavingThePageMidRequestDoesNotUpdateDestroyedViews`
-- Integration — `ExceptionsApiTest` (if a new endpoint is added for the cross-job view)
+- `exceptions.test.mjs`
+  - `requestsExceptionsQueueWithPaging` (calls `GET /api/documents?queue=exceptions` with
+    `limit`/`offset`; no separate endpoint, see Q-08)
 - Manual demo script in the PR: generate a run with bad addresses → find one in Exceptions →
   reprint a good statement by account number → see the child job complete.
 
@@ -807,6 +874,7 @@ DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
 - `docs/DEMO.md`: the 5-minute walkthrough, step by step.
 - README: architecture diagram, a 30-second GIF of the demo, updated concept map and roadmap.
 - Add a license (MIT) before making the repository public.
+- Host port `${PRINTLAB_PORT:-8080}` (Q-09), listed in `.env.example` and `docs/DEMO.md`.
 
 **Tests**
 - CI job: build the Docker image.
@@ -822,13 +890,14 @@ DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
 CI/CD runs on a **Jenkins controller running locally in Docker**, and deploys to a **k3s
 server on ARM**. Jenkins is the only CI: GitHub Actions is removed in PR 19, because its
 minutes cost money. Jenkins runs build containers on Docker or as pods on the k3s cluster.
-Decisions are in `OPEN_QUESTIONS.md` (Q-05, Q-10 to Q-15).
+Decisions are in `OPEN_QUESTIONS.md` (Q-05, Q-10 to Q-17).
 
 ### PR 19 — Jenkins CI, running locally in Docker `M` (land right after PR 0)
 
-- `ci/jenkins/`: a pinned Jenkins LTS (JDK 21) image, pinned `plugins.txt`, a Configuration as
-  Code file and a Compose file. `docker compose -f ci/jenkins/compose.yml up -d` gives a ready
-  Jenkins with a multibranch job for this repository and no setup wizard.
+- Uses the existing shared Jenkins, which runs in Docker with a `docker:dind` sidecar over TLS
+  (Q-17) and lives outside this repository. The repository ships the `Jenkinsfile` and
+  `docs/CI.md`: required plugins and tested versions, credential IDs, and how to create the
+  multibranch job.
 - A declarative `Jenkinsfile`, each stage in a pinned container: checkout → `./mvnw -B verify`
   → `npm ci && npm test` → PostgreSQL integration (Testcontainers, required, added by PR 13) →
   coverage report.
@@ -839,7 +908,7 @@ Decisions are in `OPEN_QUESTIONS.md` (Q-05, Q-10 to Q-15).
 - Credentials only in the Jenkins credential store. `docs/CI.md` explains setup.
 
 **Tests**
-- Manual, recorded in the PR: Jenkins from an empty volume has the job; a green build publishes
+- Manual, recorded in the PR: recreating the job from `docs/CI.md` works; a green build publishes
   results and coverage; a broken Java, Mocha and PostgreSQL test each fail the right stage;
   no containers are left running afterwards.
 
@@ -856,7 +925,9 @@ Decisions are in `OPEN_QUESTIONS.md` (Q-05, Q-10 to Q-15).
 - Every green `main` build deploys: set the image tag, `kubectl apply -k`,
   `kubectl rollout status`, then the smoke test against the server.
   `kubectl rollout undo` if either fails.
-- `docs/DEPLOY.md`: k3s server, registry and Jenkins credential setup.
+- The hot folder is a folder on the server shared over SMB and mounted into the pod
+  (`hostPath`, pinned with a `nodeSelector`), so operators drag files onto a network drive (Q-16).
+- `docs/DEPLOY.md`: k3s server, Samba share, registry and Jenkins credential setup.
 
 **Tests**
 - Pipeline: manifests validated (`kubectl apply --dry-run=server` or `kubeconform`); post-deploy

@@ -57,6 +57,9 @@ to present and easy to check.
 - **FR-5** The README opens with the concept map and a 30-second GIF, then run instructions, an
   architecture diagram and the roadmap.
 - **FR-6** A `LICENSE` file (MIT) is added.
+- **FR-7** Compose publishes the app on `${PRINTLAB_PORT:-8080}`
+  ([Q-09](../OPEN_QUESTIONS.md#q-09--host-port)). `PRINTLAB_PORT` is listed in `.env.example` and
+  `docs/DEMO.md`, and the smoke test reads the same variable.
 
 **Non-functional**
 - **NFR-1** The image builds reproducibly in CI. Pin base image tags (and digests if practical).
@@ -95,9 +98,8 @@ to present and easy to check.
 
 Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-09). Record the answers there and here.
 
-- Port 8080 is often taken on developer machines (it was during the scaffold's manual check).
-  Make the host port configurable in Compose (`${PRINTLAB_PORT:-8080}`) and mention it in the
-  demo doc.
+- **Decided (Q-09):** port 8080 is often taken on developer machines (it was during the
+  scaffold's manual check), so the host port is `${PRINTLAB_PORT:-8080}` (FR-7).
 
 ## Definition of done
 

@@ -71,8 +71,12 @@ Then check that the deployed app is healthy.
   `kubectl rollout undo`, and reports the failure.
 - **FR-7** Database credentials and the kubeconfig are Jenkins credentials and Kubernetes
   Secrets, never committed. The manifests ship a `Secret` template, not values.
-- **FR-8** Operators can get files into the hot folder on the server
-  ([Q-16](../OPEN_QUESTIONS.md#q-16--getting-files-into-the-hot-folder-on-k3s)).
+- **FR-8** Operators get files into the hot folder through an SMB share
+  ([Q-16](../OPEN_QUESTIONS.md#q-16--getting-files-into-the-hot-folder-on-k3s)). A folder on the
+  k3s server is shared with Samba and mounted into the app pod as a `hostPath` volume for
+  `hotfolder/`, and a `nodeSelector` pins the pod to that node. `docs/DEPLOY.md` covers the
+  Samba user and the file ownership the app container needs. The pipeline's smoke test drops its
+  file with `kubectl cp`, so it doesn't depend on the share.
 
 **Non-functional**
 - **NFR-1** Base images used by the Dockerfile and manifests (Temurin, Tomcat, PostgreSQL) have
