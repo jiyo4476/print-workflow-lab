@@ -88,6 +88,9 @@ and PDF jobs alike.
   - The optional `requiredProperties` is checked after renaming, and works like FR-4.
   - A map that sends two old names to the same new name fails when the workflow loads, before
     any job runs.
+  - Mapping is fully configurable: every old and new name comes from the workflow YAML, the map
+    can hold any number of entries, and no TLE or property name is hardcoded in `SplitAfp` or
+    `MapProperties`. Each input device's workflow (PRD-06) can carry its own map.
 - **FR-9** `App generate-afp` takes `--tle-names legacy`, which writes the TLEs as `ACCT_NO`,
   `CUST_NAME` and `ZIP_CODE` instead of the property names. The default stays as today.
 - **FR-10** `workflows/statements-afp-legacy.yaml` is the AFP workflow with a `MapProperties`
@@ -132,7 +135,7 @@ and PDF jobs alike.
 - Unit — `MapPropertiesStepTest`: `renamesListedProperties`, `keepsUnlistedProperties`,
   `missingOldNameIsSkipped`, `conflictingValueMarksIndexErrorAndKeepsBoth`,
   `requiredPropertiesAreCheckedAfterRenaming`, `renamesApplyTogetherSoOrderDoesNotMatter`,
-  `twoOldNamesToOneNewNameFailsAtLoad`
+  `twoOldNamesToOneNewNameFailsAtLoad`, `mapsArbitraryNamesFromWorkflowConfig`
 - Unit — `StatementAfpGeneratorTest.legacyTleNamesOptionWritesProductionStyleNames`
 - Workflow — `AfpStatementWorkflowTest`: `afpAndPdfWorkflowsProduceSameIndexForSameSeed`,
   `missingTleRoutesToExceptions`, `legacyTleNamesGiveSameIndexAfterMapping`

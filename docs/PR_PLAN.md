@@ -370,6 +370,7 @@ connectors with rules.
   - `requiredPropertiesAreCheckedAfterRenaming`
   - `renamesApplyTogetherSoOrderDoesNotMatter`
   - `twoOldNamesToOneNewNameFailsAtLoad`
+  - `mapsArbitraryNamesFromWorkflowConfig` (no names hardcoded; everything comes from the YAML)
 - Unit — `StatementAfpGeneratorTest.legacyTleNamesOptionWritesProductionStyleNames`
 
 ### PR 6 — Multiple input devices `S`
@@ -652,7 +653,8 @@ inside it.
   - `GET /api/jobs?state=&limit=`: newest first
   - `GET /api/jobs/{id}`: job, properties, step history
   - `GET /api/jobs/{id}/documents?queue=`
-  - `GET /api/documents?property=accountNumber&value=...`: search
+  - `GET /api/documents?property=&value=&queue=&limit=&offset=`: search across jobs by property
+    or queue, paged, with `X-Total-Count` ([Q-08](OPEN_QUESTIONS.md#q-08--exceptions-endpoint))
   - `GET /api/documents/{id}/file`: streams the PDF/AFP
   - `GET /api/documents/{id}/structure`: the document's structure as JSON, built from the
     `dump-afp` / `dump-pdf` readers (structured fields, or object tree + page operators)
@@ -675,7 +677,10 @@ inside it.
 - Integration — `DocumentsApiTest`
   - `listsDocumentsForJobFilteredByQueue`
   - `searchByAccountNumberReturnsMatch`
-  - `searchWithoutPropertyReturns400`
+  - `searchWithoutAnyFilterReturns400`
+  - `filtersByQueueAcrossJobs`
+  - `limitAndOffsetPageResultsWithTotalCount`
+  - `invalidLimitOrOffsetReturns400`
   - `fileEndpointStreamsPdfWithCorrectContentType`
   - `fileEndpointDoesNotServePathsOutsideOutputDir` (path traversal guard)
   - `structureEndpointReturnsFieldsForAfpAndObjectsForPdf`
@@ -706,7 +711,8 @@ inside it.
   - `createsChildJobWithOnlySelectedDocuments`
   - `childJobRecordsParentId`
   - `originalJobIsUnchanged`
-  - `documentsFromDifferentJobsCanBeReprintedTogether` (or are rejected — decide and test it)
+  - `documentsFromDifferentJobsAreRejected` (one source job per reprint, Q-06; extending
+    across jobs is a noted follow-up)
   - `unknownDocumentIdFailsWholeRequest` (no partial reprint)
 - Unit — `RetryServiceTest`
   - `retriesFromFailedStepNotFromStart` (`RecordingStep` shows steps 1 was not re-run)
@@ -805,7 +811,9 @@ DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
   - `showsErrorMessageWhenApiFails`
   - `successfulReprintRefreshesJobsAndNavigatesToChild`
   - `leavingThePageMidRequestDoesNotUpdateDestroyedViews`
-- Integration — `ExceptionsApiTest` (if a new endpoint is added for the cross-job view)
+- `exceptions.test.mjs`
+  - `requestsExceptionsQueueWithPaging` (calls `GET /api/documents?queue=exceptions` with
+    `limit`/`offset`; no separate endpoint, see Q-08)
 - Manual demo script in the PR: generate a run with bad addresses → find one in Exceptions →
   reprint a good statement by account number → see the child job complete.
 
@@ -823,6 +831,7 @@ DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
 - `docs/DEMO.md`: the 5-minute walkthrough, step by step.
 - README: architecture diagram, a 30-second GIF of the demo, updated concept map and roadmap.
 - Add a license (MIT) before making the repository public.
+- Host port `${PRINTLAB_PORT:-8080}` (Q-09), listed in `.env.example` and `docs/DEMO.md`.
 
 **Tests**
 - CI job: build the Docker image.
@@ -838,12 +847,12 @@ DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
 CI/CD runs on a **Jenkins controller running locally in Docker**, and deploys to a **k3s
 server on ARM**. Jenkins is the only CI: GitHub Actions is removed in PR 19, because its
 minutes cost money. Jenkins runs build containers on Docker or as pods on the k3s cluster.
-Decisions are in `OPEN_QUESTIONS.md` (Q-05, Q-10 to Q-15).
+Decisions are in `OPEN_QUESTIONS.md` (Q-05, Q-10 to Q-17).
 
 ### PR 19 — Jenkins CI, running locally in Docker `M` (land right after PR 0)
 
 - `ci/jenkins/`: a pinned Jenkins LTS (JDK 21) image, pinned `plugins.txt`, a Configuration as
-  Code file and a Compose file. `docker compose -f ci/jenkins/compose.yml up -d` gives a ready
+  Code file and a Compose file that runs Jenkins with a `docker:dind` sidecar over TLS (Q-17). `docker compose -f ci/jenkins/compose.yml up -d` gives a ready
   Jenkins with a multibranch job for this repository and no setup wizard.
 - A declarative `Jenkinsfile`, each stage in a pinned container: checkout → `./mvnw -B verify`
   → `npm ci && npm test` → PostgreSQL integration (Testcontainers, required, added by PR 13) →
@@ -872,7 +881,9 @@ Decisions are in `OPEN_QUESTIONS.md` (Q-05, Q-10 to Q-15).
 - Every green `main` build deploys: set the image tag, `kubectl apply -k`,
   `kubectl rollout status`, then the smoke test against the server.
   `kubectl rollout undo` if either fails.
-- `docs/DEPLOY.md`: k3s server, registry and Jenkins credential setup.
+- The hot folder is a folder on the server shared over SMB and mounted into the pod
+  (`hostPath`, pinned with a `nodeSelector`), so operators drag files onto a network drive (Q-16).
+- `docs/DEPLOY.md`: k3s server, Samba share, registry and Jenkins credential setup.
 
 **Tests**
 - Pipeline: manifests validated (`kubectl apply --dry-run=server` or `kubeconform`); post-deploy

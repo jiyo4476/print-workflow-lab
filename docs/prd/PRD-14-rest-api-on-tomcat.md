@@ -45,7 +45,16 @@ framework, is practice in request handling, status codes, streaming and lifecycl
 - **FR-2** `GET /api/jobs/{id}` returns the job, its properties and step history; an unknown id
   is a 404.
 - **FR-3** `GET /api/jobs/{id}/documents?queue=` returns the job's documents, filtered by queue.
-- **FR-4** `GET /api/documents?property=…&value=…` searches; a missing `property` is a 400.
+- **FR-4** `GET /api/documents` searches across jobs with these filters
+  ([Q-08](../OPEN_QUESTIONS.md#q-08--exceptions-endpoint)):
+  - `property` and `value`, which go together, match a document property.
+  - `queue` matches the document's queue (for example `queue=exceptions`, used by PRD-17's
+    Exceptions view).
+  - `limit` (default 50, capped at 500) and `offset` (default 0) page the results, ordered by job
+    (newest first), then document sequence. The `X-Total-Count` header gives the total number of
+    matches.
+  - A request with neither `property` nor `queue` is a 400, as is `property` without `value`, or
+    a negative or non-numeric `limit` or `offset`.
 - **FR-5** `GET /api/documents/{id}/file` streams the file with the correct content type
   (`application/pdf`, or `application/afp` / `application/octet-stream` for AFP) and refuses
   any path outside the output directory.
@@ -85,7 +94,9 @@ framework, is practice in request handling, status codes, streaming and lifecycl
 - Integration — `JobsApiTest`: `listsJobsNewestFirst`, `filtersByState`, `limitIsCapped`,
   `getJobIncludesStepHistory`, `unknownJobReturns404Json`, `invalidStateParamReturns400`
 - Integration — `DocumentsApiTest`: `listsDocumentsForJobFilteredByQueue`,
-  `searchByAccountNumberReturnsMatch`, `searchWithoutPropertyReturns400`,
+  `searchByAccountNumberReturnsMatch`, `searchWithoutAnyFilterReturns400`,
+  `filtersByQueueAcrossJobs`, `limitAndOffsetPageResultsWithTotalCount`,
+  `invalidLimitOrOffsetReturns400`,
   `fileEndpointStreamsPdfWithCorrectContentType`,
   `fileEndpointDoesNotServePathsOutsideOutputDir`,
   `structureEndpointReturnsFieldsForAfpAndObjectsForPdf`,

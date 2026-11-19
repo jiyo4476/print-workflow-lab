@@ -43,6 +43,9 @@ run is the headline of the demo.
   through `workflows/reprint.yaml`, which adds a "REPRINT" marker and skips presort.
 - **FR-2** The child job records its parent job id; the original job is unchanged.
 - **FR-3** If any id is unknown, the whole request fails; nothing is partially reprinted.
+- **FR-3a** All documents in a request must come from one job. A request mixing jobs is a 400
+  whose message names the jobs involved, and nothing is reprinted
+  ([Q-06](../OPEN_QUESTIONS.md#q-06--reprint-across-jobs)).
 - **FR-4** An empty id list is a 400; a successful reprint is a 201 with the child job id.
 - **FR-5** Retry resumes from the failed step, using the state saved after the last successful
   step. Earlier steps don't run again.
@@ -73,7 +76,7 @@ run is the headline of the demo.
 
 - Unit — `ReprintServiceTest`: `createsChildJobWithOnlySelectedDocuments`,
   `childJobRecordsParentId`, `originalJobIsUnchanged`,
-  `documentsFromDifferentJobsCanBeReprintedTogether` (or rejected, see open question),
+  `documentsFromDifferentJobsAreRejected`,
   `unknownDocumentIdFailsWholeRequest`
 - Unit — `RetryServiceTest`: `retriesFromFailedStepNotFromStart`,
   `retryingCompletedJobIsRejected`, `retryIsRecordedInStepHistory`
@@ -86,9 +89,11 @@ run is the headline of the demo.
 
 Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-06, Q-07). Record the answers there and here.
 
-- **Open:** can one reprint combine documents from different jobs? Allowing it fits real use
-  (a damaged inserter tray mixes jobs) but makes "parent job" plural. Decide in the PR, and test
-  whichever is chosen.
+- **Decided (Q-06):** one source job per reprint (FR-3a), so each child job has one parent.
+- **Follow-up to review:** extending reprint across jobs, since one inserter jam can damage mail
+  from several jobs. The first option to evaluate is splitting a mixed request automatically into
+  one child job per source job (Q-06 option C): it keeps one parent per job and needs no schema
+  change, but the API returns several child ids. Record the review in `OPEN_QUESTIONS.md`.
 - **Open:** AFP reprints. Is the "REPRINT" marker added as a PTOCA text overlay, or omitted for
   AFP? Decide and document it.
 

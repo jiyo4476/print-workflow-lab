@@ -40,8 +40,10 @@ nothing is set up by clicking through the UI.
   - A `Dockerfile` based on a pinned `jenkins/jenkins` LTS JDK 21 image.
   - `plugins.txt` with pinned plugin versions.
   - A Configuration as Code (JCasC) file.
-  - A Compose file that starts Jenkins and gives it Docker access
-    ([Q-17](../OPEN_QUESTIONS.md#q-17--how-jenkins-reaches-the-local-docker)).
+  - A Compose file that starts Jenkins in Docker with a `docker:dind` sidecar, reached at
+    `tcp://docker:2376` over TLS
+    ([Q-17](../OPEN_QUESTIONS.md#q-17--how-jenkins-reaches-the-local-docker)). This setup
+    already runs locally; this PR moves it into the repository.
 - Two places to run build containers
   ([Q-11](../OPEN_QUESTIONS.md#q-11--docker-access-for-jenkins)): Docker, and the k3s cluster
   through the Kubernetes plugin.
@@ -102,7 +104,7 @@ nothing is set up by clicking through the UI.
 - Mocha needs a JUnit reporter for FR-4, such as `mocha-junit-reporter` as a dev dependency.
   Keep the default spec reporter for local runs.
 - Testcontainers inside a containerized agent needs the Docker host to be reachable from the
-  agent. Set `TESTCONTAINERS_HOST_OVERRIDE` if the Docker access method requires it; Q-11 decides
+  agent. With the dind sidecar (Q-17), set `TESTCONTAINERS_HOST_OVERRIDE=docker`; Q-11 decides
   the method.
 - GitHub Actions keeps running until the Jenkins pipeline is green on `main`; this PR then
   deletes `.github/workflows/ci.yml`, so there's no gap without CI.

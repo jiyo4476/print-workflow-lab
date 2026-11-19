@@ -20,20 +20,20 @@ are suggestions, not decisions: the PR that answers the question makes the call.
 | [Q-01](#q-01--exception-and-queue-csv-layout) | [PRD-02](prd/PRD-02-routing-rules-and-exception-queue.md) | One CSV per queue, or one CSV with a `queue` column? | One combined CSV | **Decided:** one combined CSV |
 | [Q-02](#q-02--real-afp-sample-for-the-manual-check) | [PRD-03](prd/PRD-03-afp-structured-field-reader.md) | Where does a real AFP file for the manual check come from? | Generate one with Apache FOP | **Decided:** AFPWorld sample, local only |
 | [Q-03](#q-03--build-the-afp-writer-or-check-in-a-sample) | [PRD-04](prd/PRD-04-afp-test-data-writer.md) | Build the AFP test-data writer, or check in a sample AFP file? | Build the writer; keep the FOP file as a cross-check | Decided |
-| [Q-04](#q-04--tle-name-mapping) | [PRD-05](prd/PRD-05-split-afp-step.md) | Add an optional `rename:` map for TLE names? | Not yet; configurable key names only | **Decided:** a reusable `MapProperties` step |
+| [Q-04](#q-04--tle-name-mapping) | [PRD-05](prd/PRD-05-split-afp-step.md) | Add an optional `rename:` map for TLE names? | Not yet; configurable key names only | **Decided:** fully configurable `MapProperties` step |
 | [Q-05](#q-05--require-the-postgresql-ci-job) | [PRD-13](prd/PRD-13-persistence.md) | Make the Testcontainers PostgreSQL job required? | Required from the start | **Decided:** required, in Jenkins |
-| [Q-06](#q-06--reprint-across-jobs) | [PRD-15](prd/PRD-15-reprint-and-retry.md) | Can one reprint combine documents from different jobs? | Not yet: one job per reprint | Open |
+| [Q-06](#q-06--reprint-across-jobs) | [PRD-15](prd/PRD-15-reprint-and-retry.md) | Can one reprint combine documents from different jobs? | Not yet: one job per reprint | **Decided:** one job per reprint; extension noted |
 | [Q-07](#q-07--marking-afp-reprints) | [PRD-15](prd/PRD-15-reprint-and-retry.md) | How are reprinted AFP documents marked? | A `Reprint` TLE now; a visible mark later | Open |
-| [Q-08](#q-08--exceptions-endpoint) | [PRD-17](prd/PRD-17-dashboard-actions.md) | Reuse document search for the Exceptions view, or add `GET /api/exceptions`? | Add a `queue` filter to the existing documents endpoint | Open |
-| [Q-09](#q-09--host-port) | [PRD-18](prd/PRD-18-docker-demo-and-polish.md) | Which host port does Compose use by default? | `${PRINTLAB_PORT:-8080}` | Open |
+| [Q-08](#q-08--exceptions-endpoint) | [PRD-17](prd/PRD-17-dashboard-actions.md) | Reuse document search for the Exceptions view, or add `GET /api/exceptions`? | Add a `queue` filter to the existing documents endpoint | **Decided:** `queue`, `limit`, `offset` on `GET /api/documents` |
+| [Q-09](#q-09--host-port) | [PRD-18](prd/PRD-18-docker-demo-and-polish.md) | Which host port does Compose use by default? | `${PRINTLAB_PORT:-8080}` | **Decided:** `${PRINTLAB_PORT:-8080}` |
 | [Q-10](#q-10--github-actions-alongside-jenkins) | [PRD-19](prd/PRD-19-jenkins-ci.md) | Keep GitHub Actions alongside Jenkins? | Keep Actions until Jenkins reports status to GitHub | **Decided:** Jenkins only |
 | [Q-11](#q-11--docker-access-for-jenkins) | [PRD-19](prd/PRD-19-jenkins-ci.md) | How does Jenkins in Docker get Docker access? | Docker-in-Docker sidecar | **Decided:** Docker or k3s |
 | [Q-12](#q-12--building-arm-images) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | How are arm64 images built? | `buildx` cross-build, Maven stage on the build platform | **Decided:** cross-build |
 | [Q-13](#q-13--image-registry-for-k3s) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | Where are images pushed for k3s to pull? | A registry on the LAN | **Decided:** `registry.yjimmy.dev` |
 | [Q-14](#q-14--postgresql-on-k3s) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | Where does PostgreSQL run for the k3s deployment? | A StatefulSet in the cluster | **Decided:** in the cluster |
 | [Q-15](#q-15--manifest-format-and-deploy-trigger) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | Manifest format, and what triggers a deploy? | Kustomize; auto-deploy `main` | **Decided:** Kustomize; deploy green `main` |
-| [Q-16](#q-16--getting-files-into-the-hot-folder-on-k3s) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | How do files reach the hot folder on the server? | A host folder shared over SMB | Open |
-| [Q-17](#q-17--how-jenkins-reaches-the-local-docker) | [PRD-19](prd/PRD-19-jenkins-ci.md) | How does Jenkins reach its local Docker? | Docker-in-Docker sidecar | Open |
+| [Q-16](#q-16--getting-files-into-the-hot-folder-on-k3s) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | How do files reach the hot folder on the server? | A host folder shared over SMB | **Decided:** SMB share mounted into the pod |
+| [Q-17](#q-17--how-jenkins-reaches-the-local-docker) | [PRD-19](prd/PRD-19-jenkins-ci.md) | How does Jenkins reach its local Docker? | Docker-in-Docker sidecar | **Decided:** Jenkins in Docker with a dind sidecar |
 
 ## PRD-02 — Routing rules and exception queue
 
@@ -125,8 +125,10 @@ C if time is short; B only as a last resort.
 **Recommendation:** A now. If a real file needs renaming, prefer C over B, since that's the
 ProcessDirector concept worth showing.
 
-- **Answer:** C, add renaming as a separate, reusable `MapProperties` step with a `rename:` map
-  and an optional `requiredProperties` checked after renaming. It's built in PR 5, alongside
+- **Answer:** C, fully configurable: add renaming as a separate, reusable `MapProperties` step
+  with a `rename:` map and an optional `requiredProperties` checked after renaming. Every name
+  comes from the workflow YAML; no TLE or property name is hardcoded in `SplitAfp` or
+  `MapProperties`. It's built in PR 5, alongside
   `SplitAfp`. To exercise it end to end, `App generate-afp --tle-names legacy` writes
   production-style TLE names (`ACCT_NO`, `CUST_NAME`, `ZIP_CODE`), and
   `workflows/statements-afp-legacy.yaml` maps them back. See PRD-05 FR-8 to FR-10.
@@ -175,8 +177,11 @@ later, C keeps the data model unchanged.
 `documentsFromDifferentJobsCanBeReprintedTogether` (rename it to
 `documentsFromDifferentJobsAreRejected` under A).
 
-- **Answer:** —
-- **Status:** Open · **PR:** —
+- **Answer:** A, one source job per reprint; a mixed request is a 400 with a message naming the
+  jobs involved. The test is `documentsFromDifferentJobsAreRejected`. **Review later:** how to
+  extend to cross-job reprints. Option C (split automatically into one child job per source job)
+  is the first candidate, since it keeps one parent per job. PRD-15 records this as a follow-up.
+- **Status:** Decided (2026-11-18) · **PR:** plan PR 15 (`feature/15-reprint-and-retry`)
 
 ### Q-07 — Marking AFP reprints
 
@@ -217,8 +222,10 @@ and paging isn't needed yet, A is fine.
 **Affects:** whether `ExceptionsApiTest` exists (under C, its cases move into
 `DocumentsApiTest`).
 
-- **Answer:** —
-- **Status:** Open · **PR:** —
+- **Answer:** C. PR 14 builds `GET /api/documents` with `queue`, `limit` and `offset` filters
+  from the start, and the Exceptions view calls `GET /api/documents?queue=exceptions`. There is
+  no `ExceptionsApiTest`; its cases are in `DocumentsApiTest`.
+- **Status:** Decided (2026-11-18) · **PR:** plan PRs 14 and 17
 
 ## PRD-18 — Docker demo and polish
 
@@ -236,8 +243,9 @@ during the scaffold's manual check.
 **Recommendation:** B. Mention `PRINTLAB_PORT` in `docs/DEMO.md` and `.env.example`, and have
 the smoke test read the same variable.
 
-- **Answer:** —
-- **Status:** Open · **PR:** —
+- **Answer:** B, `${PRINTLAB_PORT:-8080}`, documented in `docs/DEMO.md` and `.env.example`; the
+  smoke test reads the same variable.
+- **Status:** Decided (2026-11-18) · **PR:** plan PR 18
 
 ## PRD-19 — Jenkins CI, running locally in Docker
 
@@ -359,8 +367,10 @@ volume inside the cluster. How do operators get files into it?
 **Recommendation:** A with SMB, since the demo machine runs Windows. The pipeline's smoke test
 can still use `kubectl cp` or `kubectl exec` to drop its file.
 
-- **Answer:** —
-- **Status:** Open · **PR:** —
+- **Answer:** A with SMB. A folder on the k3s server is shared with Samba and mounted into the
+  app pod as a `hostPath` volume; a `nodeSelector` pins the pod to that node. The pipeline's
+  smoke test drops its file with `kubectl cp`, so it doesn't depend on the share.
+- **Status:** Decided (2026-11-18) · **PR:** plan PR 20
 
 ## PRD-19, continued
 
@@ -377,5 +387,7 @@ side, how does the Jenkins container reach a Docker daemon? This is what Testcon
 
 **Recommendation:** B.
 
-- **Answer:** —
-- **Status:** Open · **PR:** —
+- **Answer:** B. Jenkins runs in Docker, with a privileged `docker:dind` sidecar that it reaches
+  at `tcp://docker:2376` over TLS. This setup already runs locally; PR 19 moves its Compose
+  file into `ci/jenkins/` and sets `TESTCONTAINERS_HOST_OVERRIDE=docker` for Testcontainers.
+- **Status:** Decided (2026-11-18) · **PR:** plan PR 19

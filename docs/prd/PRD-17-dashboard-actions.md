@@ -51,8 +51,10 @@ behavior if the user leaves mid-request.
   (reprint) or stays on the job with its new state (retry).
 - **FR-6** API errors show a readable message inline; the page stays usable.
 - **FR-7** If the user navigates away mid-request, the response doesn't touch destroyed views.
-- **FR-8** The Exceptions view lists exception-queue documents across jobs, via an existing
-  endpoint or a new one (see the open question).
+- **FR-8** The Exceptions view lists exception-queue documents across jobs by calling
+  `GET /api/documents?queue=exceptions` (PRD-14 FR-4), a page at a time with `limit` and `offset`
+  ([Q-08](../OPEN_QUESTIONS.md#q-08--exceptions-endpoint)). There is no separate exceptions
+  endpoint.
 
 **Non-functional**
 - **NFR-1** Same Marionette 4 rules and escaped templates as PRD-16.
@@ -72,7 +74,7 @@ behavior if the user leaves mid-request.
 | AC-3 | API failures show a message | `showsErrorMessageWhenApiFails` |
 | AC-4 | A successful reprint refreshes jobs and navigates to the child | `successfulReprintRefreshesJobsAndNavigatesToChild` |
 | AC-5 | Leaving mid-request doesn't update destroyed views | `leavingThePageMidRequestDoesNotUpdateDestroyedViews` |
-| AC-6 | The cross-job exceptions endpoint works (if added) | `ExceptionsApiTest` |
+| AC-6 | The Exceptions view requests `queue=exceptions` and pages through results | `exceptions.test.mjs: requestsExceptionsQueueWithPaging` |
 
 ## Test plan
 
@@ -80,7 +82,8 @@ behavior if the user leaves mid-request.
   `buttonsDisabledWhileRequestInFlight`, `showsErrorMessageWhenApiFails`,
   `successfulReprintRefreshesJobsAndNavigatesToChild`,
   `leavingThePageMidRequestDoesNotUpdateDestroyedViews`
-- Integration — `ExceptionsApiTest` (if a new endpoint is added)
+- Mocha + jsdom — `exceptions.test.mjs`: `requestsExceptionsQueueWithPaging`
+- The server side of the filter is tested in PRD-14's `DocumentsApiTest`.
 - Manual demo script in the PR:
   1. Generate a run with bad addresses.
   2. Find one in Exceptions.
@@ -91,9 +94,8 @@ behavior if the user leaves mid-request.
 
 Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) (Q-08). Record the answers there and here.
 
-- **Open:** the Exceptions view could use `GET /api/documents?property=queue&value=exceptions`
-  (no new endpoint), or a dedicated `GET /api/exceptions`. Prefer the existing search endpoint
-  unless it can't page or sort well enough.
+- **Decided (Q-08):** the Exceptions view uses `GET /api/documents?queue=exceptions` with
+  `limit` and `offset`; there's no dedicated exceptions endpoint.
 
 ## Definition of done
 
