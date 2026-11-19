@@ -33,17 +33,19 @@ starting a PR and record the answer there.
 | 12 | Barcode step for inserter control | Print features | M | 0 |
 | 13 | Persistence: jobs and documents in PostgreSQL | Platform | L | 1, 19 |
 | 14 | REST API on Tomcat (read-only servlets) | Platform | M | 13 |
-| 15 | Reprint and retry (AFP reprints marked with an overlay) | Platform | L | 14 |
+| 15 | Reprint and retry (AFP reprints marked with a text object per page) | Platform | M | 14 |
 | 16 | Marionette 4 dashboard: jobs, documents, search | Dashboard | L | 14 |
 | 17 | Dashboard actions: reprint, retry, exception queue | Dashboard | M | 15, 16 |
 | 18 | Docker Compose, demo script, README polish | Presentation | S | 17 |
 | 19 | Jenkins CI, running locally in Docker (land right after 0) | Foundation | M | 0 |
 | 20 | Deploy to k3s on ARM | Delivery | M | 18, 19 |
+| 21 | Mark AFP reprints with a page overlay | AFP | M | 15 |
 
 ```
 0 ──► 1 ──► 2
 │     └──► 13 ──► 14 ──► 15 ──► 17 ──► 18 ──► 20
-│          ▲       └──► 16 ──┘              ▲
+│          ▲       │     └──► 21            ▲
+│          │       └──► 16 ──┘              │
 ├──► 19 ───┴────────────────────────────────┘
 ├──► 3 ──► 4 ──► 5 ──► 6
 ├──► 7 ──► 8 ──► 10
@@ -57,8 +59,9 @@ starting a PR and record the answer there.
 routing — the most interview-relevant topics — without the platform work. Then 12 (barcodes), and
 13 → 14 → 16 for a visible dashboard.
 
-PRs 19 and 20 were added after the plan was written (CI/CD moved to Jenkins and k3s), so their
-numbers don't show their order: PR 19 lands right after PR 0, and PR 20 comes last.
+PRs 19, 20 and 21 were added after the plan was written (CI/CD moved to Jenkins and k3s, and the
+AFP overlay was split out of PR 15), so their numbers don't show their order: PR 19 lands right
+after PR 0, PR 21 any time after PR 15, and PR 20 comes last.
 
 Branch naming: `feature/NN-short-name` (e.g. `feature/03-afp-reader`).
 
@@ -696,7 +699,7 @@ inside it.
   `fixtures/api/job.json` (the dashboard depends on this shape).
 - Manual: `./mvnw package cargo:run`, drop a generated file, `curl /api/jobs`.
 
-### PR 15 — Reprint and retry `L`
+### PR 15 — Reprint and retry `M`
 
 **Goal:** the two operator actions every production print system needs.
 
@@ -705,11 +708,11 @@ inside it.
   job records its parent job id.
 - `POST /api/jobs/{id}/retry` → re-runs a failed job from the step that failed.
 - Both actions are recorded in `job_steps` for an audit trail.
-- **AFP reprints** (Q-07) get a `Reprint` TLE and an inline `REPRINT` page overlay: a
-  `BRS`/`BMO` resource in the document's resource group, mapped on every page with `MPO` and
-  placed with `IPO`. New AFP building blocks: `PageBuilder` (encoders moved out of
-  `StatementAfpGenerator`), `OverlayWriter`, `MPO`/`IPO` encoders (decoded by `dump-afp`), and
-  `AfpRewriter` for streaming field-by-field edits.
+- **AFP reprints** (Q-07) get a `Reprint` TLE and a separate "REPRINT" text object
+  (`BPT`/`PTX`/`EPT`) on every page, positioned in the page's own units from its `PGD`. Existing
+  text is never edited. New AFP building blocks: `PageBuilder` (encoders moved out of
+  `StatementAfpGenerator`) and `AfpRewriter` for streaming field-by-field edits. A page overlay
+  comes later, in PR 21.
 
 **Tests**
 - Unit — `ReprintServiceTest`
@@ -732,12 +735,36 @@ inside it.
   - `reprintedPdfHasReprintMarkerOnEveryPage`
 - Unit — `ReprintAfpTest`
   - `reprintedAfpHasReprintTleOnEveryDocument`
+  - `everyPageGetsOneReprintTextObject`, `markPositionUsesPageUnitsFromPgd`
+  - `pageWithoutFontMappingGetsMcfEntry`
+  - `reprintingTwiceDoesNotDuplicateTheMark`
+  - `reprintedAfpReadsBackCleanly`, `originalPageFieldsAreUnchanged`
+- Unit — `AfpRewriterTest`, `PageBuilderTest`
+- Manual: "REPRINT" shows in Papyrus AFP Viewer (screenshot in the PR).
+
+### PR 21 — Mark AFP reprints with a page overlay `M` (any time after PR 15)
+
+**Goal:** the production way to mark pages: a `REPRINT` overlay defined once as a resource and
+referenced from every page ([PRD-21](prd/PRD-21-afp-reprint-overlay.md), Q-07).
+
+- `OverlayWriter`: a `BRS`/`BMO … EMO`/`ERS` resource in the document's inline resource group,
+  created if missing, added to if present, never duplicated.
+- `MPO` in each page's environment group and `IPO` after it, at the same position as PR 15's
+  mark. Both are decoded by `dump-afp`.
+- A `mark: text | overlay` param on the reprint step; the default stays `text` until the overlay
+  is checked in a viewer. The `Reprint` TLE is added either way.
+- Medium overlays (form definitions) are out of scope, but the difference is a design note.
+
+**Tests**
+- Unit — `ReprintOverlayTest`
   - `overlayResourceIsInlineOnce`, `existingResourceGroupGetsOverlayAdded`
   - `everyPageMapsAndIncludesTheOverlay`
   - `reprintingTwiceDoesNotDuplicateTheOverlay`
   - `reprintedAfpReadsBackCleanly`, `originalPageFieldsAreUnchanged`
-- Unit — `AfpRewriterTest`, `PageBuilderTest`, `DumpAfpTest.dumpShowsOverlayNameAndPositionForMpoAndIpo`
-- Manual: the overlay shows in Papyrus AFP Viewer (screenshot in the PR).
+- Unit — `OverlayWriterTest.writesBalancedOverlayResource`,
+  `SplitAfpStepTest.overlayInResourceGroupSurvivesSplit`,
+  `DumpAfpTest.dumpShowsOverlayNameAndPositionForMpoAndIpo`
+- Manual: both marks show in the same place in Papyrus AFP Viewer (screenshots in the PR).
 
 ---
 

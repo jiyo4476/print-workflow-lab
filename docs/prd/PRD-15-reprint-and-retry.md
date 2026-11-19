@@ -2,7 +2,7 @@
 
 | Phase | Size | Depends on | Branch |
 |---|---|---|---|
-| Platform | L | 14 | `feature/15-reprint-retry` |
+| Platform | M | 14 | `feature/15-reprint-retry` |
 
 ## Summary
 
@@ -21,7 +21,7 @@ run is the headline of the demo.
 
 - **Operator** selects three statements damaged in the inserter and reprints them. A child job
   runs the `reprint` workflow, and each page carries a "REPRINT" marker: drawn on the page for
-  PDF, and an overlay for AFP.
+  PDF, and as a text object added to each page for AFP (an overlay comes later, in PRD-21).
 - **Operator** fixes a full disk, then retries a job that failed in `write-output`. Split and sort
   are not rerun.
 
@@ -57,30 +57,27 @@ run is the headline of the demo.
 **AFP reprint marking** ([Q-07](../OPEN_QUESTIONS.md#q-07--marking-afp-reprints))
 - **FR-9** Every reprinted AFP document gets a `Reprint` TLE in its page group (value: the parent
   job id), so inserters and archives can tell it's a reprint.
-- **FR-10** The document's inline resource group holds one `REPRINT` page overlay:
+- **FR-10** Every page gets one new presentation-text object holding "REPRINT", added after the
+  page's existing objects and just before `EPG`:
   ```
-  BRG                      created at the front of the file if the document has none
-    BRS REPRINT            Resource Object Type triplet (X'21'): overlay
-      BMO REPRINT
-        BAG
-          MCF              same font as the pages
-          PGD              the overlay's own size, e.g. 2 x 0.5 inches
-          PTD
-        EAG
-        BPT
-          PTX              "REPRINT"
-        EPT
-      EMO
-    ERS
-  ERG
+  BPG
+    BAG … EAG            unchanged (an MCF is added only if the page maps no font, FR-11)
+    …                    the page's existing objects, unchanged
+    BPT                  new
+      PTX                AMI/AMB to the mark's position, SCFL to the font, TRN "REPRINT"
+    EPT                  new
+  EPG
   ```
-  If the document already has a resource group, the overlay is added to it rather than in a
-  second group. Reprinting a document that already has the overlay doesn't add another.
-- **FR-11** Every page maps the overlay with an `MPO` (Map Page Overlay) inside its `BAG … EAG`,
-  and places it with an `IPO` (Include Page Overlay) after `EAG`, at a configurable position
-  (default: top margin, right).
-- **FR-12** The rewrite streams through the document once, field by field. Fields other than the
-  inserted ones are copied byte for byte, so the original page content is untouched.
+  The existing text objects are never edited; the mark is a separate object.
+- **FR-11** The mark uses a font the page already maps in its `MCF`. If the page maps no font,
+  the step adds an `MCF` entry for the generator's font (`T1V10037` / `C0D0GT10`) under an unused
+  local ID.
+- **FR-12** The mark's position is a step param in inches (default: top margin, right),
+  converted to the page's own units from its `PGD`, so files at 240 or 1440 units per inch both
+  place it correctly.
+- **FR-13** The rewrite streams through the document once, field by field. Fields other than the
+  inserted ones are copied byte for byte. Reprinting a document that already has the mark doesn't
+  add a second one.
 
 **Non-functional**
 - **NFR-1** Actions are safe to double-submit from the dashboard.
@@ -90,18 +87,16 @@ run is the headline of the demo.
 - `ReprintService` and `RetryService` hold the logic; servlets only parse and respond.
 - **AFP building blocks this PR adds:**
   - `afp/PageBuilder`: the `MCF`, `PGD`, `PTD` and PTOCA text encoders, moved out of
-    `StatementAfpGenerator` (where they're private today) so the generator and the overlay
-    share them.
-  - `afp/OverlayWriter`: writes a named overlay resource (FR-10).
-  - `MPO` and `IPO` encoders, and decoding of both in `dump-afp`, so the dump shows the
-    overlay name and position.
+    `StatementAfpGenerator` (where they're private today) so the generator and the reprint mark
+    share them. PRD-21's overlay reuses them too.
   - `afp/AfpRewriter`: reads structured fields with `AfpReader`, lets a transformer insert
-    fields before or after any field, and writes with `AfpWriter`. Option C (a text object per
-    page) would have needed this too.
-- **Why an overlay, not text on each page:** the mark is defined once in the resource group and
-  referenced by every page, which is how production systems add marks. A **medium overlay**,
-  applied to every sheet by the form definition (`BFM`/`BMM`) with no change to the page data, is
-  the other common approach. It's out of scope here, but worth explaining in the interview.
+    fields before or after any field, and writes with `AfpWriter`. PRD-21 reuses it.
+  - A `PGD` decoder, to read each page's units and size.
+- **Why a text object per page now, and an overlay later:** a separate text object is the
+  smallest change that gives a visible mark, and it builds the rewriter and PTOCA helpers that
+  an overlay needs anyway. Production systems usually mark pages with an **overlay** instead: the
+  mark is defined once as a resource and referenced from every page. That is planned as
+  [PRD-21](PRD-21-afp-reprint-overlay.md).
 - Retry needs each step's output to be reusable from the work dir. Document which steps support
   this, and record it per step.
 
@@ -114,9 +109,9 @@ run is the headline of the demo.
 | AC-3 | Retry resumes at the failed step and is recorded; completed jobs are rejected | `RetryServiceTest.*` |
 | AC-4 | HTTP status codes and idempotency | `ActionsApiTest.*` |
 | AC-5 | Reprinted PDFs show the marker on every page | `ReprintWorkflowTest.reprintedPdfHasReprintMarkerOnEveryPage` |
-| AC-6 | Reprinted AFP has the `Reprint` TLE, one inline `REPRINT` overlay, and `MPO` + `IPO` on every page | `ReprintAfpTest.*` |
+| AC-6 | Reprinted AFP has the `Reprint` TLE and one "REPRINT" text object on every page, positioned in the page's units | `ReprintAfpTest.*` |
 | AC-7 | Reprinted AFP reads back cleanly and its original page content is unchanged | `ReprintAfpTest.reprintedAfpReadsBackCleanly`, `originalPageFieldsAreUnchanged` |
-| AC-8 | The overlay shows on the page in a real viewer | Manual: Papyrus AFP Viewer screenshot in the PR |
+| AC-8 | The mark shows on the page in a real viewer | Manual: Papyrus AFP Viewer screenshot in the PR |
 
 ## Test plan
 
@@ -131,14 +126,13 @@ run is the headline of the demo.
   `doubleSubmitRetryDoesNotRunTwice`
 - Workflow — `ReprintWorkflowTest.reprintedPdfHasReprintMarkerOnEveryPage`
 - Unit — `ReprintAfpTest`: `reprintedAfpHasReprintTleOnEveryDocument`,
-  `overlayResourceIsInlineOnce`, `existingResourceGroupGetsOverlayAdded`,
-  `everyPageMapsAndIncludesTheOverlay`, `reprintingTwiceDoesNotDuplicateTheOverlay`,
+  `everyPageGetsOneReprintTextObject`, `markPositionUsesPageUnitsFromPgd`,
+  `pageWithoutFontMappingGetsMcfEntry`, `reprintingTwiceDoesNotDuplicateTheMark`,
   `reprintedAfpReadsBackCleanly`, `originalPageFieldsAreUnchanged`
 - Unit — `AfpRewriterTest`: `copiesUnchangedFieldsByteForByte`, `insertsBeforeAndAfterAField`
 - Unit — `PageBuilderTest`: `generatorOutputIsUnchangedAfterExtraction` (same seed, same bytes as
   before the refactor)
-- Unit — `DumpAfpTest.dumpShowsOverlayNameAndPositionForMpoAndIpo`
-- Manual: open a reprinted AFP document in Papyrus AFP Viewer and confirm the overlay shows.
+- Manual: open a reprinted AFP document in Papyrus AFP Viewer and confirm "REPRINT" shows.
 
 ## Risks and open questions
 
@@ -149,12 +143,11 @@ Decisions for this PR are tracked in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTION
   from several jobs. The first option to evaluate is splitting a mixed request automatically into
   one child job per source job (Q-06 option C): it keeps one parent per job and needs no schema
   change, but the API returns several child ids. Record the review in `OPEN_QUESTIONS.md`.
-- **Decided (Q-07):** AFP reprints get an inline page overlay plus a `Reprint` TLE (FR-9 to
-  FR-12). This makes the PR larger (L).
-- Check the Resource Object Type triplet's code for an overlay (expected X'FC') and the `MPO` and
-  `IPO` layouts against the MO:DCA reference before relying on them.
-- Viewers handle inline overlays differently; the manual viewer check (AC-8) is the real test.
-  If Papyrus doesn't render it, record what it shows and try a second viewer.
+- **Decided (Q-07):** AFP reprints get a `Reprint` TLE plus a separate "REPRINT" text object on
+  each page (FR-9 to FR-13). Marking with a page overlay is the planned follow-up,
+  [PRD-21](PRD-21-afp-reprint-overlay.md).
+- Viewers substitute fonts they don't have; if the mark renders in an unexpected font, record
+  what the viewer shows. The position and content are what matter.
 
 ## Definition of done
 
