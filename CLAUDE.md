@@ -104,6 +104,10 @@ report's line total rounded *down* to two decimals, in its own commit.
   tags in `src/main/webapp/index.html`, and `package.json`. `versions.test.mjs` fails if they
   disagree. Upgrades are their own PR and change all three. Use only Marionette 4.1.3's public
   v4 API.
+- **`package.json` `overrides` pin `glob` 14.0.2 and `minimatch` 11.0.1** under mocha 12.0.3,
+  which still asks for `glob@^13` / `minimatch@^10.2` (GHSA-3g3m-2fjr-6pw4, GHSA-g3hv-75wg-m249).
+  Drop the overrides once a mocha release depends on patched versions; `npm audit` should stay
+  at 0. Don't run `npm audit fix --force`: it downgrades mocha to 11.0.0, which is still affected.
 - **Templates must escape:** use `<%- %>`, never `<%= %>`. `security.test.mjs` scans
   `src/main/webapp/js`. More generally, scraped or file-derived values are always shown as text,
   never HTML (logs, API JSON, dashboard).
