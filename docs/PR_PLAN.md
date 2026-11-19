@@ -33,7 +33,7 @@ starting a PR and record the answer there.
 | 12 | Barcode step for inserter control | Print features | M | 0 |
 | 13 | Persistence: jobs and documents in PostgreSQL | Platform | L | 1, 19 |
 | 14 | REST API on Tomcat (read-only servlets) | Platform | M | 13 |
-| 15 | Reprint and retry | Platform | M | 14 |
+| 15 | Reprint and retry (AFP reprints marked with an overlay) | Platform | L | 14 |
 | 16 | Marionette 4 dashboard: jobs, documents, search | Dashboard | L | 14 |
 | 17 | Dashboard actions: reprint, retry, exception queue | Dashboard | M | 15, 16 |
 | 18 | Docker Compose, demo script, README polish | Presentation | S | 17 |
@@ -696,7 +696,7 @@ inside it.
   `fixtures/api/job.json` (the dashboard depends on this shape).
 - Manual: `./mvnw package cargo:run`, drop a generated file, `curl /api/jobs`.
 
-### PR 15 — Reprint and retry `M`
+### PR 15 — Reprint and retry `L`
 
 **Goal:** the two operator actions every production print system needs.
 
@@ -705,6 +705,11 @@ inside it.
   job records its parent job id.
 - `POST /api/jobs/{id}/retry` → re-runs a failed job from the step that failed.
 - Both actions are recorded in `job_steps` for an audit trail.
+- **AFP reprints** (Q-07) get a `Reprint` TLE and an inline `REPRINT` page overlay: a
+  `BRS`/`BMO` resource in the document's resource group, mapped on every page with `MPO` and
+  placed with `IPO`. New AFP building blocks: `PageBuilder` (encoders moved out of
+  `StatementAfpGenerator`), `OverlayWriter`, `MPO`/`IPO` encoders (decoded by `dump-afp`), and
+  `AfpRewriter` for streaming field-by-field edits.
 
 **Tests**
 - Unit — `ReprintServiceTest`
@@ -725,6 +730,14 @@ inside it.
   - `doubleSubmitRetryDoesNotRunTwice` (idempotency)
 - Workflow — `ReprintWorkflowTest`
   - `reprintedPdfHasReprintMarkerOnEveryPage`
+- Unit — `ReprintAfpTest`
+  - `reprintedAfpHasReprintTleOnEveryDocument`
+  - `overlayResourceIsInlineOnce`, `existingResourceGroupGetsOverlayAdded`
+  - `everyPageMapsAndIncludesTheOverlay`
+  - `reprintingTwiceDoesNotDuplicateTheOverlay`
+  - `reprintedAfpReadsBackCleanly`, `originalPageFieldsAreUnchanged`
+- Unit — `AfpRewriterTest`, `PageBuilderTest`, `DumpAfpTest.dumpShowsOverlayNameAndPositionForMpoAndIpo`
+- Manual: the overlay shows in Papyrus AFP Viewer (screenshot in the PR).
 
 ---
 

@@ -23,7 +23,7 @@ are suggestions, not decisions: the PR that answers the question makes the call.
 | [Q-04](#q-04--tle-name-mapping) | [PRD-05](prd/PRD-05-split-afp-step.md) | Add an optional `rename:` map for TLE names? | Not yet; configurable key names only | **Decided:** fully configurable `MapProperties` step |
 | [Q-05](#q-05--require-the-postgresql-ci-job) | [PRD-13](prd/PRD-13-persistence.md) | Make the Testcontainers PostgreSQL job required? | Required from the start | **Decided:** required, in Jenkins |
 | [Q-06](#q-06--reprint-across-jobs) | [PRD-15](prd/PRD-15-reprint-and-retry.md) | Can one reprint combine documents from different jobs? | Not yet: one job per reprint | **Decided:** one job per reprint; extension noted |
-| [Q-07](#q-07--marking-afp-reprints) | [PRD-15](prd/PRD-15-reprint-and-retry.md) | How are reprinted AFP documents marked? | A `Reprint` TLE now; a visible mark later | Open |
+| [Q-07](#q-07--marking-afp-reprints) | [PRD-15](prd/PRD-15-reprint-and-retry.md) | How are reprinted AFP documents marked? | A `Reprint` TLE now; a visible mark later | **Decided:** an inline page overlay, plus a `Reprint` TLE |
 | [Q-08](#q-08--exceptions-endpoint) | [PRD-17](prd/PRD-17-dashboard-actions.md) | Reuse document search for the Exceptions view, or add `GET /api/exceptions`? | Add a `queue` filter to the existing documents endpoint | **Decided:** `queue`, `limit`, `offset` on `GET /api/documents` |
 | [Q-09](#q-09--host-port) | [PRD-18](prd/PRD-18-docker-demo-and-polish.md) | Which host port does Compose use by default? | `${PRINTLAB_PORT:-8080}` | **Decided:** `${PRINTLAB_PORT:-8080}` |
 | [Q-10](#q-10--github-actions-alongside-jenkins) | [PRD-19](prd/PRD-19-jenkins-ci.md) | Keep GitHub Actions alongside Jenkins? | Keep Actions until Jenkins reports status to GitHub | **Decided:** Jenkins only |
@@ -181,7 +181,7 @@ later, C keeps the data model unchanged.
   jobs involved. The test is `documentsFromDifferentJobsAreRejected`. **Review later:** how to
   extend to cross-job reprints. Option C (split automatically into one child job per source job)
   is the first candidate, since it keeps one parent per job. PRD-15 records this as a follow-up.
-- **Status:** Decided (2026-11-18) · **PR:** plan PR 15 (`feature/15-reprint-and-retry`)
+- **Status:** Decided (2026-11-18) · **PR:** plan PR 15 (`feature/15-reprint-retry`)
 
 ### Q-07 — Marking AFP reprints
 
@@ -200,8 +200,14 @@ presentation text that can be reused.
 **Affects:** the `reprint` workflow, and whether `ReprintWorkflowTest` gets an AFP case
 (`reprintedAfpHasReprintTleOnEveryDocument` under B).
 
-- **Answer:** —
-- **Status:** Open · **PR:** —
+- **Answer:** D, an inline page overlay, with B's `Reprint` TLE kept for inserters and
+  archives. The reprint step adds a `REPRINT` overlay (`BMO … EMO`, wrapped in `BRS`/`ERS`) to
+  the document's inline resource group, creating the group if there isn't one. Each page then
+  maps it with `MPO` in its environment group and places it with `IPO`. This is the standard
+  production way to mark pages: the mark is defined once and referenced on every page. It needs
+  shared page-building helpers, an overlay writer, `MPO`/`IPO` encoders and a streaming rewrite
+  pass; see PRD-15 FR-9 to FR-12.
+- **Status:** Decided (2026-11-18) · **PR:** plan PR 15 (`feature/15-reprint-retry`)
 
 ## PRD-17 — Dashboard actions
 

@@ -31,7 +31,7 @@ their order: PRD-19 lands right after PRD-00.
 | [12](PRD-12-barcode-step.md) | Barcode step for inserter control | Print features | M | 00 |
 | [13](PRD-13-persistence.md) | Persistence: jobs and documents in PostgreSQL | Platform | L | 01 |
 | [14](PRD-14-rest-api-on-tomcat.md) | REST API on Tomcat (read-only servlets) | Platform | M | 13 |
-| [15](PRD-15-reprint-and-retry.md) | Reprint and retry | Platform | M | 14 |
+| [15](PRD-15-reprint-and-retry.md) | Reprint and retry (AFP reprints marked with an overlay) | Platform | L | 14 |
 | [16](PRD-16-marionette-dashboard.md) | Marionette.js v4 dashboard: jobs, documents, search | Dashboard | L | 14 |
 | [17](PRD-17-dashboard-actions.md) | Dashboard actions: reprint, retry, exception queue | Dashboard | M | 15, 16 |
 | [18](PRD-18-docker-demo-and-polish.md) | Docker Compose, demo script, README polish | Presentation | S | 17 |
