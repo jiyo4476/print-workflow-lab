@@ -14,7 +14,7 @@ done**.
 PRD-19, PRD-20 and PRD-21 were added after the plan was written, so their numbers don't reflect
 their order: PRD-19 lands right after PRD-00, and PRD-21 any time after PRD-15.
 
-| PRD | Title | Phase | Size | Depends on |
+| PRD | Title | Plan phase | Size | Depends on |
 |---|---|---|---|---|
 | [00](PRD-00-test-infrastructure.md) | Test infrastructure: coverage, fixtures, helpers | Foundation | S | — |
 | [01](PRD-01-error-folder-and-job-summary.md) | Error folder and job summary file | Core | S | 00 |

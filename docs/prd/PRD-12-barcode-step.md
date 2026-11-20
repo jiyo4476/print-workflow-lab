@@ -1,6 +1,6 @@
 # PRD-12 — Barcode step for inserter control
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | Print features | M | 00 | `feature/12-barcode` |
 

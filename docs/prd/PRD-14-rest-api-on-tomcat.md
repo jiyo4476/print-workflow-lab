@@ -1,6 +1,6 @@
 # PRD-14 — REST API on Tomcat (read-only servlets)
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | Platform | M | 13 | `feature/14-rest-api` |
 

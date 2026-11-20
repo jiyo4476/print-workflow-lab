@@ -10,7 +10,11 @@ description: The AFP statement run for files with ACCT_NO, CUST_NAME and ZIP_COD
 # prepare, assemble, print, insert, complete. A phase may be empty ([]) or left out; the job's
 # phase is shown in job.json and error.txt.
 phases:
-  receive: []
+  receive:
+    # Job ticket: <input>.jobprops (copied into the hot folder before the input) sets job
+    # properties, one name=value per line. No ticket, no change. See README "Job tickets".
+    - name: set-job-props
+      type: SetJobPropsFromTextFile
 
   prepare:
     # No requiredProperties here: they would check the names as they are in the file.

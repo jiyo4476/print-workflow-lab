@@ -1,6 +1,6 @@
 # PRD-10 — PDF/VT-style document parts (DPart) indexing
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | PDF | M | 08, 02 | `feature/10-dpart-indexing` |
 

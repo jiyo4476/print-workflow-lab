@@ -1,6 +1,6 @@
 # PRD-04 — AFP test-data writer (page groups + TLEs)
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | AFP | M | 03 | `feature/04-afp-writer` |
 

@@ -34,6 +34,21 @@ public class JobIntakeTest {
     }
 
     @Test
+    public void jobTicketMovesWithTheInput() throws Exception {
+        Path hot = Files.createDirectories(tmp.getRoot().toPath().resolve("hot"));
+        Files.writeString(hot.resolve("run.pdf.jobprops"), "customer=ACME");
+        Files.writeString(hot.resolve("other.pdf.jobprops"), "customer=OTHER");
+        Path file = Files.writeString(hot.resolve("run.pdf"), "pdf");
+
+        Job job = new JobIntake(tmp.getRoot().toPath().resolve("work")).claim(file);
+
+        assertEquals("ticket in the work folder", "customer=ACME",
+                Files.readString(job.workDir().resolve("run.pdf.jobprops")));
+        assertFalse("ticket gone from the hot folder", Files.exists(hot.resolve("run.pdf.jobprops")));
+        assertTrue("another input's ticket stays", Files.exists(hot.resolve("other.pdf.jobprops")));
+    }
+
+    @Test
     public void aFailedMoveLeavesNoWorkFolderBehind() throws Exception {
         Path work = tmp.getRoot().toPath().resolve("work");
         Path missing = tmp.getRoot().toPath().resolve("missing.pdf");
