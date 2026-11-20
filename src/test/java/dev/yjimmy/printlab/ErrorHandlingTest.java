@@ -88,10 +88,11 @@ public class ErrorHandlingTest {
         assertThat(text)
                 .contains("Job:    job00002")
                 .contains("Input:  run.pdf")
-                .contains("Step:   split-and-index")
+                .contains("Phase:  prepare\nStep:   split-and-index")
                 .contains("No 'accountNumber' found on page 1")
-                // split-and-index is the first step: start at t0, fail at t0 + 1s.
-                .contains("Time:   2026-01-01T00:00:01Z")
+                // set-job-props runs first (t0, t0 + 1s); split-and-index starts at t0 + 2s and
+                // fails at t0 + 3s.
+                .contains("Time:   2026-01-01T00:00:03Z")
                 .contains("Work:   " + job.workDir().toAbsolutePath())
                 .doesNotContain("Note:");
     }

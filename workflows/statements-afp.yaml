@@ -10,7 +10,11 @@ description: Split an AFP statement run on its page groups, index from TLEs, and
 # prepare, assemble, print, insert, complete. A phase may be empty ([]) or left out; the job's
 # phase is shown in job.json and error.txt.
 phases:
-  receive: []
+  receive:
+    # Job ticket: <input>.jobprops (copied into the hot folder before the input) sets job
+    # properties, one name=value per line. No ticket, no change. See README "Job tickets".
+    - name: set-job-props
+      type: SetJobPropsFromTextFile
 
   prepare:
     # One document per named page group (BNG ... ENG). Its TLEs become document properties, plus

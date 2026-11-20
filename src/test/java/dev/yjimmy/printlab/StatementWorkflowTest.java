@@ -16,6 +16,7 @@ import dev.yjimmy.printlab.workflow.JobState;
 import dev.yjimmy.printlab.workflow.JobSummary;
 import dev.yjimmy.printlab.workflow.JobSummaryWriter;
 import dev.yjimmy.printlab.workflow.Phase;
+import dev.yjimmy.printlab.workflow.StepOutcome;
 import dev.yjimmy.printlab.workflow.StepRecord;
 import dev.yjimmy.printlab.workflow.StepRegistry;
 import dev.yjimmy.printlab.workflow.WorkflowEngine;
@@ -73,11 +74,37 @@ public class StatementWorkflowTest {
         JobSummary summary = JobSummaryWriter.read(job.workDir().resolve(JobSummaryWriter.FILE_NAME));
         assertEquals(JobState.COMPLETE, summary.state());
         assertEquals(25, summary.documentCount());
-        assertEquals(List.of("split-and-index", "route", "presort", "write-output"),
+        assertEquals(List.of("set-job-props", "split-and-index", "route", "presort", "write-output"),
                 summary.steps().stream().map(StepRecord::name).toList());
-        assertEquals("each step's phase", List.of(Phase.PREPARE, Phase.PREPARE, Phase.PREPARE,
-                Phase.PRINT), summary.steps().stream().map(StepRecord::phase).toList());
+        assertEquals("each step's phase", List.of(Phase.RECEIVE, Phase.PREPARE, Phase.PREPARE,
+                Phase.PREPARE, Phase.PRINT), summary.steps().stream().map(StepRecord::phase).toList());
         assertEquals("finished job's phase", Phase.COMPLETE, summary.phase());
+    }
+
+    @Test
+    public void jobTicketSetsJobPropertiesAndCanTurnOffPresort() throws Exception {
+        Path tmp = folder.getRoot().toPath();
+        Path input = tmp.resolve("run.pdf");
+        new StatementPdfGenerator(42).generate(10, input);
+        Job job = TestJobs.newJob(tmp, input);
+        Files.writeString(job.workDir().resolve("run.pdf.jobprops"),
+                """
+                # ticket for run.pdf
+                customer=ACME Bank
+                presort=false
+                """);
+
+        new WorkflowEngine(TestWorkflows.load("statements", tmp.resolve("output")),
+                StepRegistry.withBuiltIns(), tmp.resolve("error"), TickingClock.oneSecondTicks())
+                .run(job);
+
+        assertEquals(job.errorMessage(), JobState.COMPLETE, job.state());
+        assertEquals("customer", "ACME Bank", job.properties().get("customer"));
+        assertEquals("presort skipped", StepOutcome.SKIPPED, job.stepRecords().stream()
+                .filter(r -> r.name().equals("presort")).findFirst().orElseThrow().outcome());
+        assertEquals("documents stay in input order",
+                List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10),
+                job.documents().stream().map(Document::sequence).toList());
     }
 
     @Test

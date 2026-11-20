@@ -34,6 +34,7 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 | `Step` + `StepRegistry` | Step templates and the steps built from them |
 | `Job` / `Job.properties()` | Job and job properties |
 | `Document` / `Document.properties()` | Documents and document properties |
+| `SetJobPropsFromTextFileStep` + `<input>.jobprops` | `SetJobPropsFromTextFile`, the job ticket that starts most workflows |
 | `SplitPdfStep` | Identifying PDF documents by page regions |
 | `SplitAfpStep` | Identifying AFP documents by page groups, with TLEs as document properties |
 | `MapPropertiesStep` | Mapping input index names to document properties |
@@ -83,7 +84,7 @@ always run in this order. A phase can be empty, as `assemble` and `insert` are f
 
 | Phase | What happens there | In `statements.yaml` |
 |---|---|---|
-| `receive` | Accept the input: set job properties, detect the data stream | (empty) |
+| `receive` | Accept the input: set job properties, detect the data stream | `set-job-props` |
 | `prepare` | Turn the input into documents: split, index, map, route, sort | `split-and-index`, `route`, `presort` |
 | `assemble` | Build what will be printed from the documents | (empty) |
 | `print` | Send the job to the printer; here, write it to the output folder | `write-output` |
@@ -92,7 +93,9 @@ always run in this order. A phase can be empty, as `assemble` and `insert` are f
 
 ```yaml
 phases:
-  receive: []
+  receive:
+    - name: set-job-props
+      type: SetJobPropsFromTextFile
   prepare:
     - name: split-and-index
       type: SplitPdf
@@ -108,11 +111,41 @@ to load with a message saying so. The job's phase is the phase of the step it's 
 in `receive`, a finished one is in `complete`, and a failed one stays in the phase where it
 failed. `job.json`, `error.txt` and the log all show it.
 
+### Job tickets
+
+Most ProcessDirector workflows start with `SetJobPropsFromTextFile`, and so do these. It reads a
+job ticket, a small text file that comes with the print file, and sets job properties from it, so
+whoever submits a job can say how to handle it. Name it after the input with `.jobprops` added and
+copy it into the hot folder **before** the input: `run.pdf` takes `run.pdf.jobprops` along when
+it's claimed.
+
+```
+# Job ticket for run.pdf
+customer=ACME Bank
+mailClass=first
+presort=false
+```
+
+One `name=value` per line (UTF-8). Names and values are trimmed, `#` lines and blank lines are
+skipped, a value may contain `=`, and a later line for the same name wins. A line with no `=`
+fails the job with its line number. With no ticket the step does nothing; `required: true` makes
+a missing ticket fail the job, and `fileName:` reads another file in the job's work folder.
+
+The properties are job properties, so any step's `when:` can use them. In `statements.yaml` a
+ticket with `presort=false` skips the presort step:
+
+```yaml
+- name: presort
+  type: SortDocuments
+  params: { by: zip }
+  when: { property: presort, operator: notEquals, value: "false" }
+```
+
 ### Where a job's files go
 
 | Folder | What's in it |
 |---|---|
-| `work/<jobId>/` | The input file while it's processed, intermediate documents, and `job.json` |
+| `work/<jobId>/` | The input file (and its `.jobprops` ticket) while it's processed, intermediate documents, and `job.json` |
 | `output/<jobId>/<queue>/` | One queue's finished documents (`standard`, `exceptions`, ...) in presort order, from `00001.pdf` (the extension follows the document's format) |
 | `output/<jobId>/documents.csv` | One row per document with its properties, including `queue`; `file` is the path below `output/<jobId>/`. `position`, `sequence` and `file` are reserved: a property with one of those names fails the job |
 | `error/<jobId>/` | Only for failed jobs: the input file and `error.txt` |
@@ -285,7 +318,8 @@ src/main/java/dev/yjimmy/printlab/
   App.java                 entry point: run | generate | generate-afp | dump-afp
   workflow/                Job, Document, Step, WorkflowDefinition, WorkflowEngine, StepRegistry
   workflow/rules/          Condition, Rule, RuleParser: routing rules and `when:`
-  steps/                   SplitPdf, SplitAfp, MapProperties, RouteDocuments, SortDocuments,
+  steps/                   SetJobPropsFromTextFile, SplitPdf, SplitAfp, MapProperties,
+                           RouteDocuments, SortDocuments,
                            RunExternalProgram, WriteOutput
   input/HotFolderWatcher   folder intake
   testdata/                fake statement print runs: shared data and layout, PDF and AFP writers
