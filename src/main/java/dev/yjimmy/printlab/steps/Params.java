@@ -39,6 +39,11 @@ final class Params {
         return (Map<String, Object>) v;
     }
 
+    /** An optional list: empty when the param is absent, otherwise as {@link #stringList}. */
+    List<String> optionalStringList(String key) {
+        return raw.get(key) == null ? List.of() : stringList(key);
+    }
+
     List<String> stringList(String key) {
         Object v = raw.get(key);
         if (!(v instanceof List<?> list) || list.isEmpty()) {

@@ -41,6 +41,30 @@ public class AfpWriterTest {
     }
 
     @Test
+    public void copiedFieldKeepsItsExtensionAndDropsPadding() throws IOException {
+        // NOP, flags extension + segmented + padding: extension (3, AA, BB), data (01 02),
+        // then 2 bytes of padding whose last byte is its length.
+        byte[] original = AfpBytes.create().field(FieldType.NOP.id(),
+                StructuredField.FLAG_EXTENSION | StructuredField.FLAG_SEGMENTED
+                        | StructuredField.FLAG_PADDING, 0x0001,
+                AfpBytes.bytes(3, 0xAA, 0xBB, 0x01, 0x02, 0x00, 0x02)).bytes();
+        StructuredField read = AfpReader.readAll(new ByteArrayInputStream(original)).get(0);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        try (AfpWriter writer = new AfpWriter(out)) {
+            writer.write(read);
+        }
+
+        StructuredField copy = AfpReader.readAll(new ByteArrayInputStream(out.toByteArray())).get(0);
+        assertEquals("flags", StructuredField.FLAG_EXTENSION | StructuredField.FLAG_SEGMENTED,
+                copy.flags());
+        assertArrayEquals("extension", AfpBytes.bytes(0xAA, 0xBB), copy.extension());
+        assertArrayEquals("data", AfpBytes.bytes(0x01, 0x02), copy.data());
+        assertEquals("reserved", 0, copy.reserved());
+        assertEquals("length", 8 + 3 + 2, copy.length());
+    }
+
+    @Test
     public void writesTheSameBytesAsTheTestBuilder() throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         new AfpWriter(out).begin(FieldType.BNG, "G1").write(FieldType.TLE,

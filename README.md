@@ -2,8 +2,8 @@
 
 A small production-print workflow engine in Java, built to learn how high-volume document
 workflows operate: hot-folder intake, configurable workflows, splitting a print run into
-documents, indexing them with document properties, presorting, and (coming next) AFP support and
-single-document reprint.
+documents, indexing them with document properties, presorting, AFP print files split on their page groups and indexed from TLEs, and
+(coming next) single-document reprint.
 
 It's a learning project, not a product. The concepts follow the way enterprise print workflow
 systems model jobs, documents and steps.
@@ -35,11 +35,13 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 | `Job` / `Job.properties()` | Job and job properties |
 | `Document` / `Document.properties()` | Documents and document properties |
 | `SplitPdfStep` | Identifying PDF documents by page regions |
+| `SplitAfpStep` | Identifying AFP documents by page groups, with TLEs as document properties |
+| `MapPropertiesStep` | Mapping input index names to document properties |
 | `SortDocumentsStep` | Sorting documents for postal presort |
 | `RouteDocumentsStep` / `when:` | Connectors with rules |
 | `RunExternalProgramStep` | External steps calling other programs |
 | `documents.csv` | Document properties file |
-| `afp/`: `AfpReader`, `AfpWriter`, `TleDecoder`, `TleEncoder`, `dump-afp` | AFP page groups and TLEs as document properties (the split step is planned) |
+| `afp/`: `AfpReader`, `AfpWriter`, `TleDecoder`, `TleEncoder`, `dump-afp` | AFP structured fields, page groups and TLEs |
 | `generate-afp` | AFP print files from a composition system, with index tags per document |
 | WAR on Tomcat, `/api/*` servlets | The workflow server and its web services |
 | Marionette dashboard (`src/main/webapp/`) | The operator web interface |
@@ -54,8 +56,11 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw -q exec:java -Dexec.args="generate 50 bad.pdf 5"  # ...50 statements, 5 with bad addresses
 ./mvnw -q exec:java -Dexec.args="generate-afp 200 run.afp"  # the same kind of run as AFP
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 run.afp 5 42"  # 5 bad addresses, seed 42
+./mvnw -q exec:java -Dexec.args="generate-afp 50 legacy.afp --tle-names legacy"  # ACCT_NO, ...
 ./mvnw -q exec:java                               # start watching ./hotfolder
 ./mvnw -q exec:java -Dexec.args="run workflows/statements.yaml *.pdf"  # same, explicitly
+./mvnw -q exec:java -Dexec.args="run workflows/statements-afp.yaml *.afp"  # AFP input
+./mvnw -q exec:java -Dexec.args="run workflows/statements-afp-legacy.yaml *.afp"  # legacy TLEs
 ./mvnw -q exec:java -Dexec.args="dump-afp statement.afp"  # print an AFP file's structure
 ```
 
@@ -165,7 +170,46 @@ descriptors) and one presentation text object (PTOCA). `generate` takes the same
 and the same seed gives the same statements in both formats, so a PDF run and an AFP run can be
 compared document by document. A bad-address statement has an empty `name` TLE or a 4-digit
 `zip`. Output is byte-identical for a seed; the PDF isn't, because PDFBox writes a random file
-ID.
+ID. `--tle-names legacy` names the TLEs `ACCT_NO`, `CUST_NAME` and `ZIP_CODE` instead, the way
+another composition application might.
+
+### Splitting AFP
+
+`workflows/statements-afp.yaml` is the statement workflow for AFP input. Its `SplitAfp` step
+writes one AFP document per named page group, so nothing is guessed from where text sits on the
+page:
+
+- Each document is a standalone AFP file: the fields before the first group (the BDT and any
+  inline resource group), anything between the previous group and this one (an IMM, say), the
+  group, and an EDT named like the BDT. `dump-afp` reads each one with no problems.
+- The TLEs directly in the group become document properties, in file order, followed by
+  `pageCount` and `format=afp`. (`SplitPdf` sets `format=pdf`.)
+- `requiredProperties: [accountNumber, name, zip]`: a group without one of them, or with it
+  blank, gets an `indexError` property (`missing: zip`) instead of failing the job, and the route
+  step sends it to `exceptions`. A TLE repeated with a different value is marked the same way.
+- Bytes that aren't AFP, a Begin closed by the wrong End, a page outside any group, or a file
+  with no page groups fail the job, with the byte offset where there is one.
+
+Different applications name the same index values differently. `MapProperties` renames document
+properties after the split, so the routing, sorting and output steps stay the same.
+`workflows/statements-afp-legacy.yaml` does that for `--tle-names legacy` files:
+
+```yaml
+- name: map-properties
+  type: MapProperties
+  params:
+    rename:                       # old name: new name
+      ACCT_NO: accountNumber
+      CUST_NAME: name
+      ZIP_CODE: zip
+    requiredProperties: [accountNumber, name, zip]   # checked after renaming
+```
+
+All renames apply at once, so the map's order doesn't matter. A property the map doesn't list is
+kept. If a document already has a different value under the new name, it's marked
+`indexError=rename conflict: ACCT_NO -> accountNumber` and keeps both. Two old names mapped to one
+new name stop the workflow from loading. The step works on PDF documents too, and never changes
+the files: the TLEs keep their names inside the AFP.
 
 ### Web app on Tomcat
 
@@ -208,7 +252,8 @@ src/main/java/dev/yjimmy/printlab/
   App.java                 entry point: run | generate | generate-afp | dump-afp
   workflow/                Job, Document, Step, WorkflowDefinition, WorkflowEngine, StepRegistry
   workflow/rules/          Condition, Rule, RuleParser: routing rules and `when:`
-  steps/                   SplitPdf, RouteDocuments, SortDocuments, RunExternalProgram, WriteOutput
+  steps/                   SplitPdf, SplitAfp, MapProperties, RouteDocuments, SortDocuments,
+                           RunExternalProgram, WriteOutput
   input/HotFolderWatcher   folder intake
   testdata/                fake statement print runs: shared data and layout, PDF and AFP writers
   afp/                     AFP reader and writer, field names, EBCDIC, TLE decoder and encoder,
@@ -218,7 +263,8 @@ src/main/webapp/
   index.html               dashboard page; loads WebJars, then js/
   js/                      Marionette app: health.js, app.js, main.js
 src/test/js/               dashboard tests (Mocha + jsdom)
-workflows/statements.yaml  the sample workflow
+workflows/                 sample workflows: statements.yaml (PDF), statements-afp.yaml,
+                           statements-afp-legacy.yaml
 ```
 
 ## Roadmap
@@ -230,10 +276,11 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
 - [x] Workflow engine, YAML workflows, step registry
 - [x] Hot folder intake that waits for files to finish copying
 - [x] PDF split + region-based indexing, zip presort, output with document index
-- [ ] **AFP:**
+- [x] **AFP:**
   - [x] Structured-field reader and dump tool
-  - [ ] Test-data writer with page groups + TLEs
-  - [ ] `SplitAfp` step that reads document properties from TLEs
+  - [x] Test-data writer with page groups + TLEs
+  - [x] `SplitAfp` step that reads document properties from TLEs, and `MapProperties` for
+        other TLE names
 - [x] Routing rules: send documents to an exception queue (e.g. invalid zip), flag large
       documents for a different envelope
 - [ ] Barcode step (ZXing) for inserter control
