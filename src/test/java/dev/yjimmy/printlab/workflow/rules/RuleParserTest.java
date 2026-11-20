@@ -61,9 +61,12 @@ public class RuleParserTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     public void planExampleBuildsARouteDocumentsStep() throws Exception {
-        StepDefinition def = YAML.convertValue(
-                ((List<?>) yaml(PLAN_EXAMPLE)).get(0), StepDefinition.class);
+        Map<String, Object> step = new java.util.LinkedHashMap<>(
+                (Map<String, Object>) ((List<?>) yaml(PLAN_EXAMPLE)).get(0));
+        step.put("phase", "prepare");
+        StepDefinition def = YAML.convertValue(step, StepDefinition.class);
         StepRegistry.withBuiltIns().create(def);
     }
 
@@ -140,6 +143,7 @@ public class RuleParserTest {
         WorkflowDefinition.StepDefinition def = YAML.convertValue(yaml("""
                 name: route
                 type: RouteDocuments
+                phase: prepare
                 params:
                   routes:
                     - queue: exceptions

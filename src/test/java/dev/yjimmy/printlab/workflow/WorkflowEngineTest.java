@@ -12,6 +12,7 @@ import dev.yjimmy.printlab.testsupport.RecordingStep;
 import dev.yjimmy.printlab.testsupport.TestJobs;
 import dev.yjimmy.printlab.testsupport.TestWorkflows;
 import dev.yjimmy.printlab.testsupport.TickingClock;
+import dev.yjimmy.printlab.workflow.WorkflowDefinition.StepDefinition;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -147,8 +148,8 @@ public class WorkflowEngineTest {
         // The clock ticks one second per read: a starts, a ends, b starts, b ends.
         Instant t0 = TickingClock.DEFAULT_START;
         assertEquals(List.of(
-                new StepRecord("a", t0, t0.plusSeconds(1), StepOutcome.COMPLETED),
-                new StepRecord("b", t0.plusSeconds(2), t0.plusSeconds(3), StepOutcome.COMPLETED)),
+                new StepRecord("a", Phase.PREPARE, t0, t0.plusSeconds(1), StepOutcome.COMPLETED),
+                new StepRecord("b", Phase.PREPARE, t0.plusSeconds(2), t0.plusSeconds(3), StepOutcome.COMPLETED)),
                 job.stepRecords());
     }
 
@@ -161,7 +162,7 @@ public class WorkflowEngineTest {
 
         StepRecord last = job.stepRecords().get(job.stepRecords().size() - 1);
         Instant t0 = TickingClock.DEFAULT_START;
-        assertEquals(new StepRecord("boom", t0.plusSeconds(2), t0.plusSeconds(3), StepOutcome.FAILED),
+        assertEquals(new StepRecord("boom", Phase.PREPARE, t0.plusSeconds(2), t0.plusSeconds(3), StepOutcome.FAILED),
                 last);
     }
 
@@ -222,7 +223,7 @@ public class WorkflowEngineTest {
 
     private static WorkflowDefinition.StepDefinition stepWhen(
             String name, String type, Map<String, Object> when) {
-        return new WorkflowDefinition.StepDefinition(name, type, Map.of(), when);
+        return new WorkflowDefinition.StepDefinition(name, type, Phase.PREPARE, Map.of(), when);
     }
 
     private static final Map<String, Object> SMALL_JOB =
@@ -291,10 +292,11 @@ public class WorkflowEngineTest {
     public void whenIsReadFromWorkflowYaml() throws Exception {
         Path yaml = Files.writeString(tmp.resolve("w.yaml"), """
                 name: w
-                steps:
-                  - name: b
-                    type: B
-                    when: { property: documentCount, operator: lessThan, value: 50 }
+                phases:
+                  prepare:
+                    - name: b
+                      type: B
+                      when: { property: documentCount, operator: lessThan, value: 50 }
                 """);
         registry.register("B", new RecordingStep("B", trace).factory());
 
@@ -317,7 +319,8 @@ public class WorkflowEngineTest {
 
     @Test
     public void workflowWithNoStepsFailsToLoad() throws Exception {
-        for (String yaml : new String[] {"name: empty\nsteps: []\n", "name: empty\n"}) {
+        for (String yaml : new String[] {
+                "name: empty\nphases: { prepare: [], print: [] }\n", "name: empty\n"}) {
             Path file = Files.writeString(tmp.resolve("empty.yaml"), yaml);
 
             IllegalArgumentException e = assertThrows(yaml, IllegalArgumentException.class,
@@ -325,6 +328,134 @@ public class WorkflowEngineTest {
 
             assertThat(e).hasMessage("Workflow 'empty' has no steps");
         }
+    }
+
+    @Test
+    public void stepsRunPhaseByPhaseAndTheJobRecordsItsPhase() throws Exception {
+        Path yaml = Files.writeString(tmp.resolve("phased.yaml"), """
+                name: phased
+                phases:
+                  receive:
+                    - { name: detect, type: A }
+                  prepare: []
+                  print:
+                    - { name: write, type: B }
+                  complete:
+                    - { name: notify, type: A }
+                """);
+        registry.register("A", new RecordingStep("A", trace).factory());
+        registry.register("B", new RecordingStep("B", trace).factory());
+
+        Job job = newJob("j30");
+        run(job, WorkflowDefinition.load(yaml));
+
+        assertThat(job.stepRecords()).extracting(StepRecord::name, StepRecord::phase)
+                .containsExactly(tuple("detect", Phase.RECEIVE), tuple("write", Phase.PRINT),
+                        tuple("notify", Phase.COMPLETE));
+        assertEquals("finished job's phase", Phase.COMPLETE, job.phase());
+        JobSummary summary = JobSummaryWriter.read(job.workDir().resolve(JobSummaryWriter.FILE_NAME));
+        assertEquals("phase in job.json", Phase.COMPLETE, summary.phase());
+    }
+
+    @Test
+    public void newJobIsInTheReceivePhase() throws Exception {
+        assertEquals(Phase.RECEIVE, newJob("j31").phase());
+    }
+
+    @Test
+    public void failedJobStaysInThePhaseOfTheFailedStep() throws Exception {
+        registerOkAndBoom();
+
+        Job job = newJob("j32");
+        run(job, TestWorkflows.of(step("ok", "Ok").inPhase(Phase.RECEIVE),
+                step("boom", "Boom").inPhase(Phase.PRINT)));
+
+        assertEquals(JobState.ERROR, job.state());
+        assertEquals("phase", Phase.PRINT, job.phase());
+        assertThat(Files.readString(errorDir.resolve("j32").resolve(ErrorFolder.ERROR_FILE_NAME)))
+                .contains("Phase:  print\nStep:   boom\n");
+    }
+
+    @Test
+    public void phasesOutOfOrderFailToLoad() throws Exception {
+        Path file = Files.writeString(tmp.resolve("order.yaml"), """
+                name: order
+                phases:
+                  print:
+                    - { name: write, type: B }
+                  prepare:
+                    - { name: split, type: A }
+                """);
+
+        assertThat(assertThrows(IllegalArgumentException.class, () -> WorkflowDefinition.load(file)))
+                .hasMessage("Workflow 'order' lists phase 'prepare' after 'print'; list them in the"
+                        + " order receive, prepare, assemble, print, insert, complete");
+    }
+
+    @Test
+    public void unknownPhaseFailsToLoad() throws Exception {
+        Path file = Files.writeString(tmp.resolve("unknown.yaml"), """
+                name: unknown
+                phases:
+                  prepare:
+                    - { name: split, type: A }
+                  mail:
+                    - { name: send, type: B }
+                """);
+
+        assertThat(assertThrows(IllegalArgumentException.class, () -> WorkflowDefinition.load(file)))
+                .hasMessageContaining("unknown phase 'mail'").hasMessageContaining("receive, prepare");
+    }
+
+    @Test
+    public void phaseNamesIgnoreCase() throws Exception {
+        Path file = Files.writeString(tmp.resolve("case.yaml"), """
+                name: case
+                phases:
+                  Prepare:
+                    - { name: split, type: A }
+                  PRINT:
+                    - { name: write, type: B }
+                """);
+
+        assertThat(WorkflowDefinition.load(file).steps()).extracting(StepDefinition::phase)
+                .containsExactly(Phase.PREPARE, Phase.PRINT);
+    }
+
+    @Test
+    public void repeatedPhaseFailsToLoad() throws Exception {
+        Path file = Files.writeString(tmp.resolve("twice.yaml"), """
+                name: twice
+                phases:
+                  prepare:
+                    - { name: split, type: A }
+                  prepare:
+                    - { name: sort, type: B }
+                """);
+
+        assertThat(assertThrows(Exception.class, () -> WorkflowDefinition.load(file)))
+                .hasMessageContaining("prepare");
+    }
+
+    @Test
+    public void topLevelStepsListPointsToPhases() throws Exception {
+        Path file = Files.writeString(tmp.resolve("old.yaml"), """
+                name: old
+                steps:
+                  - { name: split, type: A }
+                """);
+
+        assertThat(assertThrows(IllegalArgumentException.class, () -> WorkflowDefinition.load(file)))
+                .hasMessageContaining("group them by phase under 'phases:'");
+    }
+
+    @Test
+    public void workflowBuiltInCodeMustKeepPhaseOrder() {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> TestWorkflows.of(step("write", "B").inPhase(Phase.PRINT),
+                        step("split", "A").inPhase(Phase.PREPARE)));
+
+        assertThat(e).hasMessageStartingWith("Step 'split' (prepare) comes after step 'write' (print)");
     }
 
     @Test

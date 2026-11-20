@@ -793,7 +793,7 @@ DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
     `DocumentCollection`.
   - `StructureController`: loads `/api/documents/{id}/structure` into `StructureNode`s.
 - Views (`js/views/`):
-  - `JobsListView`: a `CollectionView` of `JobRowView`s (state badge, current step) with an
+  - `JobsListView`: a `CollectionView` of `JobRowView`s (state badge, phase, current step) with an
     `emptyView`. Rows `trigger('select')`; the list forwards it with `childViewTriggers`, and the
     app navigates to `#jobs/:id`.
   - `JobDetailView`: a `View` with regions for properties, step timeline and documents.

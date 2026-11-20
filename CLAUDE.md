@@ -40,7 +40,13 @@ report's line total rounded *down* to two decimals, in its own commit.
 ## Architecture
 
 - **`workflow/`** is the core. `WorkflowDefinition` is a record loaded from YAML
-  (`workflows/*.yaml`; unknown properties fail). `StepRegistry` maps a YAML step `type` to a
+  (`workflows/*.yaml`; unknown properties fail). Steps are grouped under `phases:` into the six
+  ProcessDirector phases (`Phase`: receive, prepare, assemble, print, insert, complete), which
+  must be listed in that order; `steps()` is the flat list with each `StepDefinition.phase()`,
+  and the record's constructor rejects steps out of phase order. In code,
+  `new StepDefinition(name, type, params)` is in `prepare`; use `.inPhase(...)` for another.
+  `Job.phase()` starts at receive, follows the running step, ends at complete (a failed job keeps
+  the failed step's phase); `StepRecord`, `job.json` and `error.txt` carry it. `StepRegistry` maps a YAML step `type` to a
   `Function<Map<String,Object>, Step>` factory; built-ins are registered in `withBuiltIns()`.
   `WorkflowEngine(definition, registry, errorDir, clock)` builds **all** steps (and parses their
   `when:` conditions) in its constructor, so bad config fails at startup, then runs them in

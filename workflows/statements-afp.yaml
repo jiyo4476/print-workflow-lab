@@ -6,34 +6,47 @@
 name: statements-afp
 description: Split an AFP statement run on its page groups, index from TLEs, and presort
 
-steps:
-  # One document per named page group (BNG ... ENG). Its TLEs become document properties, plus
-  # pageCount and format. No page regions: AFP carries the index itself.
-  - name: split-and-index
-    type: SplitAfp
-    params:
-      # A group without one of these (or with it blank) is marked indexError, not failed, so the
-      # route step can send it to the exception queue while the rest of the job completes.
-      requiredProperties: [accountNumber, name, zip]
+# Steps are grouped into ProcessDirector's six phases, which always run in this order: receive,
+# prepare, assemble, print, insert, complete. A phase may be empty ([]) or left out; the job's
+# phase is shown in job.json and error.txt.
+phases:
+  receive: []
 
-  - name: route
-    type: RouteDocuments
-    params:
-      routes:
-        # A missing TLE (indexError) or a bad zip can't be mailed.
-        - queue: exceptions
-          when: { any: [ { property: indexError, operator: matches, value: '.+' },
-                         { property: zip, operator: notMatches, value: '\d{5}' } ] }
-        - queue: large-envelope
-          when: { property: pageCount, operator: greaterThan, value: 6 }
-      default: standard
+  prepare:
+    # One document per named page group (BNG ... ENG). Its TLEs become document properties, plus
+    # pageCount and format. No page regions: AFP carries the index itself.
+    - name: split-and-index
+      type: SplitAfp
+      params:
+        # A group without one of these (or with it blank) is marked indexError, not failed, so the
+        # route step can send it to the exception queue while the rest of the job completes.
+        requiredProperties: [accountNumber, name, zip]
 
-  - name: presort
-    type: SortDocuments
-    params:
-      by: zip
+    - name: route
+      type: RouteDocuments
+      params:
+        routes:
+          # A missing TLE (indexError) or a bad zip can't be mailed.
+          - queue: exceptions
+            when: { any: [ { property: indexError, operator: matches, value: '.+' },
+                           { property: zip, operator: notMatches, value: '\d{5}' } ] }
+          - queue: large-envelope
+            when: { property: pageCount, operator: greaterThan, value: 6 }
+        default: standard
 
-  - name: write-output
-    type: WriteOutput
-    params:
-      outputDir: output
+    - name: presort
+      type: SortDocuments
+      params:
+        by: zip
+
+  assemble: []
+
+  print:
+    - name: write-output
+      type: WriteOutput
+      params:
+        outputDir: output
+
+  insert: []
+
+  complete: []

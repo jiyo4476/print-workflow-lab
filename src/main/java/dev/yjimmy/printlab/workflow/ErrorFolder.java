@@ -47,6 +47,7 @@ public final class ErrorFolder {
         StringBuilder text = new StringBuilder()
                 .append("Job:    ").append(job.id()).append('\n')
                 .append("Input:  ").append(input.getFileName()).append('\n')
+                .append("Phase:  ").append(job.phase().yamlName()).append('\n')
                 .append("Step:   ").append(step).append('\n')
                 .append("Time:   ").append(failedAt).append('\n')
                 .append("Error:  ").append(message).append('\n')

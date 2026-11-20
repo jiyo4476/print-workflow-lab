@@ -153,15 +153,16 @@ public class MapPropertiesStepTest {
         Path yaml = tmp.newFile("custom.yaml").toPath();
         Files.writeString(yaml, """
                 name: custom
-                steps:
-                  - name: map
-                    type: MapProperties
-                    params:
-                      rename:
-                        "Policy Holder": holder
-                        polNo: policy
-                        x.y-z: renamed
-                      requiredProperties: [policy]
+                phases:
+                  prepare:
+                    - name: map
+                      type: MapProperties
+                      params:
+                        rename:
+                          "Policy Holder": holder
+                          polNo: policy
+                          x.y-z: renamed
+                        requiredProperties: [policy]
                 """);
         Path root = tmp.getRoot().toPath();
         Job job = TestJobs.newJob(root, root.resolve("in.afp"));

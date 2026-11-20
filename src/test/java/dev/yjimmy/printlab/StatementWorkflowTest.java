@@ -15,6 +15,7 @@ import dev.yjimmy.printlab.workflow.Job;
 import dev.yjimmy.printlab.workflow.JobState;
 import dev.yjimmy.printlab.workflow.JobSummary;
 import dev.yjimmy.printlab.workflow.JobSummaryWriter;
+import dev.yjimmy.printlab.workflow.Phase;
 import dev.yjimmy.printlab.workflow.StepRecord;
 import dev.yjimmy.printlab.workflow.StepRegistry;
 import dev.yjimmy.printlab.workflow.WorkflowEngine;
@@ -74,6 +75,9 @@ public class StatementWorkflowTest {
         assertEquals(25, summary.documentCount());
         assertEquals(List.of("split-and-index", "route", "presort", "write-output"),
                 summary.steps().stream().map(StepRecord::name).toList());
+        assertEquals("each step's phase", List.of(Phase.PREPARE, Phase.PREPARE, Phase.PREPARE,
+                Phase.PRINT), summary.steps().stream().map(StepRecord::phase).toList());
+        assertEquals("finished job's phase", Phase.COMPLETE, summary.phase());
     }
 
     @Test

@@ -13,6 +13,7 @@ import java.util.Map;
 public record JobSummary(
         String id,
         JobState state,
+        Phase phase,
         String currentStep,
         String errorMessage,
         Map<String, String> properties,
@@ -23,6 +24,7 @@ public record JobSummary(
         return new JobSummary(
                 job.id(),
                 job.state(),
+                job.phase(),
                 job.currentStep(),
                 job.errorMessage(),
                 new LinkedHashMap<>(job.properties()),

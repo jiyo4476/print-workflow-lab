@@ -34,8 +34,8 @@ public class JobSummaryWriterTest {
     public void writesJobJsonThatRoundTrips() throws Exception {
         job.properties().put("totalPages", "12");
         job.documents().add(new Document(1, Path.of("doc-00001.pdf"), Map.of("zip", "80301")));
-        job.moveTo(JobState.PROCESSING, "split");
-        job.addStepRecord(new StepRecord("split", T0, T0.plusMillis(1500), StepOutcome.COMPLETED));
+        job.moveTo(JobState.PROCESSING, Phase.PREPARE, "split");
+        job.addStepRecord(new StepRecord("split", Phase.PREPARE, T0, T0.plusMillis(1500), StepOutcome.COMPLETED));
 
         Path file = writer.write(job);
 
@@ -49,7 +49,7 @@ public class JobSummaryWriterTest {
 
     @Test
     public void writesTimesAsIso8601() throws Exception {
-        job.addStepRecord(new StepRecord("split", T0, T0.plusSeconds(2), StepOutcome.COMPLETED));
+        job.addStepRecord(new StepRecord("split", Phase.PREPARE, T0, T0.plusSeconds(2), StepOutcome.COMPLETED));
 
         String json = Files.readString(writer.write(job));
 
@@ -58,9 +58,9 @@ public class JobSummaryWriterTest {
 
     @Test
     public void overwritesSummaryAfterEachStep() throws Exception {
-        job.addStepRecord(new StepRecord("one", T0, T0.plusSeconds(1), StepOutcome.COMPLETED));
+        job.addStepRecord(new StepRecord("one", Phase.PREPARE, T0, T0.plusSeconds(1), StepOutcome.COMPLETED));
         Path file = writer.write(job);
-        job.addStepRecord(new StepRecord("two", T0.plusSeconds(1), T0.plusSeconds(2),
+        job.addStepRecord(new StepRecord("two", Phase.PREPARE, T0.plusSeconds(1), T0.plusSeconds(2),
                 StepOutcome.COMPLETED));
         writer.write(job);
 

@@ -46,7 +46,8 @@ the place the Java and JavaScript skills show up together.
 **Functional**
 - **FR-1** Routes: `#jobs` (default and unknown routes), `#jobs/:id`,
   `#search?property=…&value=…&offset=…`, `#documents/:id/structure`. Back and forward buttons work.
-- **FR-2** The jobs list shows a state badge and the current step for each job, and an empty
+- **FR-2** The jobs list shows a state badge, the phase (receive, prepare, assemble, print,
+  insert, complete) and the current step for each job, and an empty
   state when there are none. Selecting a row navigates to its detail.
 - **FR-3** The jobs list refreshes every 5 s. Starting a refresh aborts the previous in-flight
   request, and the selected job stays selected.

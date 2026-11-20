@@ -14,6 +14,11 @@ import org.slf4j.LoggerFactory;
 /**
  * Runs a job through every step of a workflow in order, stopping on the first failure.
  *
+ * <p>Steps are grouped into {@link Phase}s (receive, prepare, assemble, print, insert, complete)
+ * and run phase by phase. The job's {@link Job#phase()} is the phase of the step it's on; it
+ * starts in receive and ends in complete, whether or not those phases have steps. A failed job
+ * stays in the phase of the step that failed.
+ *
  * <p>A step with a {@code when:} condition runs only if the condition holds for the job's
  * properties at that point; otherwise it's recorded as {@code SKIPPED}.
  *
@@ -35,7 +40,7 @@ public final class WorkflowEngine {
     private final JobSummaryWriter summaries = new JobSummaryWriter();
 
     /** @param when the step's condition, or {@code null} to always run */
-    private record NamedStep(String name, Step step, Condition when) {}
+    private record NamedStep(String name, Phase phase, Step step, Condition when) {}
 
     /**
      * @param errorDir root of the error folder; each failed job gets {@code <errorDir>/<jobId>/}
@@ -48,7 +53,7 @@ public final class WorkflowEngine {
         this.clock = clock;
         // Build every step up front so a bad workflow file fails at startup, not mid-job.
         for (WorkflowDefinition.StepDefinition def : definition.steps()) {
-            steps.add(new NamedStep(def.name(), registry.create(def), when(def)));
+            steps.add(new NamedStep(def.name(), def.phase(), registry.create(def), when(def)));
         }
     }
 
@@ -67,11 +72,14 @@ public final class WorkflowEngine {
     public void run(Job job) {
         log.info("{} starting workflow '{}'", job, definition.name());
         for (NamedStep s : steps) {
-            job.moveTo(JobState.PROCESSING, s.name());
+            if (s.phase() != job.phase()) {
+                log.info("{} entered phase '{}'", job.id(), s.phase().yamlName());
+            }
+            job.moveTo(JobState.PROCESSING, s.phase(), s.name());
             Instant startedAt = clock.instant();
             if (Thread.interrupted()) {
                 // Interrupted between steps: don't start another one.
-                fail(job, s.name(), startedAt, "interrupted before the step started; resubmit"
+                fail(job, s, startedAt, "interrupted before the step started; resubmit"
                         + " the input to run it again", null);
                 Thread.currentThread().interrupt();
                 return;
@@ -80,7 +88,8 @@ public final class WorkflowEngine {
             if (s.when() != null && !s.when().test(job.properties())) {
                 log.info("{} skipped step '{}': its 'when' is false", job.id(), s.name());
                 job.addStepRecord(
-                        new StepRecord(s.name(), startedAt, clock.instant(), StepOutcome.SKIPPED));
+                        new StepRecord(s.name(), s.phase(), startedAt, clock.instant(),
+                                StepOutcome.SKIPPED));
                 writeSummary(job);
                 continue;
             }
@@ -101,29 +110,32 @@ public final class WorkflowEngine {
                         ? "interrupted before the step finished (" + describe(e)
                                 + "); resubmit the input to run it again"
                         : describe(e);
-                fail(job, s.name(), startedAt, message, e);
+                fail(job, s, startedAt, message, e);
                 if (interrupted) {
                     Thread.currentThread().interrupt();
                 }
                 return;
             }
-            job.addStepRecord(
-                    new StepRecord(s.name(), startedAt, clock.instant(), StepOutcome.COMPLETED));
+            job.addStepRecord(new StepRecord(
+                    s.name(), s.phase(), startedAt, clock.instant(), StepOutcome.COMPLETED));
             writeSummary(job);
         }
-        job.moveTo(JobState.COMPLETE, null);
+        // A finished job is in the complete phase, whether or not that phase has steps.
+        job.moveTo(JobState.COMPLETE, Phase.COMPLETE, null);
         writeSummary(job);
         log.info("{} complete: {} documents", job, job.documents().size());
     }
 
-    private void fail(Job job, String step, Instant startedAt, String message, Throwable e) {
+    private void fail(Job job, NamedStep s, Instant startedAt, String message, Throwable e) {
         Instant failedAt = clock.instant();
-        job.fail(step, message);
-        job.addStepRecord(new StepRecord(step, startedAt, failedAt, StepOutcome.FAILED));
-        log.error("{} failed in step '{}': {}", job.id(), step, message, e);
+        job.fail(s.name(), message);
+        job.addStepRecord(
+                new StepRecord(s.name(), s.phase(), startedAt, failedAt, StepOutcome.FAILED));
+        log.error("{} failed in phase '{}', step '{}': {}",
+                job.id(), s.phase().yamlName(), s.name(), message, e);
         writeSummary(job);
         try {
-            Path dir = errorFolder.receive(job, step, message, failedAt);
+            Path dir = errorFolder.receive(job, s.name(), message, failedAt);
             log.info("{} moved to {}", job.id(), dir);
         } catch (IOException ioe) {
             log.error("{} could not be moved to the error folder {}: {}",
