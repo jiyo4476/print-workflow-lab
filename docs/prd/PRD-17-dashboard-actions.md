@@ -1,6 +1,6 @@
 # PRD-17 — Dashboard actions: reprint, retry, exception queue
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | Dashboard | M | 15, 16 | `feature/17-dashboard-actions` |
 

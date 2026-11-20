@@ -1,6 +1,6 @@
 # PRD-03 — AFP structured-field reader + dump tool
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | AFP | M | 00 | `feature/03-afp-reader` |
 

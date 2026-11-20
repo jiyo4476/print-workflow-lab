@@ -1,6 +1,6 @@
 # PRD-00 — Test infrastructure: coverage, fixtures, helpers
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | Foundation | S | — | `feature/00-test-infrastructure` |
 

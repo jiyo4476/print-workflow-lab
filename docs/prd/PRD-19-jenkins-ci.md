@@ -1,6 +1,6 @@
 # PRD-19 — Jenkins CI, running locally in Docker
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | Foundation | M | 00 | `feature/19-jenkins-ci` |
 

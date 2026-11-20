@@ -1,9 +1,10 @@
 # print-workflow-lab
 
 A small production-print workflow engine in Java, built to learn how high-volume document
-workflows operate: hot-folder intake, configurable workflows, splitting a print run into
-documents, indexing them with document properties, presorting, AFP print files split on their page groups and indexed from TLEs, and
-(coming next) single-document reprint.
+workflows operate: hot-folder intake with job tickets, configurable workflows in
+ProcessDirector's six phases (receive, prepare, assemble, print, insert, complete), splitting a
+print run into documents, indexing them with document properties, presorting, AFP print files
+split on their page groups and indexed from TLEs, and (coming next) single-document reprint.
 
 It's a learning project, not a product. The concepts follow the way enterprise print workflow
 systems model jobs, documents and steps.
@@ -13,17 +14,21 @@ systems model jobs, documents and steps.
 A billing system writes one big PDF containing hundreds of customer statements. Drop it in
 `hotfolder/` and the workflow:
 
-1. picks it up once the file has finished copying,
-2. **splits** it into one PDF per statement, detecting boundaries from the account number in each
-   page header (and a "Page 1 of N" line, so two statements in a row for one account stay
-   separate),
+1. picks it up once the file has finished copying, with its job ticket (`run.pdf.jobprops`)
+   if one came first, and in the **receive** phase sets job properties from the ticket,
+2. in the **prepare** phase, **splits** it into one PDF per statement, detecting boundaries from
+   the account number in each page header (and a "Page 1 of N" line, so two statements in a row
+   for one account stay separate),
 3. **indexes** each statement: account number, name, address, zip and page count become
    document properties,
 4. **routes** each statement to a queue: a bad address (blank name, zip not five digits) goes to
    `exceptions`, more than 6 pages to `large-envelope`, everything else to `standard`,
-5. **presorts** statements by zip code (postal presort),
-6. writes each queue's documents in order to `output/<jobId>/<queue>/`, plus one
-   `documents.csv` index for the whole job.
+5. **presorts** statements by zip code (postal presort), unless the ticket says `presort=false`,
+6. in the **print** phase, writes each queue's documents in order to
+   `output/<jobId>/<queue>/`, plus one `documents.csv` index for the whole job.
+
+`job.json` shows which phase the job is in as it goes. The same run works from AFP with
+`workflows/statements-afp.yaml`.
 
 ## Concept map
 
@@ -31,6 +36,7 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 |---|---|
 | `HotFolderWatcher` | Input device / hot folder |
 | `workflows/*.yaml` | Workflow definition, configured not coded |
+| `Phase` / `phases:` (receive, prepare, assemble, print, insert, complete) | Workflow phases |
 | `Step` + `StepRegistry` | Step templates and the steps built from them |
 | `Job` / `Job.properties()` | Job and job properties |
 | `Document` / `Document.properties()` | Documents and document properties |
@@ -353,6 +359,7 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
 - [ ] Barcode step (ZXing) for inserter control
 - [x] Tomcat WAR, `/api/health`, Marionette 4 dashboard shell
 - [ ] Persist jobs and documents (PostgreSQL), REST API (servlets on Tomcat)
+- [x] Job tickets: `SetJobPropsFromTextFile` sets job properties from `<input>.jobprops`
 - [x] Workflow phases (receive, prepare, assemble, print, insert, complete), as in
       ProcessDirector
 - [ ] Marionette dashboard: jobs by phase and step, document search, single-document reprint

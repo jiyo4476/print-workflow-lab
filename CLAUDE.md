@@ -4,8 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A learning project: a small production-print workflow engine in Java 21 (hot-folder intake →
-YAML-configured steps → split/index/presort PDFs → output + `documents.csv`), packaged as a WAR
+A learning project: a small production-print workflow engine in Java 21 (hot-folder intake with
+an optional job ticket → YAML workflows whose steps are grouped into ProcessDirector's six phases
+→ split/index (PDF or AFP), route, presort → output + `documents.csv`), packaged as a WAR
 for Tomcat 10.1 with a Marionette.js v4 dashboard. Work proceeds through a numbered plan:
 `docs/PR_PLAN.md` (order, testing strategy, conventions), one PRD per item in `docs/prd/`, and
 undecided design points in `docs/OPEN_QUESTIONS.md`.
@@ -46,8 +47,8 @@ report's line total rounded *down* to two decimals, in its own commit.
   and the record's constructor rejects steps out of phase order. In code,
   `new StepDefinition(name, type, params)` is in `prepare`; use `.inPhase(...)` for another.
   `Job.phase()` starts at receive, follows the running step, ends at complete (a failed job keeps
-  the failed step's phase); `StepRecord`, `job.json` and `error.txt` carry it. `StepRegistry` maps a YAML step `type` to a
-  `Function<Map<String,Object>, Step>` factory; built-ins are registered in `withBuiltIns()`.
+  the failed step's phase); `StepRecord`, `job.json` and `error.txt` carry it. `StepRegistry`
+  maps a YAML step `type` to a `Function<Map<String,Object>, Step>` factory; built-ins are registered in `withBuiltIns()`.
   `WorkflowEngine(definition, registry, errorDir, clock)` builds **all** steps (and parses their
   `when:` conditions) in its constructor, so bad config fails at startup, then runs them in
   order; a step whose `when:` is false for the job's properties is recorded as `SKIPPED`.
@@ -85,8 +86,8 @@ report's line total rounded *down* to two decimals, in its own commit.
   and `file` columns are reserved (a property with one of those names fails the step).
 - **`input/HotFolderWatcher`** hands off a file only once its size stops changing. Its handler
   must **claim** the file (move it out of the folder) before returning; `JobIntake.claim` moves
-  it, and best effort its `<input>.jobprops` ticket, into `work/<jobId>/`. Because anything still in the folder is unclaimed, the watcher can
-  safely rescan: at once on `OVERFLOW`, and every 5 s so a file whose claim failed (locked on
+  it, and best effort its `<input>.jobprops` ticket, into `work/<jobId>/`. Because anything
+  still in the folder is unclaimed, the watcher can safely rescan: at once on `OVERFLOW`, and every 5 s so a file whose claim failed (locked on
   Windows) is retried. The glob ignores case. `App.run [workflow] [glob]` runs jobs one at a time
   on a single-thread executor.
 - **Interrupts:** `WorkflowEngine` fails an interrupted job (an `InterruptedException`, or any
@@ -149,6 +150,9 @@ report's line total rounded *down* to two decimals, in its own commit.
   files deliberately, never to make a test pass.
 
 ## PR conventions
+
+- "Phase" means two things here: the **workflow phases** (`Phase`, receive ... complete) and the
+  **plan phases** in `PR_PLAN.md`'s headings and the PRD tables' "Plan phase" column. Say which.
 
 - Plan item numbers are not GitHub PR numbers. Branch: `feature/07-pdf-object-reader`; PR title:
   `PR 7: PDF object reader`. One concern per PR, with tests in the same PR.

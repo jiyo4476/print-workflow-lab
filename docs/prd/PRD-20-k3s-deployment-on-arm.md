@@ -1,6 +1,6 @@
 # PRD-20 — Deploy to k3s on ARM
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | Delivery | M | 18, 19 | `feature/20-k3s-deploy` |
 

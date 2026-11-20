@@ -1,6 +1,6 @@
 # PRD-06 — Multiple input devices
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | AFP | S | 05 | `feature/06-input-devices` |
 
@@ -13,8 +13,8 @@ statements in another), in a single `config/input-devices.yaml`.
 
 Production systems receive work from many sources at once, and each input device is configured
 with the workflow it feeds. With both PDF and AFP workflows in place, a single hard-coded hot
-folder is the obvious limitation. This PRD also backfills tests for `HotFolderWatcher`, which the
-skeleton shipped without.
+folder is the obvious limitation. (The `HotFolderWatcher` tests this PRD first asked for landed
+with the review fixes, GitHub #17; this PR adds the multi-device ones.)
 
 ## Users and scenarios
 
@@ -45,6 +45,11 @@ skeleton shipped without.
 - **FR-4** A file that matches no device's glob is left in place and logged once (not on every
   scan).
 - **FR-5** The job records which device it came from (job property `inputDevice`).
+- **FR-6** Job tickets work the same on every device: `<input>.jobprops` in the device's folder
+  moves with its input (`JobIntake`), and the device's workflow reads it with
+  `SetJobPropsFromTextFile` in its receive phase. A ticket never matches a device's glob, so it's
+  never started as a job of its own. `inputDevice` is set before the receive phase, so a
+  ticket line can't override it.
 
 **Non-functional**
 - **NFR-1** Watcher tests wait with a timeout and never use fixed sleeps.
