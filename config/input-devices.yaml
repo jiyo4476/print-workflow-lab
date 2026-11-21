@@ -1,0 +1,29 @@
+# Input devices: each watches its own hot folder and runs every matching file through its
+# workflow, like ProcessDirector's input devices. `./mvnw -q exec:java` (App run) starts them all.
+#
+#   name      unique; every job it starts gets the job property inputDevice=<name>
+#   folder    the hot folder; each device needs its own (two devices can't share one)
+#   glob      which files are inputs, ignoring case. Job tickets (*.jobprops) never are: copy
+#             <input>.jobprops in before the input and it travels with it. Anything else that
+#             doesn't match is left alone and logged once.
+#   workflow  the workflow YAML its jobs run
+#
+# Relative paths are resolved against the working directory. A bad entry (a missing workflow,
+# a repeated name or folder, an invalid glob, an unknown key) stops startup.
+devices:
+  - name: pdf-statements
+    folder: hotfolder/pdf
+    glob: "*.pdf"
+    workflow: workflows/statements.yaml
+
+  - name: afp-statements
+    folder: hotfolder/afp
+    glob: "*.afp"
+    workflow: workflows/statements-afp.yaml
+
+  # AFP from an application whose TLEs are ACCT_NO, CUST_NAME and ZIP_CODE
+  # (generate-afp ... --tle-names legacy).
+  - name: afp-legacy
+    folder: hotfolder/afp-legacy
+    glob: "*.afp"
+    workflow: workflows/statements-afp-legacy.yaml

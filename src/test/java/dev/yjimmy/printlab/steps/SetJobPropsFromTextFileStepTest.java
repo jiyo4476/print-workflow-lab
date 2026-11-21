@@ -64,6 +64,19 @@ public class SetJobPropsFromTextFileStepTest {
     }
 
     @Test
+    public void ticketCannotChangeWhatTheAppSetsAtIntake() throws Exception {
+        job.properties().put("inputDevice", "pdf-statements");
+        ticket("run.pdf.jobprops", "inputDevice=elsewhere", "inputFileName=other.pdf",
+                "customer=ACME");
+
+        new SetJobPropsFromTextFileStep(Map.of()).execute(job);
+
+        assertEquals("inputDevice", "pdf-statements", job.properties().get("inputDevice"));
+        assertEquals("inputFileName", "run.pdf", job.properties().get("inputFileName"));
+        assertEquals("other lines still apply", "ACME", job.properties().get("customer"));
+    }
+
+    @Test
     public void missingTicketDoesNothing() throws Exception {
         Map<String, String> before = Map.copyOf(job.properties());
 

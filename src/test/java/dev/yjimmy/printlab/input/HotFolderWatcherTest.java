@@ -191,6 +191,43 @@ public class HotFolderWatcherTest {
         assertThat(watcher.failing()).isEmpty();
     }
 
+    @Test
+    public void jobTicketsAreNeverHandedOffEvenWhenTheGlobMatches() throws Exception {
+        Files.createDirectories(hotFolder);
+        Files.writeString(hotFolder.resolve("run.pdf.jobprops"), "customer=ACME");
+        Files.writeString(hotFolder.resolve("RUN.JOBPROPS"), "customer=ACME");
+        Files.writeString(hotFolder.resolve("run.pdf"), "pdf");
+        HotFolderWatcher everything = new HotFolderWatcher(hotFolder, "*", this::claim,
+                FAST_STABLE_CHECK, FAST_RESCAN);
+
+        everything.scan();
+        everything.handle(List.of(
+                event(StandardWatchEventKinds.ENTRY_CREATE, Path.of("RUN.JOBPROPS"))));
+
+        assertThat(picked).containsExactly("run.pdf");
+        assertEquals("a waiting ticket isn't reported as unmatched", 0,
+                everything.unmatchedReports());
+    }
+
+    @Test
+    public void unmatchedFileIsLoggedOnceWhileItStays() throws Exception {
+        Files.createDirectories(hotFolder);
+        Path notes = Files.writeString(hotFolder.resolve("notes.txt"), "x");
+        HotFolderWatcher watcher = watcher(this::claim);
+
+        watcher.scan();
+        watcher.scan();
+        watcher.handle(List.of(event(StandardWatchEventKinds.ENTRY_CREATE, Path.of("notes.txt"))));
+        assertEquals("reported once while it stays", 1, watcher.unmatchedReports());
+
+        Files.delete(notes);
+        watcher.scan();
+        Files.writeString(notes, "again");
+        watcher.scan();
+        assertEquals("reported again after it was removed and dropped again", 2,
+                watcher.unmatchedReports());
+    }
+
     private static <T> WatchEvent<T> event(WatchEvent.Kind<T> kind, T context) {
         return new WatchEvent<>() {
             @Override

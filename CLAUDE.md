@@ -23,7 +23,8 @@ Use `./mvnw` (or `mvnw.cmd` on Windows); it downloads Maven on first use.
 ./mvnw -q exec:java -Dexec.args="generate 50 bad.pdf 5" # ...with 5 bad addresses
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 run.afp 5 42" # same run as AFP; seed 42
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 run.afp --tle-names legacy" # ACCT_NO, ... TLEs
-./mvnw -q exec:java                             # watch ./hotfolder with workflows/statements.yaml
+./mvnw -q exec:java                             # start the input devices in config/input-devices.yaml
+./mvnw -q exec:java -Dexec.args="run workflows/statements.yaml"  # one device on ./hotfolder
 ./mvnw package cargo:run [-Dtomcat.port=8095]   # WAR on Tomcat at http://localhost:8080/
 
 npm ci && npm test                              # dashboard tests (Mocha + jsdom, Node >= 22)
@@ -84,12 +85,21 @@ report's line total rounded *down* to two decimals, in its own commit.
   property; `WriteOutput` writes each queue to `output/<jobId>/<queue>/`, keeping each
   document's file extension, and one `documents.csv` for the job, whose `position`, `sequence`
   and `file` columns are reserved (a property with one of those names fails the step).
-- **`input/HotFolderWatcher`** hands off a file only once its size stops changing. Its handler
+- **`input/`**: `InputDeviceConfig` loads `config/input-devices.yaml` (`{name, folder, glob,
+  workflow}`) and validates it: unique names, **one device per folder** (compared normalized,
+  case-insensitively on Windows), valid globs, existing workflow files. `InputDevices` builds
+  every device's `WorkflowEngine` up front (bad workflow → startup fails), runs one
+  `HotFolderWatcher` thread per device, and queues claimed jobs on one shared single-thread
+  executor; its `onJobDone` callback is how tests wait without sleeping. `JobIntake.claim(file,
+  device)` sets the `inputDevice` job property, which a ticket can't override
+  (`SetJobPropsFromTextFileStep.PROTECTED`). `App run` with no arguments uses the devices file;
+  `run <workflow> [glob]` is a single `default` device on `hotfolder/`.
+- **`input/HotFolderWatcher`** hands off a file only once its size stops changing. It never hands
+  off `*.jobprops` tickets, and logs a non-matching file once while it stays. Its handler
   must **claim** the file (move it out of the folder) before returning; `JobIntake.claim` moves
   it, and best effort its `<input>.jobprops` ticket, into `work/<jobId>/`. Because anything
   still in the folder is unclaimed, the watcher can safely rescan: at once on `OVERFLOW`, and every 5 s so a file whose claim failed (locked on
-  Windows) is retried. The glob ignores case. `App.run [workflow] [glob]` runs jobs one at a time
-  on a single-thread executor.
+  Windows) is retried. The glob ignores case. Jobs run one at a time across all devices.
 - **Interrupts:** `WorkflowEngine` fails an interrupted job (an `InterruptedException`, or any
   exception while the flag is set) with an "interrupted" message, clears the flag while it writes
   the error folder, then restores it. `RunExternalProgram` kills the program and its children on

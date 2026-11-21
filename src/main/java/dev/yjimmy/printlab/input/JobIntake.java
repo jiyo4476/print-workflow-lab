@@ -27,6 +27,21 @@ public final class JobIntake {
         this.workRoot = workRoot;
     }
 
+    /** The job property naming the input device a job came from. */
+    public static final String INPUT_DEVICE = "inputDevice";
+
+    /**
+     * Claims {@code file} for the input device {@code device}, recorded as the job's
+     * {@link #INPUT_DEVICE} property.
+     *
+     * @throws IOException as {@link #claim(Path)}
+     */
+    public Job claim(Path file, String device) throws IOException {
+        Job job = claim(file);
+        job.properties().put(INPUT_DEVICE, device);
+        return job;
+    }
+
     /**
      * @throws IOException if the file can't be moved (still locked, gone, ...); nothing is left
      *     behind in the work folder

@@ -404,22 +404,28 @@ connectors with rules.
 **Goal:** route incoming files to the right workflow, like configured input devices.
 
 - `config/input-devices.yaml`: list of `{ name, folder, glob, workflow }`.
-- One `HotFolderWatcher` per device, sharing the job executor.
-- Unmatched files are left alone and logged once.
+- One `HotFolderWatcher` per device, sharing the job executor. **Each device has its own
+  folder**: two devices can't share one, even with different globs.
+- Unmatched files are left alone and logged once; job tickets are never inputs.
+- Jobs record their device (`inputDevice`), which a ticket can't override.
 
 **Tests**
 - Unit — `InputDeviceConfigTest`
   - `loadsDevicesFromYaml`
   - `missingWorkflowFileFailsAtStartup`
   - `duplicateDeviceNamesFail`
-  - `twoDevicesOnSameFolderAndGlobFail`
-- Unit — `HotFolderWatcherTest` (backfills tests the skeleton lacks)
-  - `picksUpFilesPresentAtStartup`
-  - `picksUpNewFile` (await with a timeout, no fixed sleeps)
-  - `waitsUntilFileStopsGrowing` (write in chunks from another thread)
-  - `ignoresFilesNotMatchingGlob`
-- Integration — `InputDevicesTest`
+  - `twoDevicesOnTheSameFolderFail`
+  - `nestedFoldersAreDifferentFolders`, `invalidGlobFails`, `missingFieldFailsNamingIt`,
+    `emptyDeviceListFails`, `unknownKeyFails`
+- Unit — `HotFolderWatcherTest` (the basics landed in GitHub #17)
+  - `jobTicketsAreNeverHandedOffEvenWhenTheGlobMatches`
+  - `unmatchedFileIsLoggedOnceWhileItStays`
+- Unit — `AppDevicesTest` (`run` with no arguments, `--devices`, `run <workflow>`)
+- Integration — `InputDevicesTest` (waits on a job-done callback, no fixed sleeps)
   - `pdfAndAfpDroppedInTheirFoldersRunTheirWorkflows`
+  - `jobRecordsItsInputDevice`
+  - `jobTicketTravelsWithItsInputOnAnyDevice`
+  - `badWorkflowFailsAtStartupNamingTheDevice`, `devicesSharingAFolderFailAtStartup`
 
 ---
 

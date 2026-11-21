@@ -49,6 +49,16 @@ public class JobIntakeTest {
     }
 
     @Test
+    public void claimForADeviceRecordsTheDevice() throws Exception {
+        Path hot = Files.createDirectories(tmp.getRoot().toPath().resolve("hot"));
+        Path file = Files.writeString(hot.resolve("run.pdf"), "pdf");
+
+        Job job = new JobIntake(tmp.getRoot().toPath().resolve("work")).claim(file, "pdf-in");
+
+        assertEquals("inputDevice", "pdf-in", job.properties().get(JobIntake.INPUT_DEVICE));
+    }
+
+    @Test
     public void aFailedMoveLeavesNoWorkFolderBehind() throws Exception {
         Path work = tmp.getRoot().toPath().resolve("work");
         Path missing = tmp.getRoot().toPath().resolve("missing.pdf");
