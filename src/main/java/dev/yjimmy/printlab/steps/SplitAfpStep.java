@@ -42,6 +42,14 @@ import java.util.Map;
  * around it (the EDT), named like its Begin. Fields are copied as they are, except that padding is
  * dropped (see {@link AfpWriter#write(StructuredField)}).
  *
+ * <p>An Invoke Medium Map (IMM) stays in effect until the next one, so a document with no IMM of
+ * its own just before it gets a copy of the latest IMM after the preamble: one between earlier
+ * groups, or between the pages of an earlier group. Without it, the document would print with
+ * whatever medium map the preamble selects (another tray, duplex setting or form).
+ *
+ * <p>Fields after the last group and before the document's End (a trailing NOP, say) have no
+ * following document to go into, so they're not copied anywhere.
+ *
  * <p>Document properties are the TLEs directly inside the group, in file order, then
  * {@code pageCount} (BPGs anywhere in the group) and {@code format=afp}. TLEs inside pages or
  * nested groups describe those, not the document, and are ignored. A group missing a required
@@ -92,6 +100,11 @@ public final class SplitAfpStep implements Step {
         private final List<StructuredField> preamble = new ArrayList<>();
         /** Fields between the previous group and the next, copied into the next document. */
         private final List<StructuredField> between = new ArrayList<>();
+        /**
+         * The latest IMM after the preamble (between groups, or between an earlier group's
+         * pages), or {@code null}: the medium map still in effect for the next document.
+         */
+        private StructuredField mediumMap;
         private boolean seenGroup;
         /** How many Begins were open outside the first group; fewer means the document ended. */
         private int documentDepth;
@@ -182,8 +195,15 @@ public final class SplitAfpStep implements Step {
             for (StructuredField f : preamble) {
                 group.writer.write(f);
             }
+            boolean ownMediumMap = between.stream().anyMatch(f -> f.type() == FieldType.IMM);
+            if (!ownMediumMap && mediumMap != null) {
+                group.writer.write(mediumMap);
+            }
             for (StructuredField f : between) {
                 group.writer.write(f);
+                if (f.type() == FieldType.IMM) {
+                    mediumMap = f;
+                }
             }
             between.clear();
             group.writer.write(bng);
@@ -236,6 +256,9 @@ public final class SplitAfpStep implements Step {
                     pages++;
                 } else if (field.type() == FieldType.TLE && open.size() == depth + 1) {
                     addTle(field);
+                } else if (field.type() == FieldType.IMM && open.peek().type() != FieldType.BPG) {
+                    // Between this group's pages: it stays in effect for the next documents too.
+                    mediumMap = field;
                 }
             }
 
