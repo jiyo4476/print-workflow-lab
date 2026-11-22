@@ -455,6 +455,11 @@ streams, and walk the document tree.
 **Split in two** (as PRD-07 allowed): **7a**, the lexer, the parser and the `PdfObject` types;
 **7b**, `XrefReader`, `StreamDecoder`, `PdfDocumentReader` and `dump-pdf`.
 
+**PDF versions:** the object syntax is the same from PDF 1.0 to 2.0, so nothing rejects a
+version. 7b reads the version from the header and the catalog's `/Version`, and decodes PDF 2.0
+UTF-8 text strings (`EF BB BF`) as well as UTF-16BE; PRD-07's "PDF versions" table says which
+PR handles each version's changes.
+
 - `PdfLexer`: numbers, names (with `#xx` escapes), literal strings (nested parentheses, `\n`,
   `\)` and octal escapes), hex strings, arrays, dictionaries, keywords, comments.
 - `PdfParser` producing a sealed `PdfObject` hierarchy: `PdfDictionary`, `PdfArray`, `PdfName`,
@@ -488,10 +493,15 @@ streams, and walk the document tree.
     `streamAfterCrLfAndBinaryDataThatLooksLikeEndstream`,
     `wrongStreamLengthFailsAtWhereEndstreamShouldBe`
   - `unterminatedDictionaryFailsWithOffset`, `nullEntryIsTheSameAsNoEntry`, `missingEndobjFails`
+  - `deeplyNestedArraysFailWithOffset` (at most 500 levels, never a `StackOverflowError`),
+    `blanksBeforeTheEndOfLineAfterStreamAreSkipped`
 - 7a, Unit — `PdfObjectTest` (equality, text forms, constructor checks)
 - 7a, Differential — `PdfParserVsPdfBoxTest.everyObjectMatchesPdfBoxForSeveralSeeds`: every
   object of a generated statement PDF, parsed at the offset PDFBox's xref gives, equals the
-  object PDFBox read (dictionaries, arrays and references all the way down; raw stream bytes)
+  object PDFBox read (dictionaries, arrays and references all the way down; raw stream bytes),
+  with one stream's `/Length` made indirect first
+- 7b, Unit — `PdfStringTest.utf8TextStringWithBomDecodes`; `PdfDocumentReaderTest`:
+  `versionFromHeader`, `catalogVersionOverridesAnEarlierHeader`, `pdf20FileReads`
 - Unit — `XrefReaderTest`
   - `findsStartxrefWithTrailingWhitespaceVariants` (`\n`, `\r\n`, missing final newline)
   - `parsesMultipleSubsections`, `freeEntriesResolveToNull`

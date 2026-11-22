@@ -15,6 +15,7 @@ import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSBoolean;
 import org.apache.pdfbox.cos.COSDictionary;
+import org.apache.pdfbox.cos.COSInteger;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSNull;
 import org.apache.pdfbox.cos.COSNumber;
@@ -32,6 +33,10 @@ import org.junit.rules.TemporaryFolder;
  * Parses every object of a generated statement PDF at the offset PDFBox's cross-reference table
  * gives, and checks it against the object PDFBox read there. Until PR 7b's {@code XrefReader},
  * PDFBox supplies the offsets.
+ *
+ * <p>PDFBox writes every {@code /Length} directly, so before saving, the first page's content
+ * stream gets an indirect one ({@code /Length 65 0 R}): the form writers use when they write the
+ * length after the data, which the parser has to resolve.
  */
 public class PdfParserVsPdfBoxTest {
 
@@ -54,6 +59,9 @@ public class PdfParserVsPdfBoxTest {
         // Classic xref table and no object streams: the structure this PR reads (PR 8 does the rest).
         Path classic = tmp.newFile("classic-" + seed + ".pdf").toPath();
         try (PDDocument doc = Loader.loadPDF(generated.toFile())) {
+            COSStream content = (COSStream) doc.getPage(0).getCOSObject()
+                    .getDictionaryObject(COSName.CONTENTS);
+            content.setItem(COSName.LENGTH, new COSObject(COSInteger.get(content.getLength())));
             doc.save(classic.toFile(), CompressParameters.NO_COMPRESSION);
         }
         byte[] bytes = Files.readAllBytes(classic);
@@ -63,7 +71,9 @@ public class PdfParserVsPdfBoxTest {
             Map<PdfReference, Integer> offsets = new HashMap<>();
             xref.forEach((key, offset) -> offsets.put(
                     new PdfReference((int) key.getNumber(), key.getGeneration()), offset.intValue()));
+            int[] resolved = {0};
             PdfParser parser = new PdfParser(bytes, ref -> {
+                resolved[0]++;
                 PdfParser lengthParser = new PdfParser(bytes);
                 lengthParser.seek(offsets.get(ref));
                 return lengthParser.parseIndirectObject().object();
@@ -88,6 +98,7 @@ public class PdfParserVsPdfBoxTest {
             }
             assertEquals("pages, seed " + seed, doc.getNumberOfPages(), pages);
             assertThat(streams).as("streams, seed %d", seed).isGreaterThanOrEqualTo(pages);
+            assertEquals("indirect /Length values resolved, seed " + seed, 1, resolved[0]);
             return xref.size();
         }
     }

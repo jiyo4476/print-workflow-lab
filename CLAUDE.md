@@ -129,8 +129,10 @@ report's line total rounded *down* to two decimals, in its own commit.
   `PdfNumber`, `PdfBoolean`, `PdfNull`, `PdfReference`, `PdfStream` (raw, still filtered
   bytes)). It looks two tokens ahead to tell `12 0 R` from two numbers, and reads
   `n g obj ... endobj` with stream data, sized by `/Length`, which may be a reference resolved
-  through the constructor's resolver. Null dictionary entries are dropped. Errors are
-  `PdfFormatException` with the byte offset. The xref table, Flate decoding, the page tree and
+  through the constructor's resolver. Null dictionary entries are dropped; nesting is capped at
+  500 so bad input can't overflow the stack. Errors are `PdfFormatException` with the byte
+  offset. Nothing rejects a PDF version (1.0-2.0 share the syntax); PDF 2.0 UTF-8 text strings
+  are 7b (PRD-07, "PDF versions"). The xref table, Flate decoding, the page tree and
   `dump-pdf` are PR 7b.
 - **`testdata/`**: `StatementDataGenerator` draws the statements for a seed, `StatementLayout`
   places their text, and `StatementPdfGenerator` / `StatementAfpGenerator` write them, so one

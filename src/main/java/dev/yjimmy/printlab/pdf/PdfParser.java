@@ -113,7 +113,40 @@ public final class PdfParser {
         return number.isInt() && number.intValue() >= 0;
     }
 
+    /**
+     * Arrays and dictionaries are parsed recursively, so a file of nothing but {@code [[[[...}
+     * would overflow the stack. Real files nest a few levels; past this, parsing fails cleanly.
+     */
+    static final int MAX_NESTING = 500;
+
+    private int depth;
+
+    private void enter(Token start) {
+        if (++depth > MAX_NESTING) {
+            throw new PdfFormatException(start.offset(),
+                    "arrays and dictionaries are nested more than " + MAX_NESTING + " deep");
+        }
+    }
+
     private PdfArray array(Token start) {
+        enter(start);
+        try {
+            return arrayItems(start);
+        } finally {
+            depth--;
+        }
+    }
+
+    private PdfDictionary dictionary(Token start) {
+        enter(start);
+        try {
+            return dictionaryEntries(start);
+        } finally {
+            depth--;
+        }
+    }
+
+    private PdfArray arrayItems(Token start) {
         List<PdfObject> items = new ArrayList<>();
         while (true) {
             Token token = next();
@@ -128,7 +161,7 @@ public final class PdfParser {
         }
     }
 
-    private PdfDictionary dictionary(Token start) {
+    private PdfDictionary dictionaryEntries(Token start) {
         Map<String, PdfObject> entries = new LinkedHashMap<>();
         while (true) {
             Token key = next();
@@ -185,11 +218,20 @@ public final class PdfParser {
 
     /**
      * The bytes after {@code stream}: its end of line (CR LF or LF; a lone CR is accepted too),
-     * then exactly {@code /Length} bytes, then {@code endstream}.
+     * then exactly {@code /Length} bytes, then {@code endstream}. Spaces or tabs before that end
+     * of line are skipped: the spec doesn't allow them, but some writers emit them (and PDFBox
+     * reads them). Without an end of line after them, they are data.
      */
     private PdfStream streamData(PdfReference owner, PdfDictionary dictionary, Token stream) {
         byte[] data = lexer.data();
         int start = stream.offset() + "stream".length();
+        int afterBlanks = start;
+        while (afterBlanks < data.length && (data[afterBlanks] == ' ' || data[afterBlanks] == '\t')) {
+            afterBlanks++;
+        }
+        if (afterBlanks < data.length && (data[afterBlanks] == '\r' || data[afterBlanks] == '\n')) {
+            start = afterBlanks;
+        }
         if (start < data.length && data[start] == '\r') {
             start++;
         }

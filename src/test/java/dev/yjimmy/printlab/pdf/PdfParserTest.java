@@ -217,6 +217,45 @@ public class PdfParserTest {
     }
 
     @Test
+    public void blanksBeforeTheEndOfLineAfterStreamAreSkipped() {
+        PdfStream stream = (PdfStream) parseIndirect("1 0 obj<</Length 3>>stream \t\r\nabc\r\nendstream endobj")
+                .object();
+
+        assertEquals("data", "abc", new String(stream.data(), StandardCharsets.US_ASCII));
+    }
+
+    @Test
+    public void blanksAfterStreamWithNoEndOfLineAreData() {
+        PdfStream stream = (PdfStream) parseIndirect("1 0 obj<</Length 4>>stream abc\nendstream endobj")
+                .object();
+
+        assertEquals("data", " abc", new String(stream.data(), StandardCharsets.US_ASCII));
+    }
+
+    @Test
+    public void deeplyNestedArraysFailWithOffset() {
+        String deep = "[".repeat(200_000);
+
+        PdfFormatException e = assertThrows(PdfFormatException.class, () -> parse(deep));
+
+        assertEquals("offset of the first bracket too deep", PdfParser.MAX_NESTING, e.offset());
+        assertThat(e).hasMessageContaining("nested more than 500 deep");
+    }
+
+    @Test
+    public void nestingUpToTheLimitParsesAndTheCountResetsAfterEachObject() {
+        String deepest = "[".repeat(PdfParser.MAX_NESTING) + "]".repeat(PdfParser.MAX_NESTING);
+        PdfParser parser = new PdfParser(ascii(deepest + " " + deepest + " <<" + "/A <<".repeat(499)
+                + ">>".repeat(500)));
+
+        parser.parseObject();
+        parser.parseObject();
+        assertThat(parser.parseObject()).isInstanceOf(PdfDictionary.class);
+        assertThat(assertThrows(PdfFormatException.class, () -> parse("<</A " + "[".repeat(500))))
+                .hasMessageContaining("nested more than 500 deep");
+    }
+
+    @Test
     public void streamMustFollowADictionary() {
         assertThat(assertThrows(PdfFormatException.class,
                 () -> parseIndirect("5 0 obj [1] stream\nabc\nendstream endobj")))

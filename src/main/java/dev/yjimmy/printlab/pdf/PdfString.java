@@ -28,6 +28,10 @@ public record PdfString(byte[] bytes) implements PdfObject {
      * The bytes as text: UTF-16BE when they start with the byte-order mark {@code FE FF}, as a
      * text string may (ISO 32000-1, 7.9.2.2); otherwise one {@code char} per byte. That's close
      * to PDFDocEncoding but not exact: the two differ in {@code 18-1F} and {@code 80-9F}.
+     *
+     * <p>Not yet: PDF 2.0 (ISO 32000-2, 7.9.2.2) also allows UTF-8 text strings, marked by
+     * {@code EF BB BF}; those read here as one char per byte. PR 7b adds them, since its dump is
+     * the first thing to show string text (PRD-07, "PDF versions").
      */
     public String text() {
         if (bytes.length >= 2 && (bytes[0] & 0xFF) == 0xFE && (bytes[1] & 0xFF) == 0xFF) {
