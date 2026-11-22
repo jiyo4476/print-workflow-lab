@@ -357,6 +357,8 @@ connectors with rules.
   - `pageCountCountsBpgWithinGroup`
   - `groupMissingRequiredTleIsMarkedNotFatal`
   - `inlineResourceGroupIsCopiedIntoEveryDocument`
+  - `laterImmAppliesToEveryFollowingDocument`, `immBetweenAGroupsPagesCarriesIntoTheNextDocument`
+    (an IMM stays in effect until the next one)
   - `fileWithNoPageGroupsFailsWithClearMessage`
   - `unbalancedGroupFailsWithOffset`
 - Unit — `SplitAfpOutputTest`
@@ -706,7 +708,9 @@ inside it.
 - `POST /api/documents/reprint` with document ids → a **new child job** with just those
   documents, run through a `reprint` workflow (adds a "REPRINT" marker, skips presort). The child
   job records its parent job id.
-- `POST /api/jobs/{id}/retry` → re-runs a failed job from the step that failed.
+- `POST /api/jobs/{id}/retry` → re-runs a failed job from the step that failed. It first moves
+  the input back from `error/<jobId>/`, where the failure put it, and refuses if it's gone.
+  `WriteOutput` replaces the job's earlier output, so a retry after partial output is clean.
 - Both actions are recorded in `job_steps` for an audit trail.
 - **AFP reprints** (Q-07) get a `Reprint` TLE and a separate "REPRINT" text object
   (`BPT`/`PTX`/`EPT`) on every page, positioned in the page's own units from its `PGD`. Existing
@@ -726,6 +730,8 @@ inside it.
   - `retriesFromFailedStepNotFromStart` (`RecordingStep` shows steps 1 was not re-run)
   - `retryingCompletedJobIsRejected`
   - `retryIsRecordedInStepHistory`
+  - `retryMovesTheInputBackFromTheErrorFolder`, `retryWithTheInputGoneIsRefused`
+  - `retryAfterPartialOutputReplacesIt`
 - Integration — `ActionsApiTest`
   - `reprintReturns201WithChildJobId`
   - `reprintWithEmptyListReturns400`

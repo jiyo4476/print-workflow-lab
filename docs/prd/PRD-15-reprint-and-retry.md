@@ -99,6 +99,13 @@ run is the headline of the demo.
   [PRD-21](PRD-21-afp-reprint-overlay.md).
 - Retry needs each step's output to be reusable from the work dir. Document which steps support
   this, and record it per step.
+- **The input file is in the error folder.** When a job fails, `ErrorFolder` moves its input
+  from `work/<jobId>/` to `error/<jobId>/`. Retry moves it back to `job.inputFile()` before
+  resuming, and refuses with a clear message if it's no longer in either place (an operator
+  removed it). Once the job is retried, `error/<jobId>/` is removed, so the folder lists only
+  jobs still in error.
+- `WriteOutput` replaces the job's own `<outputDir>/<jobId>/` when it runs again, so retrying a
+  job that failed part way through writing output doesn't trip over its earlier files.
 
 ## Acceptance criteria
 
@@ -120,7 +127,9 @@ run is the headline of the demo.
   `documentsFromDifferentJobsAreRejected`,
   `unknownDocumentIdFailsWholeRequest`
 - Unit — `RetryServiceTest`: `retriesFromFailedStepNotFromStart`,
-  `retryingCompletedJobIsRejected`, `retryIsRecordedInStepHistory`
+  `retryingCompletedJobIsRejected`, `retryIsRecordedInStepHistory`,
+  `retryMovesTheInputBackFromTheErrorFolder`, `retryWithTheInputGoneIsRefused`,
+  `retryAfterPartialOutputReplacesIt`
 - Integration — `ActionsApiTest`: `reprintReturns201WithChildJobId`,
   `reprintWithEmptyListReturns400`, `retryUnknownJobReturns404`,
   `doubleSubmitRetryDoesNotRunTwice`
