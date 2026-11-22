@@ -3,9 +3,11 @@ package dev.yjimmy.printlab.steps;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assume.assumeTrue;
 
 import dev.yjimmy.printlab.testsupport.TestJobs;
 import dev.yjimmy.printlab.workflow.Job;
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -35,7 +37,7 @@ public class SetJobPropsFromTextFileStepTest {
 
         new SetJobPropsFromTextFileStep(Map.of()).execute(job);
 
-        assertEquals(List.of(Map.entry("inputFileName", "run.pdf"),
+        assertEquals("job properties, in order", List.of(Map.entry("inputFileName", "run.pdf"),
                 Map.entry("customer", "ACME Bank"), Map.entry("mailClass", "first")),
                 List.copyOf(job.properties().entrySet()));
     }
@@ -82,7 +84,7 @@ public class SetJobPropsFromTextFileStepTest {
 
         new SetJobPropsFromTextFileStep(Map.of()).execute(job);
 
-        assertEquals(before, job.properties());
+        assertEquals("job properties unchanged", before, job.properties());
     }
 
     @Test
@@ -111,7 +113,7 @@ public class SetJobPropsFromTextFileStepTest {
         IllegalStateException e = assertThrows(IllegalStateException.class,
                 () -> new SetJobPropsFromTextFileStep(Map.of()).execute(job));
 
-        assertEquals("run.pdf.jobprops line 3 isn't name=value: 'just some text'", e.getMessage());
+        assertEquals("message", "run.pdf.jobprops line 3 isn't name=value: 'just some text'", e.getMessage());
     }
 
     @Test
@@ -121,7 +123,17 @@ public class SetJobPropsFromTextFileStepTest {
         IllegalStateException e = assertThrows(IllegalStateException.class,
                 () -> new SetJobPropsFromTextFileStep(Map.of()).execute(job));
 
-        assertEquals("run.pdf.jobprops line 1 has no property name before '='", e.getMessage());
+        assertEquals("message", "run.pdf.jobprops line 1 has no property name before '='", e.getMessage());
+    }
+
+    @Test
+    public void driveRelativeFileNameFailsAtLoadOnWindows() {
+        // Only Windows has drive-relative paths: elsewhere "C:ticket.txt" is a plain file name.
+        assumeTrue("Windows only", File.separatorChar == '\\');
+
+        assertThat(assertThrows(IllegalArgumentException.class,
+                () -> new SetJobPropsFromTextFileStep(Map.of("fileName", "C:ticket.txt")))
+                .getMessage()).contains("'fileName' must be a file name");
     }
 
     @Test

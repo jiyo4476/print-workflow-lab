@@ -22,7 +22,9 @@ import dev.yjimmy.printlab.workflow.StepRegistry;
 import dev.yjimmy.printlab.workflow.WorkflowEngine;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -105,6 +107,33 @@ public class StatementWorkflowTest {
         assertEquals("documents stay in input order",
                 List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10),
                 job.documents().stream().map(Document::sequence).toList());
+    }
+
+    @Test
+    public void presortTicketValueIgnoresCaseAndAcceptsNoAndOff() throws Exception {
+        Path tmp = folder.getRoot().toPath();
+        WorkflowEngine engine = new WorkflowEngine(
+                TestWorkflows.load("statements", tmp.resolve("output")),
+                StepRegistry.withBuiltIns(), tmp.resolve("error"), TickingClock.oneSecondTicks());
+        Map<String, StepOutcome> expected = new LinkedHashMap<>();
+        expected.put("False", StepOutcome.SKIPPED);
+        expected.put("OFF", StepOutcome.SKIPPED);
+        expected.put("no", StepOutcome.SKIPPED);
+        expected.put("true", StepOutcome.COMPLETED);
+        int n = 0;
+        for (Map.Entry<String, StepOutcome> e : expected.entrySet()) {
+            String id = "job0000" + (++n);
+            Path input = Files.createDirectories(tmp.resolve(id)).resolve("run.pdf");
+            new StatementPdfGenerator(42).generate(3, input);
+            Job job = TestJobs.newJob(id, tmp, input);
+            Files.writeString(job.workDir().resolve("run.pdf.jobprops"), "presort=" + e.getKey());
+
+            engine.run(job);
+
+            assertEquals(job.errorMessage(), JobState.COMPLETE, job.state());
+            assertEquals("presort=" + e.getKey(), e.getValue(), job.stepRecords().stream()
+                    .filter(r -> r.name().equals("presort")).findFirst().orElseThrow().outcome());
+        }
     }
 
     @Test

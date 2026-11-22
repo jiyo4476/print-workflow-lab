@@ -53,9 +53,10 @@ phases:
       params:
         by: zip
       # Any step can take a 'when' on job properties; it's skipped (and recorded as SKIPPED) when
-      # false. Here a job ticket line "presort=false" turns presorting off for that job.
-      # (An absent property never equals, so jobs without a ticket are presorted.)
-      when: { property: presort, operator: notEquals, value: "false" }
+      # false. Here a job ticket line "presort=false" (or no / off, in any case) turns
+      # presorting off for that job. (An absent property matches nothing, so jobs without a
+      # ticket are presorted.)
+      when: { property: presort, operator: notMatches, value: "(?i)false|no|off" }
 
   assemble: []
 
