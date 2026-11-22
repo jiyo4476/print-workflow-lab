@@ -1,6 +1,6 @@
 # PRD-05 — `SplitAfp` step: TLEs become document properties, plus property mapping
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | AFP | M | 04 | `feature/05-split-afp` |
 

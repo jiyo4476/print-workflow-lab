@@ -1,5 +1,6 @@
 package dev.yjimmy.printlab.input;
 
+import dev.yjimmy.printlab.steps.SetJobPropsFromTextFileStep;
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
@@ -36,6 +37,12 @@ import org.slf4j.LoggerFactory;
  * Files can show up before they're fully written (a large copy over the network, say), so a file
  * is only handed off once its size has stopped changing. Files already present at startup are
  * picked up too. The glob ignores case ({@code *.pdf} matches {@code RUN.PDF}) on every platform.
+ *
+ * <p>Job tickets ({@code *.jobprops}) are never handed off, whatever the glob: they wait for their
+ * input, and {@link JobIntake} moves them with it. A file whose ticket is still being written waits
+ * for the ticket too. Any other file that doesn't match the glob is left alone and logged once
+ * (not on every rescan), so an operator who drops a file in the wrong folder can find out why
+ * nothing happened.
  */
 public final class HotFolderWatcher {
 
@@ -59,6 +66,9 @@ public final class HotFolderWatcher {
     private final Duration rescanInterval;
     /** Files whose handler has failed and that are still waiting to be claimed. */
     private final Set<Path> failing = new HashSet<>();
+    /** Files that don't match the glob and have been logged, while they're still there. */
+    private final Set<Path> unmatched = new HashSet<>();
+    private int unmatchedReports;
 
     public HotFolderWatcher(Path folder, String glob, FileHandler onFile) {
         this(folder, glob, onFile, STABLE_CHECK, RESCAN_INTERVAL);
@@ -117,6 +127,8 @@ public final class HotFolderWatcher {
         for (Path file : created) {
             if (matches(file)) {
                 handOff(file);
+            } else if (!isJobTicket(file) && Files.isRegularFile(file)) {
+                noteUnmatched(file);
             }
         }
     }
@@ -124,27 +136,56 @@ public final class HotFolderWatcher {
     /** Hands off every matching file in the folder, in name order: unclaimed by definition. */
     void scan() throws IOException, InterruptedException {
         List<Path> files = new ArrayList<>();
+        List<Path> others = new ArrayList<>();
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(folder)) {
             for (Path file : stream) {
-                if (matches(file) && Files.isRegularFile(file)) {
-                    files.add(file);
+                if (!Files.isRegularFile(file) || isJobTicket(file)) {
+                    continue;
                 }
+                (matches(file) ? files : others).add(file);
             }
         }
         files.sort(null);
         failing.retainAll(files);
+        // Forget files that have gone, so one dropped again with the same name is logged again.
+        unmatched.retainAll(others);
+        others.sort(null);
+        others.forEach(this::noteUnmatched);
         for (Path file : files) {
             handOff(file);
         }
     }
 
     private boolean matches(Path file) {
-        return matcher.matches(Path.of(file.getFileName().toString().toLowerCase(Locale.ROOT)));
+        return !isJobTicket(file)
+                && matcher.matches(Path.of(file.getFileName().toString().toLowerCase(Locale.ROOT)));
+    }
+
+    /** A job ticket waits for its input and is never a job of its own. */
+    static boolean isJobTicket(Path file) {
+        return file.getFileName().toString().toLowerCase(Locale.ROOT)
+                .endsWith(SetJobPropsFromTextFileStep.EXTENSION);
+    }
+
+    private void noteUnmatched(Path file) {
+        if (unmatched.add(file)) {
+            unmatchedReports++;
+            log.info("Leaving {} alone: it doesn't match {} for this folder", file, glob);
+        }
     }
 
     private void handOff(Path file) throws InterruptedException {
         try {
             waitUntilStable(file);
+            // Its ticket, if any, must be complete too: the claim takes it as it is.
+            Path ticket = SetJobPropsFromTextFileStep.ticketFor(file);
+            if (Files.isRegularFile(ticket)) {
+                try {
+                    waitUntilStable(ticket);
+                } catch (NoSuchFileException e) {
+                    // The ticket went away; the input is still there and goes without it.
+                }
+            }
             onFile.accept(file);
             if (failing.remove(file)) {
                 log.info("Picked up {} after an earlier failure", file);
@@ -171,6 +212,11 @@ public final class HotFolderWatcher {
             previous = size;
             size = Files.size(file);
         }
+    }
+
+    /** How many times a non-matching file has been logged. */
+    int unmatchedReports() {
+        return unmatchedReports;
     }
 
     /** Files whose hand-off has failed and that are waiting for a retry. */

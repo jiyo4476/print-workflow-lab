@@ -1,6 +1,6 @@
 # PRD-08 — Modern PDF structure: xref streams, object streams, incremental updates
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | PDF | M | 07 | `feature/08-modern-pdf-structure` |
 

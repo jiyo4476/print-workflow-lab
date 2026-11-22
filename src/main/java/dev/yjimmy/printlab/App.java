@@ -2,14 +2,13 @@ package dev.yjimmy.printlab;
 
 import dev.yjimmy.printlab.afp.AfpDump;
 import dev.yjimmy.printlab.afp.Ebcdic;
-import dev.yjimmy.printlab.input.HotFolderWatcher;
-import dev.yjimmy.printlab.input.JobIntake;
+import dev.yjimmy.printlab.input.InputDevice;
+import dev.yjimmy.printlab.input.InputDeviceConfig;
+import dev.yjimmy.printlab.input.InputDevices;
 import dev.yjimmy.printlab.testdata.StatementAfpGenerator;
 import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
-import dev.yjimmy.printlab.workflow.Job;
 import dev.yjimmy.printlab.workflow.StepRegistry;
 import dev.yjimmy.printlab.workflow.WorkflowDefinition;
-import dev.yjimmy.printlab.workflow.WorkflowEngine;
 import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
@@ -19,15 +18,16 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * Entry point.
  *
  * <pre>
- *   run [workflow.yaml] [glob]   watch ./hotfolder and process each file matching glob (default
- *                                *.pdf, any case) that lands there
+ *   run                          start the input devices in config/input-devices.yaml: one hot
+ *                                folder per device, each feeding its own workflow
+ *   run --devices &lt;config.yaml&gt;  the same, from another devices file
+ *   run &lt;workflow.yaml&gt; [glob]    one device, "default": watch ./hotfolder and run the workflow
+ *                                on each file matching glob (default *.pdf, any case)
  *   generate &lt;count&gt; &lt;out.pdf&gt; [badAddresses] [seed]
  *                                write a fake statement print run for testing, optionally with
  *                                some bad addresses for the exception queue
@@ -46,8 +46,7 @@ public final class App {
     public static void main(String[] args) throws Exception {
         String command = args.length > 0 ? args[0] : "run";
         switch (command) {
-            case "run" -> run(Path.of(args.length > 1 ? args[1] : "workflows/statements.yaml"),
-                    args.length > 2 ? args[2] : "*.pdf");
+            case "run" -> run(devices(args));
             case "generate", "generate-afp" -> {
                 StatementAfpGenerator.TleNames names = StatementAfpGenerator.TleNames.PROPERTY_NAMES;
                 int flag = Arrays.asList(args).indexOf("--tle-names");
@@ -94,49 +93,56 @@ public final class App {
         }
     }
 
-    private static void run(Path workflowFile, String glob) throws Exception {
-        WorkflowDefinition definition = WorkflowDefinition.load(workflowFile);
-        WorkflowEngine engine = new WorkflowEngine(
-                definition, StepRegistry.withBuiltIns(), Path.of("error"),
-                // Millisecond ticks: Windows clocks report 100 ns digits nobody needs to read.
-                Clock.tickMillis(ZoneOffset.UTC));
-        JobIntake intake = new JobIntake(Path.of("work"));
+    /** The default devices file for {@code run} with no arguments. */
+    static final Path DEVICES_FILE = Path.of("config/input-devices.yaml");
 
-        // One job at a time for now; the watcher thread never blocks on processing.
-        ExecutorService jobs = Executors.newSingleThreadExecutor();
-        new HotFolderWatcher(Path.of("hotfolder"), glob, file -> {
-            // Claim the file on the watcher's thread, before returning: if the move fails, the
-            // file is still in the hot folder and the watcher retries it.
-            Job job = intake.claim(file);
-            // execute, not submit: submit would park anything thrown in a Future nobody reads,
-            // and the job would vanish without even a log line.
-            jobs.execute(() -> process(engine, job));
-        }).watch();
+    /**
+     * {@code run} → the devices file; {@code run --devices <file>} → that file;
+     * {@code run <workflow.yaml> [glob]} → one device named "default" on ./hotfolder.
+     */
+    static List<InputDevice> devices(String[] args) throws Exception {
+        if (args.length <= 1) { // "run", or no arguments at all
+            return InputDeviceConfig.load(DEVICES_FILE);
+        }
+        if (args[1].equals("--devices")) {
+            if (args.length < 3) {
+                throw new IllegalArgumentException("run --devices needs a devices file");
+            }
+            return InputDeviceConfig.load(Path.of(args[2]));
+        }
+        return List.of(new InputDevice("default", Path.of("hotfolder"),
+                args.length > 2 ? args[2] : "*.pdf", Path.of(args[1])));
     }
 
-    private static void process(WorkflowEngine engine, Job job) {
-        // The engine fails jobs cleanly for step errors; these are for whatever it lets escape
-        // (OutOfMemoryError, a bug in the engine itself).
-        try {
-            engine.run(job);
-        } catch (Error err) {
-            System.err.println(job + " stopped unexpectedly; its files are in "
-                    + job.workDir().toAbsolutePath());
-            // The worker thread's uncaught-exception handler prints the stack trace once; the
-            // executor then starts a fresh thread for the next job.
-            throw err;
-        } catch (RuntimeException e) {
-            System.err.println(job + " stopped unexpectedly; its files are in "
-                    + job.workDir().toAbsolutePath());
-            e.printStackTrace();
+    private static void run(List<InputDevice> devices) throws Exception {
+        InputDevices running = new InputDevices(devices, WorkflowDefinition::load,
+                StepRegistry.withBuiltIns(), Path.of("work"), Path.of("error"),
+                // Millisecond ticks: Windows clocks report 100 ns digits nobody needs to read.
+                Clock.tickMillis(ZoneOffset.UTC), job -> { });
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+                running.close();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }, "shutdown"));
+        running.start();
+        for (InputDevice device : devices) {
+            System.out.println("Input device '" + device.name() + "': " + device.glob() + " in "
+                    + device.folder().toAbsolutePath() + " -> " + device.workflow());
         }
+        // The devices run on their own threads; keep the program alive until it's stopped.
+        Thread.currentThread().join();
     }
 
     private static void usage() {
         System.out.println("""
                 Usage:
-                  run [workflow.yaml] [glob]   watch ./hotfolder and process files matching
-                                               glob (default *.pdf, any case)
+                  run                          start the input devices in
+                                               config/input-devices.yaml
+                  run --devices <config.yaml>  the same, from another devices file
+                  run <workflow.yaml> [glob]   one device: watch ./hotfolder and run the
+                                               workflow on files matching glob (default *.pdf)
                   generate <count> <out.pdf> [badAddresses] [seed]
                                                write a fake statement print run, optionally
                                                with some bad addresses

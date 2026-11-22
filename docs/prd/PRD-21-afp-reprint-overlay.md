@@ -1,6 +1,6 @@
 # PRD-21 — Mark AFP reprints with a page overlay
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | AFP | M | 15 | `feature/21-afp-reprint-overlay` |
 

@@ -79,6 +79,21 @@ public class ErrorHandlingTest {
     }
 
     @Test
+    public void failedJobTakesItsTicketToTheErrorFolder() throws Exception {
+        Path input = blankPdf("in", "run.pdf");
+        Job job = TestJobs.newJob("job00004", tmp, input);
+        Files.writeString(job.workDir().resolve("run.pdf.jobprops"), "presort=false");
+
+        engine.run(job);
+
+        assertEquals("state", JobState.ERROR, job.state());
+        assertEquals("ticket next to the input", "presort=false",
+                Files.readString(errorDir.resolve("job00004").resolve("run.pdf.jobprops")));
+        assertFalse("ticket gone from the work folder",
+                Files.exists(job.workDir().resolve("run.pdf.jobprops")));
+    }
+
+    @Test
     public void errorTxtContainsStepNameAndMessage() throws Exception {
         Job job = runFailingJob("job00002", blankPdf("in", "run.pdf"));
 
@@ -88,10 +103,11 @@ public class ErrorHandlingTest {
         assertThat(text)
                 .contains("Job:    job00002")
                 .contains("Input:  run.pdf")
-                .contains("Step:   split-and-index")
+                .contains("Phase:  prepare\nStep:   split-and-index")
                 .contains("No 'accountNumber' found on page 1")
-                // split-and-index is the first step: start at t0, fail at t0 + 1s.
-                .contains("Time:   2026-01-01T00:00:01Z")
+                // set-job-props runs first (t0, t0 + 1s); split-and-index starts at t0 + 2s and
+                // fails at t0 + 3s.
+                .contains("Time:   2026-01-01T00:00:03Z")
                 .contains("Work:   " + job.workDir().toAbsolutePath())
                 .doesNotContain("Note:");
     }

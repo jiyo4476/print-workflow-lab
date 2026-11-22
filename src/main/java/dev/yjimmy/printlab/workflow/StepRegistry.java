@@ -3,6 +3,7 @@ package dev.yjimmy.printlab.workflow;
 import dev.yjimmy.printlab.steps.MapPropertiesStep;
 import dev.yjimmy.printlab.steps.RouteDocumentsStep;
 import dev.yjimmy.printlab.steps.RunExternalProgramStep;
+import dev.yjimmy.printlab.steps.SetJobPropsFromTextFileStep;
 import dev.yjimmy.printlab.steps.SortDocumentsStep;
 import dev.yjimmy.printlab.steps.SplitAfpStep;
 import dev.yjimmy.printlab.steps.SplitPdfStep;
@@ -18,6 +19,7 @@ public final class StepRegistry {
 
     public static StepRegistry withBuiltIns() {
         StepRegistry registry = new StepRegistry();
+        registry.register("SetJobPropsFromTextFile", SetJobPropsFromTextFileStep::new);
         registry.register("SplitPdf", SplitPdfStep::new);
         registry.register("SplitAfp", SplitAfpStep::new);
         registry.register("MapProperties", MapPropertiesStep::new);

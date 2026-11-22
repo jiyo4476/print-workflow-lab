@@ -16,7 +16,7 @@ starting a PR and record the answer there.
 
 ## Overview
 
-| # | PR | Phase | Size | Depends on |
+| # | PR | Plan phase | Size | Depends on |
 |---|---|---|---|---|
 | 0 | Test infrastructure: coverage, fixtures, helpers | Foundation | S | — |
 | 1 | Error folder and job summary file | Core | S | 0 |
@@ -64,6 +64,29 @@ AFP overlay was split out of PR 15), so their numbers don't show their order: PR
 after PR 0, PR 21 any time after PR 15, and PR 20 comes last.
 
 Branch naming: `feature/NN-short-name` (e.g. `feature/03-afp-reader`).
+
+"Phase" in this plan (Phase 0 — Foundation, ...) groups the PRs. It isn't the same as the
+**workflow phases** every workflow runs in (receive, prepare, assemble, print, insert, complete),
+described below.
+
+### Done outside the numbered plan
+
+These landed between plan items, without a plan number. Later PRs build on them.
+
+| GitHub PR | What | Affects |
+|---|---|---|
+| #17 | Review fixes: hot-folder retries and rescans, interrupt handling, `newDocumentWhen` for `SplitPdf`, output keeps each document's extension, 12-digit job IDs | 6, 13, 15 |
+| #18 | npm `overrides` for `glob` / `minimatch` under mocha (`npm audit` 0) | 16 |
+| #20 | **Workflow phases**: steps grouped under `phases:` into receive, prepare, assemble, print, insert, complete (ProcessDirector's phases), in that order; `Job.phase()` in `job.json`, `error.txt` and the log | 6, 12, 13, 15, 16 |
+| #21 | **Job tickets**: `SetJobPropsFromTextFile`, first in every sample workflow's receive phase, sets job properties from `<input>.jobprops`, which `JobIntake` moves with the input | 6, 14, 15 |
+
+What later items should do with them:
+- New steps go in the phase where ProcessDirector would run them: a barcode step (12) in
+  prepare or assemble, preflight (11) in receive or prepare, reprint (15) re-enters at prepare
+  or print.
+- Persistence (13) stores each job's phase and each step record's phase; the dashboard (16)
+  shows the phase next to the current step; the REST API (14) returns it.
+- Every input device (6) carries job tickets the same way.
 
 ---
 
@@ -383,22 +406,28 @@ connectors with rules.
 **Goal:** route incoming files to the right workflow, like configured input devices.
 
 - `config/input-devices.yaml`: list of `{ name, folder, glob, workflow }`.
-- One `HotFolderWatcher` per device, sharing the job executor.
-- Unmatched files are left alone and logged once.
+- One `HotFolderWatcher` per device, sharing the job executor. **Each device has its own
+  folder**: two devices can't share one, even with different globs.
+- Unmatched files are left alone and logged once; job tickets are never inputs.
+- Jobs record their device (`inputDevice`), which a ticket can't override.
 
 **Tests**
 - Unit — `InputDeviceConfigTest`
   - `loadsDevicesFromYaml`
   - `missingWorkflowFileFailsAtStartup`
   - `duplicateDeviceNamesFail`
-  - `twoDevicesOnSameFolderAndGlobFail`
-- Unit — `HotFolderWatcherTest` (backfills tests the skeleton lacks)
-  - `picksUpFilesPresentAtStartup`
-  - `picksUpNewFile` (await with a timeout, no fixed sleeps)
-  - `waitsUntilFileStopsGrowing` (write in chunks from another thread)
-  - `ignoresFilesNotMatchingGlob`
-- Integration — `InputDevicesTest`
+  - `twoDevicesOnTheSameFolderFail`
+  - `nestedFoldersAreDifferentFolders`, `invalidGlobFails`, `missingFieldFailsNamingIt`,
+    `emptyDeviceListFails`, `unknownKeyFails`
+- Unit — `HotFolderWatcherTest` (the basics landed in GitHub #17)
+  - `jobTicketsAreNeverHandedOffEvenWhenTheGlobMatches`
+  - `unmatchedFileIsLoggedOnceWhileItStays`
+- Unit — `AppDevicesTest` (`run` with no arguments, `--devices`, `run <workflow>`)
+- Integration — `InputDevicesTest` (waits on a job-done callback, no fixed sleeps)
   - `pdfAndAfpDroppedInTheirFoldersRunTheirWorkflows`
+  - `jobRecordsItsInputDevice`
+  - `jobTicketTravelsWithItsInputOnAnyDevice`
+  - `badWorkflowFailsAtStartupNamingTheDevice`, `devicesSharingAFolderFailAtStartup`
 
 ---
 

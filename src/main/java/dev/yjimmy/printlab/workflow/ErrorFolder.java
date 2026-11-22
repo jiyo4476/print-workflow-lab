@@ -1,13 +1,15 @@
 package dev.yjimmy.printlab.workflow;
 
+import dev.yjimmy.printlab.steps.SetJobPropsFromTextFileStep;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 
 /**
- * Where failed jobs go: {@code <root>/<jobId>/} holds the job's input file and an
- * {@code error.txt} that says which step failed, when, and why. Each job gets its own folder, so
+ * Where failed jobs go: {@code <root>/<jobId>/} holds the job's input file (with its
+ * {@code <input>.jobprops} ticket, if it came with one, so a resubmitted job gets the same
+ * properties) and an {@code error.txt} that says which step failed, when, and why. Each job gets its own folder, so
  * two failed inputs with the same file name never overwrite each other.
  */
 public final class ErrorFolder {
@@ -43,6 +45,18 @@ public final class ErrorFolder {
             moveProblem = "input file could not be moved here (" + e
                     + "); it was left at " + input.toAbsolutePath();
         }
+        // Where JobIntake put it and SetJobPropsFromTextFile read it.
+        Path ticket = job.workDir().resolve(
+                SetJobPropsFromTextFileStep.ticketFor(input).getFileName());
+        String ticketProblem = null;
+        if (Files.isRegularFile(ticket)) {
+            try {
+                Files.move(ticket, dir.resolve(ticket.getFileName()));
+            } catch (IOException e) {
+                ticketProblem = "job ticket could not be moved here (" + e
+                        + "); it was left at " + ticket.toAbsolutePath();
+            }
+        }
 
         StringBuilder text = new StringBuilder()
                 .append("Job:    ").append(job.id()).append('\n')
@@ -55,6 +69,9 @@ public final class ErrorFolder {
                 .append("Work:   ").append(job.workDir().toAbsolutePath()).append('\n');
         if (moveProblem != null) {
             text.append("Note:   ").append(moveProblem).append('\n');
+        }
+        if (ticketProblem != null) {
+            text.append("Note:   ").append(ticketProblem).append('\n');
         }
         Files.writeString(dir.resolve(ERROR_FILE_NAME), text);
         return dir;

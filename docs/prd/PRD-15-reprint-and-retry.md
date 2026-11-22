@@ -1,6 +1,6 @@
 # PRD-15 — Reprint and retry
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | Platform | M | 14 | `feature/15-reprint-retry` |
 

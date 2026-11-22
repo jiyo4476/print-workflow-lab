@@ -1,9 +1,10 @@
 # print-workflow-lab
 
 A small production-print workflow engine in Java, built to learn how high-volume document
-workflows operate: hot-folder intake, configurable workflows, splitting a print run into
-documents, indexing them with document properties, presorting, AFP print files split on their page groups and indexed from TLEs, and
-(coming next) single-document reprint.
+workflows operate: hot-folder intake with job tickets, configurable workflows in
+ProcessDirector's six phases (receive, prepare, assemble, print, insert, complete), splitting a
+print run into documents, indexing them with document properties, presorting, AFP print files
+split on their page groups and indexed from TLEs, and (coming next) single-document reprint.
 
 It's a learning project, not a product. The concepts follow the way enterprise print workflow
 systems model jobs, documents and steps.
@@ -11,29 +12,35 @@ systems model jobs, documents and steps.
 ## The demo scenario
 
 A billing system writes one big PDF containing hundreds of customer statements. Drop it in
-`hotfolder/` and the workflow:
+`hotfolder/pdf/` (the `pdf-statements` input device) and the workflow:
 
-1. picks it up once the file has finished copying,
-2. **splits** it into one PDF per statement, detecting boundaries from the account number in each
-   page header (and a "Page 1 of N" line, so two statements in a row for one account stay
-   separate),
+1. picks it up once the file has finished copying, with its job ticket (`run.pdf.jobprops`)
+   if one came first, and in the **receive** phase sets job properties from the ticket,
+2. in the **prepare** phase, **splits** it into one PDF per statement, detecting boundaries from
+   the account number in each page header (and a "Page 1 of N" line, so two statements in a row
+   for one account stay separate),
 3. **indexes** each statement: account number, name, address, zip and page count become
    document properties,
 4. **routes** each statement to a queue: a bad address (blank name, zip not five digits) goes to
    `exceptions`, more than 6 pages to `large-envelope`, everything else to `standard`,
-5. **presorts** statements by zip code (postal presort),
-6. writes each queue's documents in order to `output/<jobId>/<queue>/`, plus one
-   `documents.csv` index for the whole job.
+5. **presorts** statements by zip code (postal presort), unless the ticket says `presort=false`,
+6. in the **print** phase, writes each queue's documents in order to
+   `output/<jobId>/<queue>/`, plus one `documents.csv` index for the whole job.
+
+`job.json` shows which phase the job is in as it goes. The same run works from AFP with
+`workflows/statements-afp.yaml`.
 
 ## Concept map
 
 | This project | Print workflow concept |
 |---|---|
-| `HotFolderWatcher` | Input device / hot folder |
+| `config/input-devices.yaml`, `InputDevices`, `HotFolderWatcher` | Input devices: each hot folder feeds its own workflow |
 | `workflows/*.yaml` | Workflow definition, configured not coded |
+| `Phase` / `phases:` (receive, prepare, assemble, print, insert, complete) | Workflow phases |
 | `Step` + `StepRegistry` | Step templates and the steps built from them |
 | `Job` / `Job.properties()` | Job and job properties |
 | `Document` / `Document.properties()` | Documents and document properties |
+| `SetJobPropsFromTextFileStep` + `<input>.jobprops` | `SetJobPropsFromTextFile`, the job ticket that starts most workflows |
 | `SplitPdfStep` | Identifying PDF documents by page regions |
 | `SplitAfpStep` | Identifying AFP documents by page groups, with TLEs as document properties |
 | `MapPropertiesStep` | Mapping input index names to document properties |
@@ -57,15 +64,14 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw -q exec:java -Dexec.args="generate-afp 200 run.afp"  # the same kind of run as AFP
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 run.afp 5 42"  # 5 bad addresses, seed 42
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 legacy.afp --tle-names legacy"  # ACCT_NO, ...
-./mvnw -q exec:java                               # start watching ./hotfolder
-./mvnw -q exec:java -Dexec.args="run workflows/statements.yaml *.pdf"  # same, explicitly
-./mvnw -q exec:java -Dexec.args="run workflows/statements-afp.yaml *.afp"  # AFP input
-./mvnw -q exec:java -Dexec.args="run workflows/statements-afp-legacy.yaml *.afp"  # legacy TLEs
+./mvnw -q exec:java                               # start the input devices (config/input-devices.yaml)
+./mvnw -q exec:java -Dexec.args="run --devices my-devices.yaml"  # ...from another devices file
+./mvnw -q exec:java -Dexec.args="run workflows/statements-afp.yaml *.afp"  # one device on ./hotfolder
 ./mvnw -q exec:java -Dexec.args="dump-afp statement.afp"  # print an AFP file's structure
 ```
 
-Then move `run.pdf` into `hotfolder/` and look in `output/`. The glob ignores case, so `RUN.PDF`
-is picked up too. A file that can't be claimed yet (Windows reports it as in use while another
+Then move `run.pdf` into `hotfolder/pdf/` (or `run.afp` into `hotfolder/afp/`) and look in
+`output/`. The glob ignores case, so `RUN.PDF` is picked up too. A file that can't be claimed yet (Windows reports it as in use while another
 program still has it open) stays in the hot folder and is retried every 5 seconds; the folder is
 also rescanned at once if the operating system drops file events in a burst. On Windows use
 `mvnw.cmd`. In
@@ -76,6 +82,41 @@ an unknown lifecycle phase:
 .\mvnw.cmd -q exec:java "-Dexec.args=generate 200 run.pdf"
 ```
 
+### Input devices
+
+Like ProcessDirector's input devices, each hot folder feeds its own workflow.
+`config/input-devices.yaml` lists them, and `run` with no arguments starts them all:
+
+| Device | Folder | Files | Workflow |
+|---|---|---|---|
+| `pdf-statements` | `hotfolder/pdf/` | `*.pdf` | `statements.yaml` |
+| `afp-statements` | `hotfolder/afp/` | `*.afp` | `statements-afp.yaml` |
+| `afp-legacy` | `hotfolder/afp-legacy/` | `*.afp` | `statements-afp-legacy.yaml` (files from `--tle-names legacy`) |
+
+```yaml
+devices:
+  - name: pdf-statements      # unique; jobs get the job property inputDevice=pdf-statements
+    folder: hotfolder/pdf     # each device has its own folder
+    glob: "*.pdf"             # which files are inputs, ignoring case
+    workflow: workflows/statements.yaml
+```
+
+- **One folder per device.** Two devices can't share a folder, even with different globs (or the
+  same folder written two ways, like `hotfolder/pdf` and `hotfolder/x/../pdf`). Every file in a
+  folder belongs to that folder's device. Nested folders are fine: watching isn't recursive.
+- **Checked at startup.** Every device's workflow is loaded and built before any folder is
+  watched. A missing or broken workflow, a repeated name or folder, an invalid glob, a missing
+  field or an unknown key stops startup with a message naming the device.
+- **Each device has its own watcher thread.** All devices hand jobs to one shared queue, so jobs
+  still run one at a time.
+- **Each job records its device** as the job property `inputDevice`. A job ticket can't change it
+  (or `inputFileName`); a ticket line for either is ignored, with a warning.
+- **Job tickets** (`*.jobprops`) are never inputs, whatever the glob. Any other file that doesn't
+  match the device's glob is left in place and logged once, not on every rescan.
+
+`run <workflow.yaml> [glob]` is still there as a shortcut: one device named `default` on
+`hotfolder/`.
+
 ### Workflow phases
 
 Like Ricoh ProcessDirector, every workflow groups its steps into the same six phases, which
@@ -83,7 +124,7 @@ always run in this order. A phase can be empty, as `assemble` and `insert` are f
 
 | Phase | What happens there | In `statements.yaml` |
 |---|---|---|
-| `receive` | Accept the input: set job properties, detect the data stream | (empty) |
+| `receive` | Accept the input: set job properties, detect the data stream | `set-job-props` |
 | `prepare` | Turn the input into documents: split, index, map, route, sort | `split-and-index`, `route`, `presort` |
 | `assemble` | Build what will be printed from the documents | (empty) |
 | `print` | Send the job to the printer; here, write it to the output folder | `write-output` |
@@ -92,7 +133,9 @@ always run in this order. A phase can be empty, as `assemble` and `insert` are f
 
 ```yaml
 phases:
-  receive: []
+  receive:
+    - name: set-job-props
+      type: SetJobPropsFromTextFile
   prepare:
     - name: split-and-index
       type: SplitPdf
@@ -108,11 +151,44 @@ to load with a message saying so. The job's phase is the phase of the step it's 
 in `receive`, a finished one is in `complete`, and a failed one stays in the phase where it
 failed. `job.json`, `error.txt` and the log all show it.
 
+### Job tickets
+
+Most ProcessDirector workflows start with `SetJobPropsFromTextFile`, and so do these. It reads a
+job ticket, a small text file that comes with the print file, and sets job properties from it, so
+whoever submits a job can say how to handle it. Name it after the input with `.jobprops` added and
+copy it into the hot folder **before** the input: `run.pdf` takes `run.pdf.jobprops` along when
+it's claimed.
+
+```
+# Job ticket for run.pdf
+customer=ACME Bank
+mailClass=first
+presort=false
+```
+
+One `name=value` per line (UTF-8). Names and values are trimmed, `#` lines and blank lines are
+skipped, a value may contain `=`, and a later line for the same name wins. A line with no `=`
+fails the job with its line number. A line can't change `inputFileName`, which the app sets
+(it's ignored, with a warning). The watcher never treats a ticket as a job, whatever the glob,
+waits for it to finish copying, and won't claim the input while the ticket can't be moved; a
+failed job's ticket goes to `error/<jobId>/` with its input. With no ticket the step does nothing; `required: true` makes
+a missing ticket fail the job, and `fileName:` reads another file in the job's work folder.
+
+The properties are job properties, so any step's `when:` can use them. In `statements.yaml` a
+ticket with `presort=false` skips the presort step:
+
+```yaml
+- name: presort
+  type: SortDocuments
+  params: { by: zip }
+  when: { property: presort, operator: notEquals, value: "false" }
+```
+
 ### Where a job's files go
 
 | Folder | What's in it |
 |---|---|
-| `work/<jobId>/` | The input file while it's processed, intermediate documents, and `job.json` |
+| `work/<jobId>/` | The input file (and its `.jobprops` ticket) while it's processed, intermediate documents, and `job.json` |
 | `output/<jobId>/<queue>/` | One queue's finished documents (`standard`, `exceptions`, ...) in presort order, from `00001.pdf` (the extension follows the document's format) |
 | `output/<jobId>/documents.csv` | One row per document with its properties, including `queue`; `file` is the path below `output/<jobId>/`. `position`, `sequence` and `file` are reserved: a property with one of those names fails the job |
 | `error/<jobId>/` | Only for failed jobs: the input file and `error.txt` |
@@ -285,9 +361,10 @@ src/main/java/dev/yjimmy/printlab/
   App.java                 entry point: run | generate | generate-afp | dump-afp
   workflow/                Job, Document, Step, WorkflowDefinition, WorkflowEngine, StepRegistry
   workflow/rules/          Condition, Rule, RuleParser: routing rules and `when:`
-  steps/                   SplitPdf, SplitAfp, MapProperties, RouteDocuments, SortDocuments,
+  steps/                   SetJobPropsFromTextFile, SplitPdf, SplitAfp, MapProperties,
+                           RouteDocuments, SortDocuments,
                            RunExternalProgram, WriteOutput
-  input/HotFolderWatcher   folder intake
+  input/                   input devices: config, one HotFolderWatcher per device, JobIntake
   testdata/                fake statement print runs: shared data and layout, PDF and AFP writers
   afp/                     AFP reader and writer, field names, EBCDIC, TLE decoder and encoder,
                            dump tool
@@ -296,6 +373,7 @@ src/main/webapp/
   index.html               dashboard page; loads WebJars, then js/
   js/                      Marionette app: health.js, app.js, main.js
 src/test/js/               dashboard tests (Mocha + jsdom)
+config/input-devices.yaml  the input devices `run` starts
 workflows/                 sample workflows: statements.yaml (PDF), statements-afp.yaml,
                            statements-afp-legacy.yaml
 ```
@@ -308,6 +386,8 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
 
 - [x] Workflow engine, YAML workflows, step registry
 - [x] Hot folder intake that waits for files to finish copying
+- [x] Input devices: several hot folders, each feeding its own workflow
+      (`config/input-devices.yaml`)
 - [x] PDF split + region-based indexing, zip presort, output with document index
 - [x] **AFP:**
   - [x] Structured-field reader and dump tool
@@ -319,6 +399,7 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
 - [ ] Barcode step (ZXing) for inserter control
 - [x] Tomcat WAR, `/api/health`, Marionette 4 dashboard shell
 - [ ] Persist jobs and documents (PostgreSQL), REST API (servlets on Tomcat)
+- [x] Job tickets: `SetJobPropsFromTextFile` sets job properties from `<input>.jobprops`
 - [x] Workflow phases (receive, prepare, assemble, print, insert, complete), as in
       ProcessDirector
 - [ ] Marionette dashboard: jobs by phase and step, document search, single-document reprint
