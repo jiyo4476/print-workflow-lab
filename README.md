@@ -168,7 +168,10 @@ presort=false
 
 One `name=value` per line (UTF-8). Names and values are trimmed, `#` lines and blank lines are
 skipped, a value may contain `=`, and a later line for the same name wins. A line with no `=`
-fails the job with its line number. With no ticket the step does nothing; `required: true` makes
+fails the job with its line number. A line can't change `inputFileName`, which the app sets
+(it's ignored, with a warning). The watcher never treats a ticket as a job, whatever the glob,
+waits for it to finish copying, and won't claim the input while the ticket can't be moved; a
+failed job's ticket goes to `error/<jobId>/` with its input. With no ticket the step does nothing; `required: true` makes
 a missing ticket fail the job, and `fileName:` reads another file in the job's work folder.
 
 The properties are job properties, so any step's `when:` can use them. In `statements.yaml` a

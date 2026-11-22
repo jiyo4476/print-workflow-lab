@@ -7,6 +7,7 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import dev.yjimmy.printlab.workflow.Job;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -56,6 +57,38 @@ public class JobIntakeTest {
         Job job = new JobIntake(tmp.getRoot().toPath().resolve("work")).claim(file, "pdf-in");
 
         assertEquals("inputDevice", "pdf-in", job.properties().get(JobIntake.INPUT_DEVICE));
+    }
+
+    @Test
+    public void ticketThatCannotBeMovedFailsTheClaimAndLeavesBothFiles() throws Exception {
+        Path hot = Files.createDirectories(tmp.getRoot().toPath().resolve("hot"));
+        Path work = tmp.getRoot().toPath().resolve("work");
+        Path ticket = Files.writeString(hot.resolve("run.pdf.jobprops"), "customer=ACME");
+        Path file = Files.writeString(hot.resolve("run.pdf"), "pdf");
+        // Something already at the ticket's destination makes its move fail, as a lock would.
+        Files.writeString(Files.createDirectories(work.resolve("job00001"))
+                .resolve("run.pdf.jobprops"), "in the way");
+
+        assertThrows(FileAlreadyExistsException.class,
+                () -> new JobIntake(work, () -> "job00001").claim(file));
+
+        assertEquals("input still in the hot folder", "pdf", Files.readString(file));
+        assertEquals("ticket still in the hot folder", "customer=ACME", Files.readString(ticket));
+    }
+
+    @Test
+    public void failedInputMovePutsTheTicketBack() throws Exception {
+        Path hot = Files.createDirectories(tmp.getRoot().toPath().resolve("hot"));
+        Path work = tmp.getRoot().toPath().resolve("work");
+        Path ticket = Files.writeString(hot.resolve("missing.pdf.jobprops"), "customer=ACME");
+
+        assertThrows(NoSuchFileException.class,
+                () -> new JobIntake(work).claim(hot.resolve("missing.pdf")));
+
+        assertEquals("ticket back in the hot folder", "customer=ACME", Files.readString(ticket));
+        try (var left = Files.list(work)) {
+            assertThat(left).as("job folders left behind").isEmpty();
+        }
     }
 
     @Test

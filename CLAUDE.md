@@ -79,8 +79,9 @@ report's line total rounded *down* to two decimals, in its own commit.
   routing sends them to `exceptions`; structural problems in the file fail the job.
   `MapPropertiesStep` renames properties (all at once; every name comes from the YAML).
   `SetJobPropsFromTextFileStep` (first in every sample workflow's receive phase) reads the job
-  ticket `<input>.jobprops` (`name=value` lines) from the work folder into job properties; no
-  file is a no-op unless `required: true`.
+  ticket `<input>.jobprops` (`name=value` lines) from the work folder into job properties
+  (`PROTECTED` names such as `inputFileName` are ignored); no file is a no-op unless
+  `required: true`. `ErrorFolder` moves a failed job's ticket next to its input.
   `RouteDocuments` sets the `queue` document
   property; `WriteOutput` writes each queue to `output/<jobId>/<queue>/`, keeping each
   document's file extension, and one `documents.csv` for the job, whose `position`, `sequence`
@@ -94,10 +95,11 @@ report's line total rounded *down* to two decimals, in its own commit.
   device)` sets the `inputDevice` job property, which a ticket can't override
   (`SetJobPropsFromTextFileStep.PROTECTED`). `App run` with no arguments uses the devices file;
   `run <workflow> [glob]` is a single `default` device on `hotfolder/`.
-- **`input/HotFolderWatcher`** hands off a file only once its size stops changing. It never hands
-  off `*.jobprops` tickets, and logs a non-matching file once while it stays. Its handler
-  must **claim** the file (move it out of the folder) before returning; `JobIntake.claim` moves
-  it, and best effort its `<input>.jobprops` ticket, into `work/<jobId>/`. Because anything
+- **`input/HotFolderWatcher`** hands off a file only once its size (and its ticket's) stops
+  changing, never hands off `*.jobprops` tickets, and logs a non-matching file once while it
+  stays. Its handler must **claim** the file (move it out of the folder) before returning;
+  `JobIntake.claim` moves its `<input>.jobprops` ticket first and then the input into
+  `work/<jobId>/`; if either move fails, both stay put. Because anything
   still in the folder is unclaimed, the watcher can safely rescan: at once on `OVERFLOW`, and every 5 s so a file whose claim failed (locked on
   Windows) is retried. The glob ignores case. Jobs run one at a time across all devices.
 - **Interrupts:** `WorkflowEngine` fails an interrupted job (an `InterruptedException`, or any

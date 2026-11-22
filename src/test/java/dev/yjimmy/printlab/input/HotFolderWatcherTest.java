@@ -108,6 +108,24 @@ public class HotFolderWatcherTest {
     }
 
     @Test
+    public void jobTicketsAreNeverHandedOffEvenWhenTheGlobMatchesThem() throws Exception {
+        Files.createDirectories(hotFolder);
+        Files.writeString(hotFolder.resolve("run.pdf.jobprops"), "customer=ACME");
+        Files.writeString(hotFolder.resolve("RUN2.PDF.JOBPROPS"), "customer=ACME");
+        Files.writeString(hotFolder.resolve("run.pdf"), "x");
+        HotFolderWatcher watcher = new HotFolderWatcher(hotFolder, "*", this::claim,
+                FAST_STABLE_CHECK, FAST_RESCAN);
+
+        watcher.handle(List.of(
+                event(StandardWatchEventKinds.ENTRY_CREATE, Path.of("run.pdf.jobprops")),
+                event(StandardWatchEventKinds.ENTRY_CREATE, Path.of("RUN2.PDF.JOBPROPS"))));
+        watcher.scan();
+
+        assertThat(picked).containsExactly("run.pdf");
+        assertTrue("ticket waits for its input", Files.exists(hotFolder.resolve("run.pdf.jobprops")));
+    }
+
+    @Test
     public void aFileWhoseClaimFailedIsRetriedByTheRescan() throws Exception {
         Files.createDirectories(hotFolder);
         Files.writeString(hotFolder.resolve("locked.pdf"), "x");

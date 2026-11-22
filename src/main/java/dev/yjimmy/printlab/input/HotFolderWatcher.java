@@ -39,9 +39,10 @@ import org.slf4j.LoggerFactory;
  * picked up too. The glob ignores case ({@code *.pdf} matches {@code RUN.PDF}) on every platform.
  *
  * <p>Job tickets ({@code *.jobprops}) are never handed off, whatever the glob: they wait for their
- * input, and {@link JobIntake} moves them with it. Any other file that doesn't match the glob is
- * left alone and logged once (not on every rescan), so an operator who drops a file in the wrong
- * folder can find out why nothing happened.
+ * input, and {@link JobIntake} moves them with it. A file whose ticket is still being written waits
+ * for the ticket too. Any other file that doesn't match the glob is left alone and logged once
+ * (not on every rescan), so an operator who drops a file in the wrong folder can find out why
+ * nothing happened.
  */
 public final class HotFolderWatcher {
 
@@ -176,6 +177,15 @@ public final class HotFolderWatcher {
     private void handOff(Path file) throws InterruptedException {
         try {
             waitUntilStable(file);
+            // Its ticket, if any, must be complete too: the claim takes it as it is.
+            Path ticket = SetJobPropsFromTextFileStep.ticketFor(file);
+            if (Files.isRegularFile(ticket)) {
+                try {
+                    waitUntilStable(ticket);
+                } catch (NoSuchFileException e) {
+                    // The ticket went away; the input is still there and goes without it.
+                }
+            }
             onFile.accept(file);
             if (failing.remove(file)) {
                 log.info("Picked up {} after an earlier failure", file);

@@ -34,8 +34,8 @@ import org.slf4j.LoggerFactory;
  *   presort=false
  * </pre>
  * Names and values are trimmed, and a value may contain {@code =}. Lines for {@link #PROTECTED}
- * properties are ignored. Blank lines and lines starting
- * with {@code #} are ignored. A later line for the same name wins, and a line overrides any job
+ * properties are ignored, with a warning. Blank lines and lines starting with {@code #} are
+ * ignored. A later line for the same name wins, and a line overrides any job
  * property already set. A line with no {@code =}, or an empty name, fails the job with its line
  * number. With no file, the step does nothing (unless {@code required}).
  */
@@ -51,6 +51,11 @@ public final class SetJobPropsFromTextFileStep implements Step {
     public static final String EXTENSION = ".jobprops";
 
     private static final Logger log = LoggerFactory.getLogger(SetJobPropsFromTextFileStep.class);
+
+    /** The job ticket that goes with {@code input}: {@code <input>.jobprops} next to it. */
+    public static Path ticketFor(Path input) {
+        return input.resolveSibling(input.getFileName() + EXTENSION);
+    }
 
     private final String fileName;
     private final boolean required;
