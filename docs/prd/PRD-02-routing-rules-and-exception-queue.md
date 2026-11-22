@@ -1,6 +1,6 @@
 # PRD-02 — Routing rules and exception queue
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | Core | M | 01 | `feature/02-routing-rules` |
 

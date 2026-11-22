@@ -1,6 +1,6 @@
 # PRD-07 — PDF object reader + dump tool
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | PDF | L | 00 | `feature/07-pdf-object-reader` |
 

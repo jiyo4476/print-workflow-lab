@@ -1,6 +1,6 @@
 # PRD-11 — PDF preflight step
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | PDF | M | 07, 02 | `feature/11-preflight` |
 

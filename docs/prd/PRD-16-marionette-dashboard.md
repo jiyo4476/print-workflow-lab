@@ -1,6 +1,6 @@
 # PRD-16 — Marionette.js v4 dashboard: jobs, documents, search
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | Dashboard | L | 14 | `feature/16-dashboard` |
 

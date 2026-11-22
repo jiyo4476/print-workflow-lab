@@ -1,6 +1,6 @@
 # PRD-09 — Content streams and text positions
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | PDF | L | 07 | `feature/09-content-streams` |
 

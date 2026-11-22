@@ -1,6 +1,6 @@
 # PRD-01 — Error folder and job summary file
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | Core | S | 00 | `feature/01-error-folder` |
 

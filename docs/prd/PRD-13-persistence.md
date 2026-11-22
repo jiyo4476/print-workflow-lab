@@ -1,6 +1,6 @@
 # PRD-13 — Persistence: jobs and documents in PostgreSQL
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | Platform | L | 01, 19 | `feature/13-persistence` |
 

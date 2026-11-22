@@ -1,6 +1,6 @@
 # PRD-18 — Docker Compose, demo script, README polish
 
-| Phase | Size | Depends on | Branch |
+| Plan phase | Size | Depends on | Branch |
 |---|---|---|---|
 | Presentation | S | 17 | `feature/18-docker-demo` |
 
