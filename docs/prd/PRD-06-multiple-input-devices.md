@@ -51,6 +51,9 @@ with the review fixes, GitHub #17; this PR adds the multi-device ones.)
   `SetJobPropsFromTextFile` in its receive phase. A ticket never matches a device's glob, so it's
   never started as a job of its own. `inputDevice` is set before the receive phase, so a
   ticket line can't override it.
+- **FR-7** A device whose watcher fails (its folder deleted, unreadable or not creatable) is
+  restarted after the rescan interval, not left stopped. A file claimed while the app is
+  stopping goes back to its folder, so nothing is stranded in `work/`.
 
 **Non-functional**
 - **NFR-1** Watcher tests wait with a timeout and never use fixed sleeps.

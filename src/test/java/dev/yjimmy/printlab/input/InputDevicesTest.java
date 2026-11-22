@@ -13,6 +13,7 @@ import dev.yjimmy.printlab.workflow.Job;
 import dev.yjimmy.printlab.workflow.JobState;
 import dev.yjimmy.printlab.workflow.StepRegistry;
 import dev.yjimmy.printlab.workflow.WorkflowDefinition;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -59,13 +60,17 @@ public class InputDevicesTest {
     }
 
     private void start(InputDevice... list) throws Exception {
+        create(list);
+        devices.start();
+    }
+
+    private void create(InputDevice... list) throws Exception {
         // Each workflow file is loaded with its WriteOutput redirected into the temp folder.
         devices = new InputDevices(List.of(list), file -> TestWorkflows.load(
                 file.getFileName().toString().replace(".yaml", ""), root.resolve("output")),
                 StepRegistry.withBuiltIns(), root.resolve("work"), root.resolve("error"),
                 TickingClock.oneSecondTicks(), done::add,
                 Duration.ofMillis(10), Duration.ofMillis(100));
-        devices.start();
     }
 
     /** A path in a staging folder, where an input is written before it's dropped. */
@@ -110,8 +115,8 @@ public class InputDevicesTest {
         assertEquals(afpJob.errorMessage(), JobState.COMPLETE, afpJob.state());
         assertEquals("pdf documents", 5, pdfJob.documents().size());
         assertEquals("afp documents", 4, afpJob.documents().size());
-        assertThat(pdfJob.documents()).allSatisfy(d -> assertEquals("pdf", d.property("format")));
-        assertThat(afpJob.documents()).allSatisfy(d -> assertEquals("afp", d.property("format")));
+        assertThat(pdfJob.documents()).allSatisfy(d -> assertEquals("format", "pdf", d.property("format")));
+        assertThat(afpJob.documents()).allSatisfy(d -> assertEquals("format", "afp", d.property("format")));
     }
 
     @Test
@@ -146,6 +151,73 @@ public class InputDevicesTest {
         assertEquals("inputDevice", "afp-statements", job.properties().get("inputDevice"));
         assertThat(folder.resolve("run.afp.jobprops")).as("ticket left the hot folder")
                 .doesNotExist();
+    }
+
+    @Test
+    public void aDeviceWhoseWatcherFailsStartsAgainAndPicksUpFiles() throws Exception {
+        InputDevice pdf = device("pdf-statements", "*.pdf", "statements");
+        // A file where the folder should be: the watcher can't create the folder, so it fails.
+        Files.createDirectories(pdf.folder().getParent());
+        Files.writeString(pdf.folder(), "not a folder");
+        BlockingQueue<InputDevice> failures = new LinkedBlockingQueue<>();
+        create(pdf);
+        devices.onWatcherFailed(failures::add);
+        devices.start();
+        assertNotNull("the watcher failed", failures.poll(WAIT_SECONDS, TimeUnit.SECONDS));
+
+        Files.delete(pdf.folder());
+        Path file = staged("run.pdf");
+        new StatementPdfGenerator(42).generate(2, file);
+        drop(file, pdf.folder());
+
+        Job job = awaitJobs(1).get("run.pdf");
+        assertEquals(job.errorMessage(), JobState.COMPLETE, job.state());
+    }
+
+    @Test
+    public void aFileClaimedWhileStoppingGoesBackToItsFolder() throws Exception {
+        InputDevice pdf = device("pdf-statements", "*.pdf", "statements");
+        create(pdf);
+        devices.close(Duration.ofSeconds(WAIT_SECONDS));
+        Path folder = Files.createDirectories(pdf.folder());
+        Files.writeString(folder.resolve("run.pdf.jobprops"), "customer=ACME Bank");
+        Path file = Files.writeString(folder.resolve("run.pdf"), "pdf");
+
+        devices.receive("pdf-statements", file);
+
+        assertThat(file).as("input back in the hot folder").exists();
+        assertThat(folder.resolve("run.pdf.jobprops")).as("ticket back too").exists();
+        try (var left = Files.list(root.resolve("work"))) {
+            assertThat(left).as("job folders left in work/").isEmpty();
+        }
+        assertThat(done).as("jobs run").isEmpty();
+    }
+
+    @Test
+    public void unparseableWorkflowFailsAtStartupNamingTheDevice() throws Exception {
+        Path broken = Files.writeString(root.resolve("broken.yaml"), """
+                name: broken
+                notAKey: 1
+                """);
+        InputDevice device = new InputDevice("bad", root.resolve("hot/bad"), "*.pdf", broken);
+
+        IOException e = assertThrows(IOException.class,
+                () -> new InputDevices(List.of(device),
+                        WorkflowDefinition::load,
+                        StepRegistry.withBuiltIns(), root.resolve("work"), root.resolve("error"),
+                        TickingClock.oneSecondTicks(), job -> { }));
+
+        assertThat(e.getMessage()).startsWith("Input device 'bad', workflow ")
+                .contains("notAKey");
+    }
+
+    @Test
+    public void noDevicesFailsAtStartup() {
+        assertThat(assertThrows(IllegalArgumentException.class,
+                () -> new InputDevices(List.of(), WorkflowDefinition::load,
+                        StepRegistry.withBuiltIns(), root.resolve("work"), root.resolve("error"),
+                        TickingClock.oneSecondTicks(), job -> { })).getMessage())
+                .isEqualTo("There are no input devices to run");
     }
 
     @Test

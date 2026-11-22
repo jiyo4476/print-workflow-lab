@@ -34,13 +34,13 @@ public class AppDevicesTest {
         List<InputDevice> devices = App.devices(
                 new String[] {"run", "workflows/statements-afp.yaml", "*.afp"});
 
-        assertEquals(List.of(new InputDevice("default", Path.of("hotfolder"), "*.afp",
+        assertEquals("devices", List.of(new InputDevice("default", Path.of("hotfolder"), "*.afp",
                 Path.of("workflows/statements-afp.yaml"))), devices);
     }
 
     @Test
     public void runWithAWorkflowDefaultsToPdfFiles() throws Exception {
-        assertEquals("*.pdf",
+        assertEquals("glob", "*.pdf",
                 App.devices(new String[] {"run", "workflows/statements.yaml"}).get(0).glob());
     }
 }

@@ -91,14 +91,16 @@ report's line total rounded *down* to two decimals, in its own commit.
   case-insensitively on Windows), valid globs, existing workflow files. `InputDevices` builds
   every device's `WorkflowEngine` up front (bad workflow → startup fails), runs one
   `HotFolderWatcher` thread per device, and queues claimed jobs on one shared single-thread
-  executor; its `onJobDone` callback is how tests wait without sleeping. `JobIntake.claim(file,
+  executor; its `onJobDone` callback is how tests wait without sleeping. A watcher that fails
+  (folder deleted or not creatable) is restarted after the rescan interval; a file claimed after
+  `close()` has shut the job queue goes back to its folder (`JobIntake.unclaim`). `JobIntake.claim(file,
   device)` sets the `inputDevice` job property, which a ticket can't override
   (`SetJobPropsFromTextFileStep.PROTECTED`). `App run` with no arguments uses the devices file;
   `run <workflow> [glob]` is a single `default` device on `hotfolder/`.
 - **`input/HotFolderWatcher`** hands off a file only once its size (and its ticket's) stops
   changing, never hands off `*.jobprops` tickets, and logs a non-matching file once while it
   stays. Its handler must **claim** the file (move it out of the folder) before returning;
-  `JobIntake.claim` moves its `<input>.jobprops` ticket first and then the input into
+  `JobIntake.claim` moves its `<input>.jobprops` ticket (name matched ignoring case) first and then the input into
   `work/<jobId>/`; if either move fails, both stay put. Because anything
   still in the folder is unclaimed, the watcher can safely rescan: at once on `OVERFLOW`, and every 5 s so a file whose claim failed (locked on
   Windows) is retried. The glob ignores case. Jobs run one at a time across all devices.
