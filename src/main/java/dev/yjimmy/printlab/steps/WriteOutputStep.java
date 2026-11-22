@@ -5,13 +5,16 @@ import dev.yjimmy.printlab.workflow.Job;
 import dev.yjimmy.printlab.workflow.Step;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * Copies the job's documents, in their current (possibly sorted) order, into
@@ -29,6 +32,11 @@ import java.util.Set;
  * {@code 00001.afp}). The CSV's first columns, {@code position}, {@code sequence} and
  * {@code file}, are reserved: a document property with one of those names fails the job rather
  * than being silently replaced.
+ *
+ * <p>Reserved names and queue names are checked before anything is copied, so a bad document
+ * leaves no partial output. If {@code <jobId>/} already exists, it's left over from an earlier
+ * run of this same job that didn't finish (a retry, say), and it's replaced, so the output never
+ * mixes files from two runs.
  */
 public final class WriteOutputStep implements Step {
 
@@ -43,18 +51,23 @@ public final class WriteOutputStep implements Step {
 
     @Override
     public void execute(Job job) throws IOException {
+        // Checked before anything is copied, so a failed job leaves no partial output.
         for (Document doc : job.documents()) {
             for (String reserved : RESERVED_COLUMNS) {
                 if (doc.properties().containsKey(reserved)) {
-                    // Checked before anything is copied, so a failed job leaves no partial output.
                     throw new IllegalStateException("Document " + doc.sequence() + " has a '"
                             + reserved + "' property, but documents.csv reserves that column for"
                             + " its own " + reserved + "; rename the property (a SplitPdf region,"
                             + " say) in the workflow");
                 }
             }
+            String queue = doc.property(RouteDocumentsStep.QUEUE);
+            if (queue != null) {
+                RouteDocumentsStep.checkQueueName(queue);
+            }
         }
         Path jobOut = outputDir.resolve(job.id());
+        deleteRecursively(jobOut);
         Files.createDirectories(jobOut);
 
         Set<String> columns = new LinkedHashSet<>(RESERVED_COLUMNS);
@@ -65,7 +78,7 @@ public final class WriteOutputStep implements Step {
         Map<String, Integer> positions = new HashMap<>();
         for (Document doc : job.documents()) {
             String queue = doc.property(RouteDocumentsStep.QUEUE);
-            String folder = queue == null ? "" : RouteDocumentsStep.checkQueueName(queue) + "/";
+            String folder = queue == null ? "" : queue + "/";
             int position = positions.merge(folder, 1, Integer::sum);
             String fileName = folder + String.format("%05d", position) + extension(doc.file());
             Path target = jobOut.resolve(fileName);
@@ -84,6 +97,19 @@ public final class WriteOutputStep implements Step {
         }
         Files.write(jobOut.resolve("documents.csv"), lines);
         job.properties().put("outputDir", jobOut.toString());
+    }
+
+    /** Deletes {@code dir} and everything in it; does nothing if it doesn't exist. */
+    private static void deleteRecursively(Path dir) throws IOException {
+        if (!Files.exists(dir, LinkOption.NOFOLLOW_LINKS)) {
+            return;
+        }
+        try (Stream<Path> paths = Files.walk(dir)) {
+            // Deepest first, so each folder is empty by the time it's deleted.
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.delete(path);
+            }
+        }
     }
 
     /**

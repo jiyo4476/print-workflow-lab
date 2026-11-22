@@ -98,6 +98,42 @@ public class WriteOutputStepTest {
     }
 
     @Test
+    public void unsafeQueueNameOnALaterDocumentFailsBeforeAnythingIsCopied() throws Exception {
+        addDocument("a", Map.of("queue", "mail"));
+        addDocument("b", Map.of("queue", "../escape"));
+
+        assertThrows(IllegalArgumentException.class, this::write);
+
+        assertThat(outputDir.resolve(job.id())).doesNotExist();
+    }
+
+    @Test
+    public void rerunReplacesEarlierOutputForTheSameJob() throws Exception {
+        // An earlier, unfinished run of this job left files behind.
+        Path jobOut = Files.createDirectories(outputDir.resolve(job.id()).resolve("mail"));
+        Files.writeString(jobOut.resolve("00001.pdf"), "old");
+        Files.writeString(jobOut.resolve("00002.pdf"), "stale");
+        addDocument("a", Map.of("queue", "mail"));
+
+        write();
+
+        assertEquals("replaced", "a", Files.readString(jobOut.resolve("00001.pdf")));
+        assertThat(jobOut.resolve("00002.pdf")).doesNotExist();
+        assertThat(csv()).contains("1,1,mail/00001.pdf,mail");
+    }
+
+    @Test
+    public void otherJobsOutputIsLeftAlone() throws Exception {
+        Path other = Files.createDirectories(outputDir.resolve("another-job"));
+        Files.writeString(other.resolve("00001.pdf"), "theirs");
+        addDocument("a", Map.of());
+
+        write();
+
+        assertEquals("untouched", "theirs", Files.readString(other.resolve("00001.pdf")));
+    }
+
+    @Test
     public void noDocumentsWritesJustTheHeader() throws Exception {
         write();
 
