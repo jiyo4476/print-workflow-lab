@@ -63,8 +63,7 @@ public final class SetJobPropsFromTextFileStep implements Step {
     public SetJobPropsFromTextFileStep(Map<String, Object> rawParams) {
         Params params = new Params(rawParams);
         this.fileName = params.string("fileName", null);
-        if (fileName != null && (fileName.isBlank() || Path.of(fileName).getNameCount() != 1
-                || fileName.equals("..") || fileName.equals("."))) {
+        if (fileName != null && !isPlainFileName(fileName)) {
             throw new IllegalArgumentException("Step param 'fileName' must be a file name in the"
                     + " job's work folder, not a path, got '" + fileName + "'");
         }
@@ -74,6 +73,18 @@ public final class SetJobPropsFromTextFileStep implements Step {
                     + flag + "'");
         }
         this.required = flag.equals("true");
+    }
+
+    /**
+     * True for a name that resolves inside the work folder: one path element, no root. A root
+     * check is needed on Windows, where {@code C:ticket.txt} is one element relative to drive C.
+     */
+    private static boolean isPlainFileName(String name) {
+        if (name.isBlank() || name.equals("..") || name.equals(".")) {
+            return false;
+        }
+        Path path = Path.of(name);
+        return path.getNameCount() == 1 && path.getRoot() == null;
     }
 
     @Override
