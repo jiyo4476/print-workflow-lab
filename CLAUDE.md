@@ -78,15 +78,17 @@ report's line total rounded *down* to two decimals, in its own commit.
   routing sends them to `exceptions`; structural problems in the file fail the job.
   `MapPropertiesStep` renames properties (all at once; every name comes from the YAML).
   `SetJobPropsFromTextFileStep` (first in every sample workflow's receive phase) reads the job
-  ticket `<input>.jobprops` (`name=value` lines) from the work folder into job properties; no
-  file is a no-op unless `required: true`.
+  ticket `<input>.jobprops` (`name=value` lines) from the work folder into job properties
+  (`PROTECTED` names such as `inputFileName` are ignored); no file is a no-op unless
+  `required: true`. `ErrorFolder` moves a failed job's ticket next to its input.
   `RouteDocuments` sets the `queue` document
   property; `WriteOutput` writes each queue to `output/<jobId>/<queue>/`, keeping each
   document's file extension, and one `documents.csv` for the job, whose `position`, `sequence`
   and `file` columns are reserved (a property with one of those names fails the step).
-- **`input/HotFolderWatcher`** hands off a file only once its size stops changing. Its handler
-  must **claim** the file (move it out of the folder) before returning; `JobIntake.claim` moves
-  it, and best effort its `<input>.jobprops` ticket, into `work/<jobId>/`. Because anything
+- **`input/HotFolderWatcher`** hands off a file only once its size (and its ticket's) stops
+  changing, and never hands off `*.jobprops` tickets. Its handler must **claim** the file (move it
+  out of the folder) before returning; `JobIntake.claim` moves its `<input>.jobprops` ticket
+  first and then the input into `work/<jobId>/`; if either move fails, both stay put. Because anything
   still in the folder is unclaimed, the watcher can safely rescan: at once on `OVERFLOW`, and every 5 s so a file whose claim failed (locked on
   Windows) is retried. The glob ignores case. `App.run [workflow] [glob]` runs jobs one at a time
   on a single-thread executor.

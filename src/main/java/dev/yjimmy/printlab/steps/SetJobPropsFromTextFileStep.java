@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,17 +33,29 @@ import org.slf4j.LoggerFactory;
  *   mailClass=first
  *   presort=false
  * </pre>
- * Names and values are trimmed, and a value may contain {@code =}. Blank lines and lines starting
- * with {@code #} are ignored. A later line for the same name wins, and a line overrides any job
+ * Names and values are trimmed, and a value may contain {@code =}. Lines for {@link #PROTECTED}
+ * properties are ignored, with a warning. Blank lines and lines starting with {@code #} are
+ * ignored. A later line for the same name wins, and a line overrides any job
  * property already set. A line with no {@code =}, or an empty name, fails the job with its line
  * number. With no file, the step does nothing (unless {@code required}).
  */
 public final class SetJobPropsFromTextFileStep implements Step {
 
+    /**
+     * Job properties the app sets at intake, which a ticket can't change: the input's file name.
+     * A ticket line for one is ignored, with a warning.
+     */
+    public static final Set<String> PROTECTED = Set.of("inputFileName");
+
     /** Appended to the input file's name to find its job ticket. */
     public static final String EXTENSION = ".jobprops";
 
     private static final Logger log = LoggerFactory.getLogger(SetJobPropsFromTextFileStep.class);
+
+    /** The job ticket that goes with {@code input}: {@code <input>.jobprops} next to it. */
+    public static Path ticketFor(Path input) {
+        return input.resolveSibling(input.getFileName() + EXTENSION);
+    }
 
     private final String fileName;
     private final boolean required;
@@ -76,6 +89,12 @@ public final class SetJobPropsFromTextFileStep implements Step {
             return;
         }
         Map<String, String> read = parse(Files.readAllLines(file, StandardCharsets.UTF_8), name);
+        for (String key : PROTECTED) {
+            if (read.remove(key) != null) {
+                log.warn("{}: {} tries to set '{}', which the app sets itself; ignored",
+                        job.id(), name, key);
+            }
+        }
         job.properties().putAll(read);
         log.info("{} set {} job properties from {}", job.id(), read.size(), name);
     }

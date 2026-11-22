@@ -79,6 +79,21 @@ public class ErrorHandlingTest {
     }
 
     @Test
+    public void failedJobTakesItsTicketToTheErrorFolder() throws Exception {
+        Path input = blankPdf("in", "run.pdf");
+        Job job = TestJobs.newJob("job00004", tmp, input);
+        Files.writeString(job.workDir().resolve("run.pdf.jobprops"), "presort=false");
+
+        engine.run(job);
+
+        assertEquals("state", JobState.ERROR, job.state());
+        assertEquals("ticket next to the input", "presort=false",
+                Files.readString(errorDir.resolve("job00004").resolve("run.pdf.jobprops")));
+        assertFalse("ticket gone from the work folder",
+                Files.exists(job.workDir().resolve("run.pdf.jobprops")));
+    }
+
+    @Test
     public void errorTxtContainsStepNameAndMessage() throws Exception {
         Job job = runFailingJob("job00002", blankPdf("in", "run.pdf"));
 

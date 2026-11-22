@@ -1,5 +1,6 @@
 package dev.yjimmy.printlab.input;
 
+import dev.yjimmy.printlab.steps.SetJobPropsFromTextFileStep;
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
@@ -36,6 +37,10 @@ import org.slf4j.LoggerFactory;
  * Files can show up before they're fully written (a large copy over the network, say), so a file
  * is only handed off once its size has stopped changing. Files already present at startup are
  * picked up too. The glob ignores case ({@code *.pdf} matches {@code RUN.PDF}) on every platform.
+ *
+ * <p>Job tickets ({@code *.jobprops}) are never handed off, whatever the glob: they wait for their
+ * input, and {@link JobIntake} moves them with it. A file whose ticket is still being written waits
+ * for the ticket too.
  */
 public final class HotFolderWatcher {
 
@@ -139,12 +144,28 @@ public final class HotFolderWatcher {
     }
 
     private boolean matches(Path file) {
-        return matcher.matches(Path.of(file.getFileName().toString().toLowerCase(Locale.ROOT)));
+        return !isJobTicket(file)
+                && matcher.matches(Path.of(file.getFileName().toString().toLowerCase(Locale.ROOT)));
+    }
+
+    /** A job ticket waits for its input and is never a job of its own. */
+    static boolean isJobTicket(Path file) {
+        return file.getFileName().toString().toLowerCase(Locale.ROOT)
+                .endsWith(SetJobPropsFromTextFileStep.EXTENSION);
     }
 
     private void handOff(Path file) throws InterruptedException {
         try {
             waitUntilStable(file);
+            // Its ticket, if any, must be complete too: the claim takes it as it is.
+            Path ticket = SetJobPropsFromTextFileStep.ticketFor(file);
+            if (Files.isRegularFile(ticket)) {
+                try {
+                    waitUntilStable(ticket);
+                } catch (NoSuchFileException e) {
+                    // The ticket went away; the input is still there and goes without it.
+                }
+            }
             onFile.accept(file);
             if (failing.remove(file)) {
                 log.info("Picked up {} after an earlier failure", file);
