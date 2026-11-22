@@ -58,6 +58,9 @@ and PDF jobs alike.
 - **FR-1** One document per top-level BNG/ENG group, written as a valid AFP file.
 - **FR-2** The file's BDT/EDT wrap each output; an inline resource group (BRG/ERG) is copied into
   every output.
+- **FR-2a** An Invoke Medium Map (IMM) stays in effect until the next one. A document without its
+  own IMM just before it gets a copy of the latest one seen after the preamble (between groups,
+  or between an earlier group's pages), so it prints with the right medium map.
 - **FR-3** Every TLE in a group becomes a document property; `pageCount` = number of BPGs in the
   group.
 - **FR-4** A group missing a `requiredProperties` entry gets `indexError=<missing names>` and
@@ -147,7 +150,7 @@ and PDF jobs alike.
 |---|---|---|
 | AC-1 | One document per page group, with TLE properties and correct `pageCount` | `SplitAfpStepTest.oneDocumentPerPageGroup`, `tlesBecomeDocumentProperties`, `pageCountCountsBpgWithinGroup` |
 | AC-2 | A missing required TLE marks the document instead of failing | `groupMissingRequiredTleIsMarkedNotFatal` |
-| AC-3 | Inline resources are copied into each document | `inlineResourceGroupIsCopiedIntoEveryDocument` |
+| AC-3 | Inline resources are copied into each document, and each document carries the medium map in effect | `inlineResourceGroupIsCopiedIntoEveryDocument`, `laterImmAppliesToEveryFollowingDocument`, `immBetweenAGroupsPagesCarriesIntoTheNextDocument` |
 | AC-4 | Bad files fail clearly | `fileWithNoPageGroupsFailsWithClearMessage`, `unbalancedGroupFailsWithOffset` |
 | AC-5 | Every output document reads back cleanly | `SplitAfpOutputTest.everySplitDocumentReadsBackCleanly` |
 | AC-6 | AFP and PDF workflows give the same index for the same seed; missing TLE → exceptions | `AfpStatementWorkflowTest.*` |
@@ -158,7 +161,8 @@ and PDF jobs alike.
 
 - Unit — `SplitAfpStepTest`: `oneDocumentPerPageGroup`, `tlesBecomeDocumentProperties`,
   `pageCountCountsBpgWithinGroup`, `groupMissingRequiredTleIsMarkedNotFatal`,
-  `inlineResourceGroupIsCopiedIntoEveryDocument`, `fileWithNoPageGroupsFailsWithClearMessage`,
+  `inlineResourceGroupIsCopiedIntoEveryDocument`, `laterImmAppliesToEveryFollowingDocument`,
+  `immBetweenAGroupsPagesCarriesIntoTheNextDocument`, `fileWithNoPageGroupsFailsWithClearMessage`,
   `unbalancedGroupFailsWithOffset`
 - Unit — `SplitAfpOutputTest.everySplitDocumentReadsBackCleanly`
 - Unit — `MapPropertiesStepTest`: `renamesListedProperties`, `keepsUnlistedProperties`,

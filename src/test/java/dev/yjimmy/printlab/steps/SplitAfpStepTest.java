@@ -6,6 +6,7 @@ import static org.junit.Assert.assertThrows;
 
 import dev.yjimmy.printlab.afp.AfpFormatException;
 import dev.yjimmy.printlab.afp.AfpReader;
+import dev.yjimmy.printlab.afp.Ebcdic;
 import dev.yjimmy.printlab.afp.FieldType;
 import dev.yjimmy.printlab.afp.StructuredField;
 import dev.yjimmy.printlab.testsupport.AfpBytes;
@@ -150,6 +151,51 @@ public class SplitAfpStepTest {
                 .containsSubsequence(FieldType.BDT, FieldType.IMM, FieldType.BNG);
         StructuredField nop = fields(job.documents().get(1).file()).get(1);
         assertThat(nop.data()).containsExactly(1, 2, 3);
+    }
+
+    @Test
+    public void laterImmAppliesToEveryFollowingDocument() throws Exception {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "RUN")
+                .field(FieldType.IMM, AfpBytes.name8("MAPA"));
+        group(afp, "G1", 1, "accountNumber", "111");
+        afp.field(FieldType.IMM, AfpBytes.name8("MAPB"));
+        group(afp, "G2", 1, "accountNumber", "222");
+        group(afp, "G3", 1, "accountNumber", "333");
+        afp.field(FieldType.IMM, AfpBytes.name8("MAPC"));
+        group(afp, "G4", 1, "accountNumber", "444");
+        afp.end(FieldType.EDT);
+
+        Job job = split(afp, Map.of());
+
+        assertEquals("document 1", List.of("MAPA"), mediumMaps(job.documents().get(0).file()));
+        assertEquals("document 2", List.of("MAPA", "MAPB"),
+                mediumMaps(job.documents().get(1).file()));
+        // No IMM of its own: MAPB is still in effect, so it's carried in.
+        assertEquals("document 3", List.of("MAPA", "MAPB"),
+                mediumMaps(job.documents().get(2).file()));
+        // Its own IMM replaces the carried one, which isn't written as well.
+        assertEquals("document 4", List.of("MAPA", "MAPC"),
+                mediumMaps(job.documents().get(3).file()));
+        assertThat(types(job.documents().get(2).file()))
+                .containsSubsequence(FieldType.BDT, FieldType.IMM, FieldType.IMM, FieldType.BNG);
+    }
+
+    @Test
+    public void immBetweenAGroupsPagesCarriesIntoTheNextDocument() throws Exception {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "RUN");
+        afp.begin(FieldType.BNG, "G1").tle("accountNumber", "111");
+        page(afp, "G1P1");
+        afp.field(FieldType.IMM, AfpBytes.name8("DUPLEX"));
+        page(afp, "G1P2");
+        afp.end(FieldType.ENG);
+        group(afp, "G2", 1, "accountNumber", "222");
+        afp.end(FieldType.EDT);
+
+        Job job = split(afp, Map.of());
+
+        assertEquals("document 1 keeps its own IMM", List.of("DUPLEX"),
+                mediumMaps(job.documents().get(0).file()));
+        assertEquals("document 2", List.of("DUPLEX"), mediumMaps(job.documents().get(1).file()));
     }
 
     @Test
@@ -300,5 +346,13 @@ public class SplitAfpStepTest {
 
     private static List<FieldType> types(Path file) throws IOException {
         return fields(file).stream().map(StructuredField::type).toList();
+    }
+
+    /** The medium map names the document's IMMs invoke, in file order. */
+    private static List<String> mediumMaps(Path file) throws IOException {
+        return fields(file).stream()
+                .filter(f -> f.type() == FieldType.IMM)
+                .map(f -> Ebcdic.decode(f.data()).strip())
+                .toList();
     }
 }
