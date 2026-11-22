@@ -452,6 +452,9 @@ streams — the same way the AFP phase reads structured fields. PDFBox stays in 
 **Goal:** open a PDF without PDFBox: find the cross-reference table, resolve objects, decode
 streams, and walk the document tree.
 
+**Split in two** (as PRD-07 allowed): **7a**, the lexer, the parser and the `PdfObject` types;
+**7b**, `XrefReader`, `StreamDecoder`, `PdfDocumentReader` and `dump-pdf`.
+
 - `PdfLexer`: numbers, names (with `#xx` escapes), literal strings (nested parentheses, `\n`,
   `\)` and octal escapes), hex strings, arrays, dictionaries, keywords, comments.
 - `PdfParser` producing a sealed `PdfObject` hierarchy: `PdfDictionary`, `PdfArray`, `PdfName`,
@@ -470,17 +473,25 @@ streams, and walk the document tree.
   table; compressed structure is PR 8.
 
 **Tests**
-- Unit — `PdfLexerTest` (parameterized)
-  - numbers: `42`, `-3`, `+7`, `3.14`, `-.5`, `4.`
+- 7a, Unit — `PdfLexerTest` (parameterized `Numbers` and `MalformedNumbers`, plus `Tokens`)
+  - numbers: `42`, `-3`, `+7`, `3.14`, `-.5`, `4.`; `1.2.3`, `--5`, `.` fail with their offset
   - `nameWithHexEscapeDecodes` (`/A#20B` → `A B`)
-  - `literalStringWithNestedParentheses`, `literalStringEscapes` (`\n`, `\)`, `\\`, `\053`)
+  - `literalStringWithNestedParentheses`, `literalStringEscapes` (`\n`, `\)`, `\\`, `\053`),
+    `octalEscapesTakeAtMostThreeDigits`, `backslashAtEndOfLineContinuesTheString`,
+    `unescapedEndOfLineInAStringIsOneLineFeed`
   - `hexStringWithOddDigitCountPadsZero` (`<901FA>` → `90 1F A0`)
-  - `commentsAreSkipped`, `keywordsAreRecognized`
-- Unit — `PdfParserTest`
+  - `commentsAreSkipped`, `keywordsAreRecognized`, `delimitersNeedNoSpaces`
+- 7a, Unit — `PdfParserTest`
   - `nestedDictionariesAndArrays`
   - `indirectReferenceVsTwoNumbers` (`[12 0 R]` vs `[12 0]`)
-  - `streamWithDirectLength`, `streamWithIndirectLength`
-  - `unterminatedDictionaryFailsWithOffset`
+  - `streamWithDirectLength`, `streamWithIndirectLength`,
+    `streamAfterCrLfAndBinaryDataThatLooksLikeEndstream`,
+    `wrongStreamLengthFailsAtWhereEndstreamShouldBe`
+  - `unterminatedDictionaryFailsWithOffset`, `nullEntryIsTheSameAsNoEntry`, `missingEndobjFails`
+- 7a, Unit — `PdfObjectTest` (equality, text forms, constructor checks)
+- 7a, Differential — `PdfParserVsPdfBoxTest.everyObjectMatchesPdfBoxForSeveralSeeds`: every
+  object of a generated statement PDF, parsed at the offset PDFBox's xref gives, equals the
+  object PDFBox read (dictionaries, arrays and references all the way down; raw stream bytes)
 - Unit — `XrefReaderTest`
   - `findsStartxrefWithTrailingWhitespaceVariants` (`\n`, `\r\n`, missing final newline)
   - `parsesMultipleSubsections`, `freeEntriesResolveToNull`

@@ -122,6 +122,16 @@ report's line total rounded *down* to two decimals, in its own commit.
   `Ebcdic.encodeStrict` rejects characters the code page lacks).
   `AfpWriter.write(StructuredField)` copies a field read from a file (padding dropped). Build
   small AFP test input with `testsupport/AfpBytes`.
+- **`pdf/`** reads PDF syntax without PDFBox (ISO 32000-1, section 7); PDFBox stays as the test
+  oracle (`PdfParserVsPdfBoxTest`). `PdfLexer` tokenizes a byte array (it can `seek`, because
+  PDFs are read from xref offsets) and decodes name `#xx` and string escapes. `PdfParser` builds
+  the sealed `PdfObject` records (`PdfDictionary`, `PdfArray`, `PdfName`, `PdfString` (bytes),
+  `PdfNumber`, `PdfBoolean`, `PdfNull`, `PdfReference`, `PdfStream` (raw, still filtered
+  bytes)). It looks two tokens ahead to tell `12 0 R` from two numbers, and reads
+  `n g obj ... endobj` with stream data, sized by `/Length`, which may be a reference resolved
+  through the constructor's resolver. Null dictionary entries are dropped. Errors are
+  `PdfFormatException` with the byte offset. The xref table, Flate decoding, the page tree and
+  `dump-pdf` are PR 7b.
 - **`testdata/`**: `StatementDataGenerator` draws the statements for a seed, `StatementLayout`
   places their text, and `StatementPdfGenerator` / `StatementAfpGenerator` write them, so one
   seed gives the same statements in both formats (`AfpStatementWorkflowTest` checks that the PDF

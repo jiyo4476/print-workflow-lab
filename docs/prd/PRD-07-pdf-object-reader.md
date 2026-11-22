@@ -81,6 +81,9 @@ AFP.
 
 ## Test plan
 
+- Unit — `PdfObjectTest` (7a): equality, text forms, constructor checks
+- Differential — `PdfParserVsPdfBoxTest` (7a): every object parsed at PDFBox's xref offsets
+  equals PDFBox's object
 - Unit — `PdfLexerTest` (parameterized numbers, `nameWithHexEscapeDecodes`,
   `literalStringWithNestedParentheses`, `literalStringEscapes`,
   `hexStringWithOddDigitCountPadsZero`, `commentsAreSkipped`, `keywordsAreRecognized`)
@@ -98,7 +101,19 @@ AFP.
 ## Risks and open questions
 
 - Size **L**: if it runs long, split the PR into (a) lexer + parser and (b) xref + document
-  reader + dump. Each half has its own tests.
+  reader + dump. Each half has its own tests. **Decided: split.** 7a is FR-1 to FR-3 and NFR-2
+  (AC-1, AC-2). Until 7b's `XrefReader`, its differential test takes object offsets from
+  PDFBox's cross-reference table. 7b is the rest.
+
+**Decided in 7a**
+- The whole file is read into a byte array: the lexer needs random access (`seek`), and a mapped
+  file can come later if large PDFs need it.
+- A dictionary entry whose value is `null` is dropped, since the spec says it's the same as no
+  entry; a repeated key keeps its last value.
+- `/A#20B` is decoded one byte per `char` (ISO-8859-1), so no byte is lost.
+- After `stream`, CR LF or LF ends the line, and a lone CR is accepted too (the spec forbids
+  it, but some writers emit it). `/Length`, not the word `endstream`, decides where the data
+  ends.
 
 ## Definition of done
 
