@@ -12,7 +12,7 @@ systems model jobs, documents and steps.
 ## The demo scenario
 
 A billing system writes one big PDF containing hundreds of customer statements. Drop it in
-`hotfolder/` and the workflow:
+`hotfolder/pdf/` (the `pdf-statements` input device) and the workflow:
 
 1. picks it up once the file has finished copying, with its job ticket (`run.pdf.jobprops`)
    if one came first, and in the **receive** phase sets job properties from the ticket,
@@ -34,7 +34,7 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 
 | This project | Print workflow concept |
 |---|---|
-| `HotFolderWatcher` | Input device / hot folder |
+| `config/input-devices.yaml`, `InputDevices`, `HotFolderWatcher` | Input devices: each hot folder feeds its own workflow |
 | `workflows/*.yaml` | Workflow definition, configured not coded |
 | `Phase` / `phases:` (receive, prepare, assemble, print, insert, complete) | Workflow phases |
 | `Step` + `StepRegistry` | Step templates and the steps built from them |
@@ -64,15 +64,14 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw -q exec:java -Dexec.args="generate-afp 200 run.afp"  # the same kind of run as AFP
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 run.afp 5 42"  # 5 bad addresses, seed 42
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 legacy.afp --tle-names legacy"  # ACCT_NO, ...
-./mvnw -q exec:java                               # start watching ./hotfolder
-./mvnw -q exec:java -Dexec.args="run workflows/statements.yaml *.pdf"  # same, explicitly
-./mvnw -q exec:java -Dexec.args="run workflows/statements-afp.yaml *.afp"  # AFP input
-./mvnw -q exec:java -Dexec.args="run workflows/statements-afp-legacy.yaml *.afp"  # legacy TLEs
+./mvnw -q exec:java                               # start the input devices (config/input-devices.yaml)
+./mvnw -q exec:java -Dexec.args="run --devices my-devices.yaml"  # ...from another devices file
+./mvnw -q exec:java -Dexec.args="run workflows/statements-afp.yaml *.afp"  # one device on ./hotfolder
 ./mvnw -q exec:java -Dexec.args="dump-afp statement.afp"  # print an AFP file's structure
 ```
 
-Then move `run.pdf` into `hotfolder/` and look in `output/`. The glob ignores case, so `RUN.PDF`
-is picked up too. A file that can't be claimed yet (Windows reports it as in use while another
+Then move `run.pdf` into `hotfolder/pdf/` (or `run.afp` into `hotfolder/afp/`) and look in
+`output/`. The glob ignores case, so `RUN.PDF` is picked up too. A file that can't be claimed yet (Windows reports it as in use while another
 program still has it open) stays in the hot folder and is retried every 5 seconds; the folder is
 also rescanned at once if the operating system drops file events in a burst. On Windows use
 `mvnw.cmd`. In
@@ -82,6 +81,41 @@ an unknown lifecycle phase:
 ```powershell
 .\mvnw.cmd -q exec:java "-Dexec.args=generate 200 run.pdf"
 ```
+
+### Input devices
+
+Like ProcessDirector's input devices, each hot folder feeds its own workflow.
+`config/input-devices.yaml` lists them, and `run` with no arguments starts them all:
+
+| Device | Folder | Files | Workflow |
+|---|---|---|---|
+| `pdf-statements` | `hotfolder/pdf/` | `*.pdf` | `statements.yaml` |
+| `afp-statements` | `hotfolder/afp/` | `*.afp` | `statements-afp.yaml` |
+| `afp-legacy` | `hotfolder/afp-legacy/` | `*.afp` | `statements-afp-legacy.yaml` (files from `--tle-names legacy`) |
+
+```yaml
+devices:
+  - name: pdf-statements      # unique; jobs get the job property inputDevice=pdf-statements
+    folder: hotfolder/pdf     # each device has its own folder
+    glob: "*.pdf"             # which files are inputs, ignoring case
+    workflow: workflows/statements.yaml
+```
+
+- **One folder per device.** Two devices can't share a folder, even with different globs (or the
+  same folder written two ways, like `hotfolder/pdf` and `hotfolder/x/../pdf`). Every file in a
+  folder belongs to that folder's device. Nested folders are fine: watching isn't recursive.
+- **Checked at startup.** Every device's workflow is loaded and built before any folder is
+  watched. A missing or broken workflow, a repeated name or folder, an invalid glob, a missing
+  field or an unknown key stops startup with a message naming the device.
+- **Each device has its own watcher thread.** All devices hand jobs to one shared queue, so jobs
+  still run one at a time.
+- **Each job records its device** as the job property `inputDevice`. A job ticket can't change it
+  (or `inputFileName`); a ticket line for either is ignored, with a warning.
+- **Job tickets** (`*.jobprops`) are never inputs, whatever the glob. Any other file that doesn't
+  match the device's glob is left in place and logged once, not on every rescan.
+
+`run <workflow.yaml> [glob]` is still there as a shortcut: one device named `default` on
+`hotfolder/`.
 
 ### Workflow phases
 
@@ -330,7 +364,7 @@ src/main/java/dev/yjimmy/printlab/
   steps/                   SetJobPropsFromTextFile, SplitPdf, SplitAfp, MapProperties,
                            RouteDocuments, SortDocuments,
                            RunExternalProgram, WriteOutput
-  input/HotFolderWatcher   folder intake
+  input/                   input devices: config, one HotFolderWatcher per device, JobIntake
   testdata/                fake statement print runs: shared data and layout, PDF and AFP writers
   afp/                     AFP reader and writer, field names, EBCDIC, TLE decoder and encoder,
                            dump tool
@@ -339,6 +373,7 @@ src/main/webapp/
   index.html               dashboard page; loads WebJars, then js/
   js/                      Marionette app: health.js, app.js, main.js
 src/test/js/               dashboard tests (Mocha + jsdom)
+config/input-devices.yaml  the input devices `run` starts
 workflows/                 sample workflows: statements.yaml (PDF), statements-afp.yaml,
                            statements-afp-legacy.yaml
 ```
@@ -351,6 +386,8 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
 
 - [x] Workflow engine, YAML workflows, step registry
 - [x] Hot folder intake that waits for files to finish copying
+- [x] Input devices: several hot folders, each feeding its own workflow
+      (`config/input-devices.yaml`)
 - [x] PDF split + region-based indexing, zip presort, output with document index
 - [x] **AFP:**
   - [x] Structured-field reader and dump tool

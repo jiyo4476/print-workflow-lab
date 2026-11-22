@@ -42,10 +42,10 @@ import org.slf4j.LoggerFactory;
 public final class SetJobPropsFromTextFileStep implements Step {
 
     /**
-     * Job properties the app sets at intake, which a ticket can't change: the input's file name.
-     * A ticket line for one is ignored, with a warning.
+     * Job properties the app sets at intake, which a ticket can't change: the input's file name
+     * and the input device it came through. A ticket line for one is ignored, with a warning.
      */
-    public static final Set<String> PROTECTED = Set.of("inputFileName");
+    public static final Set<String> PROTECTED = Set.of("inputFileName", "inputDevice");
 
     /** Appended to the input file's name to find its job ticket. */
     public static final String EXTENSION = ".jobprops";

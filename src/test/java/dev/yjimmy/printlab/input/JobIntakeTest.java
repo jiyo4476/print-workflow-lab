@@ -50,6 +50,31 @@ public class JobIntakeTest {
     }
 
     @Test
+    public void ticketInAnyCaseMovesWithTheInputUnderItsUsualName() throws Exception {
+        Path hot = Files.createDirectories(tmp.getRoot().toPath().resolve("hot"));
+        Files.writeString(hot.resolve("run.pdf.JOBPROPS"), "customer=ACME");
+        Path file = Files.writeString(hot.resolve("run.pdf"), "pdf");
+
+        Job job = new JobIntake(tmp.getRoot().toPath().resolve("work")).claim(file);
+
+        assertEquals("ticket in the work folder", "customer=ACME",
+                Files.readString(job.workDir().resolve("run.pdf.jobprops")));
+        try (var left = Files.list(hot)) {
+            assertThat(left).as("left in the hot folder").isEmpty();
+        }
+    }
+
+    @Test
+    public void claimForADeviceRecordsTheDevice() throws Exception {
+        Path hot = Files.createDirectories(tmp.getRoot().toPath().resolve("hot"));
+        Path file = Files.writeString(hot.resolve("run.pdf"), "pdf");
+
+        Job job = new JobIntake(tmp.getRoot().toPath().resolve("work")).claim(file, "pdf-in");
+
+        assertEquals("inputDevice", "pdf-in", job.properties().get(JobIntake.INPUT_DEVICE));
+    }
+
+    @Test
     public void ticketThatCannotBeMovedFailsTheClaimAndLeavesBothFiles() throws Exception {
         Path hot = Files.createDirectories(tmp.getRoot().toPath().resolve("hot"));
         Path work = tmp.getRoot().toPath().resolve("work");
@@ -79,6 +104,22 @@ public class JobIntakeTest {
         try (var left = Files.list(work)) {
             assertThat(left).as("job folders left behind").isEmpty();
         }
+    }
+
+    @Test
+    public void unclaimPutsTheInputAndTicketBackAndRemovesTheWorkFolder() throws Exception {
+        Path hot = Files.createDirectories(tmp.getRoot().toPath().resolve("hot"));
+        Files.writeString(hot.resolve("run.pdf.jobprops"), "customer=ACME");
+        Path file = Files.writeString(hot.resolve("run.pdf"), "pdf");
+        JobIntake intake = new JobIntake(tmp.getRoot().toPath().resolve("work"));
+        Job job = intake.claim(file);
+
+        intake.unclaim(job, hot);
+
+        assertEquals("input back", "pdf", Files.readString(file));
+        assertEquals("ticket back", "customer=ACME",
+                Files.readString(hot.resolve("run.pdf.jobprops")));
+        assertFalse("work folder removed", Files.exists(job.workDir()));
     }
 
     @Test

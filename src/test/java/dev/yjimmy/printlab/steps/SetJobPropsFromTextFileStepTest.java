@@ -64,12 +64,15 @@ public class SetJobPropsFromTextFileStepTest {
     }
 
     @Test
-    public void ticketCannotChangeProtectedProperties() throws Exception {
-        ticket("run.pdf.jobprops", "inputFileName=other.pdf", "customer=ACME");
+    public void ticketCannotChangeWhatTheAppSetsAtIntake() throws Exception {
+        job.properties().put("inputDevice", "pdf-statements");
+        ticket("run.pdf.jobprops", "inputDevice=elsewhere", "inputFileName=other.pdf",
+                "customer=ACME");
 
         new SetJobPropsFromTextFileStep(Map.of()).execute(job);
 
-        assertEquals("inputFileName kept", "run.pdf", job.properties().get("inputFileName"));
+        assertEquals("inputDevice", "pdf-statements", job.properties().get("inputDevice"));
+        assertEquals("inputFileName", "run.pdf", job.properties().get("inputFileName"));
         assertEquals("other lines still apply", "ACME", job.properties().get("customer"));
     }
 
