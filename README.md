@@ -175,13 +175,13 @@ failed job's ticket goes to `error/<jobId>/` with its input. With no ticket the 
 a missing ticket fail the job, and `fileName:` reads another file in the job's work folder.
 
 The properties are job properties, so any step's `when:` can use them. In `statements.yaml` a
-ticket with `presort=false` skips the presort step:
+ticket with `presort=false` (or `no` / `off`, in any case) skips the presort step:
 
 ```yaml
 - name: presort
   type: SortDocuments
   params: { by: zip }
-  when: { property: presort, operator: notEquals, value: "false" }
+  when: { property: presort, operator: notMatches, value: "(?i)false|no|off" }
 ```
 
 ### Where a job's files go
