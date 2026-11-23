@@ -1,0 +1,5 @@
+Revision 1  table at 0x000000D5 (213): 6 entries
+Revision 2  table at 0x000001D4 (468): 3 entries, /Prev 213
+  Changed   3
+  Added     6
+  Freed     5

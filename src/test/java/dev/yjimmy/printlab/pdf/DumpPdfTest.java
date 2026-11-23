@@ -52,10 +52,10 @@ public class DumpPdfTest {
         PdfDocumentReader pdf = new PdfDocumentReader(resource(FIXTURE));
         StringBuilder out = new StringBuilder();
 
-        boolean found = new PdfDump().dumpObject(pdf, 38, out);
+        boolean found = new PdfDump().dumpObject(pdf, 10, out);
 
         assertTrue("found", found);
-        assertEquals("dump of object 38", resourceText("/fixtures/pdf/two-statements.object-38.dump.txt"),
+        assertEquals("dump of object 10", resourceText("/fixtures/pdf/two-statements.object-10.dump.txt"),
                 out.toString());
     }
 
@@ -73,10 +73,10 @@ public class DumpPdfTest {
     public void pageDictionaryIsOneEntryPerLine() throws IOException {
         StringBuilder out = new StringBuilder();
 
-        new PdfDump().dumpObject(new PdfDocumentReader(resource(FIXTURE)), 31, out);
+        new PdfDump().dumpObject(new PdfDocumentReader(resource(FIXTURE)), 3, out);
 
-        assertThat(out.toString()).startsWith("31 0 obj  at offset 0x000000AE (174)\n<<\n  /Type /Page\n")
-                .endsWith("  /Contents 38 0 R\n>>\n");
+        assertThat(out.toString()).startsWith("3 0 obj  at offset 0x000000A5 (165)\n<<\n  /Type /Page\n")
+                .endsWith("  /Contents 10 0 R\n>>\n");
     }
 
     @Test
@@ -84,10 +84,10 @@ public class DumpPdfTest {
         PdfDocumentReader pdf = new PdfDocumentReader(resource(FIXTURE));
         StringBuilder out = new StringBuilder();
 
-        assertFalse("free", new PdfDump().dumpObject(pdf, 5, out));
+        assertFalse("free", new PdfDump().dumpObject(pdf, 0, out));
         assertFalse("missing", new PdfDump().dumpObject(pdf, 999, out));
 
-        assertEquals("output", "Object 5 is free\nObject 999 is not in the cross-reference table\n", out.toString());
+        assertEquals("output", "Object 0 is free\nObject 999 is not in the cross-reference table\n", out.toString());
     }
 
     private static PdfDocumentReader unusualFile() {

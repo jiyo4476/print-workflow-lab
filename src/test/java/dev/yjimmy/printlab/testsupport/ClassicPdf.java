@@ -2,10 +2,8 @@ package dev.yjimmy.printlab.testsupport;
 
 import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Random;
-import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSString;
@@ -46,22 +44,16 @@ public final class ClassicPdf {
 
     /** Generates {@code statements} for {@code seed}, applies {@code change}, and saves to {@code out}. */
     public static void write(long seed, int statements, Path out, Change change) throws IOException {
-        Path generated = out.resolveSibling(out.getFileName() + ".generated");
-        try {
-            new StatementPdfGenerator(seed).generate(statements, generated);
-            try (PDDocument doc = Loader.loadPDF(generated.toFile())) {
-                Random random = new Random(seed);
-                byte[] id = new byte[16];
-                random.nextBytes(id);
-                COSArray ids = new COSArray();
-                ids.add(new COSString(id));
-                ids.add(new COSString(id));
-                doc.getDocument().getTrailer().setItem(COSName.ID, ids);
-                change.apply(doc);
-                doc.save(out.toFile(), CompressParameters.NO_COMPRESSION);
-            }
-        } finally {
-            Files.deleteIfExists(generated);
+        try (PDDocument doc = new StatementPdfGenerator(seed).document(statements)) {
+            Random random = new Random(seed);
+            byte[] id = new byte[16];
+            random.nextBytes(id);
+            COSArray ids = new COSArray();
+            ids.add(new COSString(id));
+            ids.add(new COSString(id));
+            doc.getDocument().getTrailer().setItem(COSName.ID, ids);
+            change.apply(doc);
+            doc.save(out.toFile(), CompressParameters.NO_COMPRESSION);
         }
     }
 }

@@ -511,7 +511,8 @@ PR handles each version's changes.
   - `findsStartxrefWithTrailingWhitespaceVariants` (`\n`, `\r\n`, CR, missing final newline)
   - `parsesMultipleSubsections`, `freeEntriesResolveToNull`
   - `offsetPointingAtWrongObjectFailsWithMessage`, `streamWhoseLengthIsItselfFailsCleanly`
-  - `crossReferenceStreamIsReportedAsPr8`, `incrementalUpdateIsReportedAsPr8`
+  - `crossReferenceStreamWithTooLittleDataFails`, `prevMustBeAnOffsetInTheFile` (named
+    `...IsReportedAsPr8` until PR 8 read those files)
 - 7b, Unit — `StreamDecoderTest`
   - `flateRoundTrip` (compress with `Deflater`, decode, compare)
   - `unknownFilterReportedAsUnsupported`, `flateWithAPredictorIsReportedAsUnsupported`
@@ -521,8 +522,8 @@ PR handles each version's changes.
   - `pagesMediaBoxesAndFontNamesMatchPdfBox`
   - `decodedContentStreamsMatchPdfBoxByteForByte`
 - 7b, Golden-file — `DumpPdfTest`: dump of `fixtures/pdf/two-statements.pdf` equals
-  `fixtures/pdf/two-statements.dump.txt`, and object 38 (a content stream) equals
-  `two-statements.object-38.dump.txt`; `fixtureIsWhatClassicPdfWritesForSeed7`.
+  `fixtures/pdf/two-statements.dump.txt`, and object 10 (a content stream) equals
+  `two-statements.object-10.dump.txt`; `fixtureIsWhatClassicPdfWritesForSeed7`.
 - Manual: compare `dump-pdf` with `qpdf --qdf` or `mutool show` output for a real-world PDF.
 
 ### PR 8 — Modern PDF structure: xref streams, object streams, incremental updates `M`
@@ -538,18 +539,26 @@ PR handles each version's changes.
 - `App dump-pdf --xref <file>` lists every xref section and which objects each update changed.
 
 **Tests**
-- Unit — `PngPredictorTest` (parameterized: None, Sub, Up, Average, Paeth against known vectors)
+- Unit — `PngPredictorTest`
+  - `KnownVectors` (parameterized: None, Sub, Up, Average, Paeth, worked by hand)
+  - `randomRowsRoundTripForEveryFilterAndPixelSize`, `leftIsOnePixelBackNotOneByte`
 - Integration — `XrefStreamTest`
   - `compressedAndUncompressedSavesResolveTheSameObjects` (PDFBox default save vs
     `NO_COMPRESSION` save of the same document)
+  - `indexRangesAndAMissingTypeField`, `flateStreamWithAPngPredictorReads`
+  - `hybridFileReadsObjectsFromBothTheTableAndTheStream`
 - Integration — `ObjectStreamTest`
   - `objectInsideObjectStreamResolves`
-  - `objectStreamWithBadFirstOffsetFailsWithMessage`
-- Integration — `IncrementalUpdateTest` (PDFBox `saveIncremental` after changing `/Info /Title`)
+  - `objectStreamWithBadFirstOffsetFailsWithMessage`, `objectStreamInsideAnObjectStreamFails`
+- Integration — `IncrementalUpdateTest` (PDFBox `saveIncremental` after changing `/Info /Title`,
+  from a classic and a compressed original)
   - `newestRevisionWins`
   - `previousRevisionStillReadable`
-  - `xrefDumpShowsTwoSectionsAndChangedObjects`
-- Differential — `PdfReaderVsPdfBoxTest` extended to compressed files.
+  - `xrefDumpShowsTwoSectionsAndChangedObjects` (a `PdfBytes` file, golden
+    `fixtures/pdf/two-revisions.xref.txt`)
+  - `objectFreedInAnUpdateResolvesToNullButIsInTheEarlierRevision`, `prevLoopFails`
+- Differential — `PdfReaderVsPdfBoxTest` extended to compressed files (and the AFPWorld sample
+  PDF when downloaded).
 
 ### PR 9 — Content streams and text positions `L`
 

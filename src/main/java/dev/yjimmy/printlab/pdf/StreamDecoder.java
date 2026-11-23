@@ -14,9 +14,10 @@ import java.util.zip.Inflater;
  *   <li>No {@code /Filter}: the data is returned as it is.</li>
  *   <li>{@code /FlateDecode} (zlib, RFC 1950) is decoded with {@link Inflater}. An array of
  *       filters is applied in order.</li>
- *   <li>Any other filter, or Flate with a {@code /Predictor} (used by xref streams and images,
- *       PR 8), throws {@link UnsupportedFilterException}: the stream can't be decoded, but the
- *       rest of the file is still readable.</li>
+ *   <li>Flate with a PNG {@code /Predictor} (10 to 15, in {@code /DecodeParms}) has the
+ *       predictor undone afterwards by {@link PngPredictor}: cross-reference streams use one.</li>
+ *   <li>Any other filter, or the TIFF predictor (2), throws {@link UnsupportedFilterException}:
+ *       the stream can't be decoded, but the rest of the file is still readable.</li>
  * </ul>
  *
  * <p>Decoding stops with a {@link PdfFormatException} past {@code maxDecodedBytes}, so a small
@@ -82,27 +83,41 @@ public final class StreamDecoder {
                 throw new UnsupportedFilterException(filter,
                         "/" + filter + " is not supported; only /FlateDecode is decoded");
             }
-            int predictor = predictor(stream, i);
-            if (predictor > 1) {
+            PdfDictionary parameters = parameters(stream, i);
+            int predictor = number(parameters, "Predictor", 1);
+            if (predictor != 1 && (predictor < 10 || predictor > 15)) {
                 throw new UnsupportedFilterException(filter, "/FlateDecode with /Predictor "
-                        + predictor + " is not supported (PR 8 adds predictors)");
+                        + predictor + " is not supported; only PNG predictors (10 to 15) are");
             }
             data = inflate(data, stream.dataOffset());
+            if (predictor >= 10) {
+                try {
+                    data = PngPredictor.decode(data, number(parameters, "Colors", 1),
+                            number(parameters, "BitsPerComponent", 8), number(parameters, "Columns", 1));
+                } catch (IllegalArgumentException e) {
+                    throw new PdfFormatException(stream.dataOffset(), "PNG predictor: " + e.getMessage());
+                }
+            }
         }
         return data;
     }
 
-    /** The {@code /Predictor} in the parameters for filter {@code index}, or 1 (none). */
-    private int predictor(PdfStream stream, int index) {
+    /** The {@code /DecodeParms} for filter {@code index}: a dictionary, or one in an array. */
+    private PdfDictionary parameters(PdfStream stream, int index) {
         PdfObject parameters = resolve(stream.dictionary().get("DecodeParms"));
         if (parameters instanceof PdfArray array) {
             parameters = index < array.size() ? resolve(array.get(index)) : null;
         }
-        if (parameters instanceof PdfDictionary dictionary
-                && resolve(dictionary.get("Predictor")) instanceof PdfNumber predictor) {
-            return predictor.isInt() ? predictor.intValue() : Integer.MAX_VALUE;
+        return parameters instanceof PdfDictionary dictionary ? dictionary : PdfDictionary.of();
+    }
+
+    /** An integer parameter, its default if absent; a real or huge value can't be valid. */
+    private int number(PdfDictionary parameters, String key, int defaultValue) {
+        PdfObject value = resolve(parameters.get(key));
+        if (value instanceof PdfNumber n) {
+            return n.isInt() ? n.intValue() : Integer.MAX_VALUE;
         }
-        return 1;
+        return defaultValue;
     }
 
     private PdfObject resolve(PdfObject object) {

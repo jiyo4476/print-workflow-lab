@@ -44,8 +44,12 @@ public final class PdfDocumentReader {
     private List<PdfPage> pages;
 
     public PdfDocumentReader(byte[] data) {
-        this.headerVersion = header(data);
-        this.xref = new XrefReader(data);
+        this(header(data), new XrefReader(data));
+    }
+
+    private PdfDocumentReader(PdfVersion headerVersion, XrefReader xref) {
+        this.headerVersion = headerVersion;
+        this.xref = xref;
         this.decoder = new StreamDecoder(xref::resolve, StreamDecoder.DEFAULT_MAX_DECODED_BYTES);
         PdfObject root = xref.resolve(xref.trailer().get("Root"));
         if (!(root instanceof PdfDictionary dictionary)) {
@@ -57,6 +61,24 @@ public final class PdfDocumentReader {
 
     public static PdfDocumentReader open(Path file) throws IOException {
         return new PdfDocumentReader(Files.readAllBytes(file));
+    }
+
+    /**
+     * The document as of revision {@code n} (PRD-08, FR-5): 1 is the file as first written,
+     * {@link #revisions()} is how it is now. Each incremental update adds a revision.
+     */
+    public PdfDocumentReader revision(int n) {
+        return n == xref.revision() ? this : new PdfDocumentReader(headerVersion, xref.revision(n));
+    }
+
+    /** How many revisions the file has: 1, plus one per incremental update. */
+    public int revisions() {
+        return xref.revisions();
+    }
+
+    /** Which revision this reader sees. */
+    public int revision() {
+        return xref.revision();
     }
 
     private static PdfVersion header(byte[] data) {
@@ -185,8 +207,7 @@ public final class PdfDocumentReader {
     }
 
     private long offset(PdfReference reference) {
-        return reference == null ? xref.startxref()
-                : xref.entry(reference.objectNumber()).map(XrefReader.Entry::offset).orElse(xref.startxref());
+        return xref.offset(reference);
     }
 
     /**

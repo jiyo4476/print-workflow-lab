@@ -22,7 +22,8 @@
  *       prints them for {@code App dump-pdf}.</li>
  * </ul>
  *
- * <p>Next: cross-reference streams, object streams and incremental updates (PR 8), then content
+ * <p>{@code XrefReader} reads classic tables and cross-reference streams, objects packed in
+ * object streams, and every revision of an incrementally updated file (PR 8). Next: content
  * streams (PR 9). PDFBox stays in the project as the test oracle: tests check this package
  * against what PDFBox reports for the same file.
  *
