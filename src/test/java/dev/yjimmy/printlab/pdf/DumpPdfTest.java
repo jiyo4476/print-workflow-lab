@@ -103,6 +103,7 @@ public class DumpPdfTest {
                 .object(8, "<< /Type /Font /Subtype /Type3 >>")
                 .object(9, "[1 (two) /Th#20ree]")
                 .object(10, "<< >>")
+                .stream(11, "/Filter 7", binary)
                 .build("/Root 1 0 R /Encrypt 10 0 R"));
     }
 
@@ -131,8 +132,11 @@ public class DumpPdfTest {
         new PdfDump().dumpObject(pdf, 10, out);
         new PdfDump().dumpObject(pdf, 7, out);
         new PdfDump().dumpObject(pdf, 5, out);
+        new PdfDump().dumpObject(pdf, 11, out);
 
         assertThat(out.toString())
+                .contains("stream  4 bytes, can't decode: ")
+                .contains("/Filter must be a name or an array of names, found 7")
                 .contains("[1 (two) /Th#20ree]\n")
                 .contains("<<>>\n")
                 .contains("stream  4 bytes, binary, not shown\n")

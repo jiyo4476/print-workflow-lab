@@ -122,7 +122,7 @@ public class PdfReaderVsPdfBoxTest {
         return values;
     }
 
-    /** Resource name to base font, in PDFBox's order (sorted, to compare as a map). */
+    /** Resource name to base font, as PDFBox reads them; a map, so the order doesn't matter. */
     private static Map<String, String> fontsPdfBox(PDPage page) throws IOException {
         Map<String, String> fonts = new HashMap<>();
         for (COSName name : page.getResources().getFontNames()) {

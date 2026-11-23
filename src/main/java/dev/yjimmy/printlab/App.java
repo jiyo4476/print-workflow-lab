@@ -12,6 +12,7 @@ import dev.yjimmy.printlab.testdata.StatementAfpGenerator;
 import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
 import dev.yjimmy.printlab.workflow.StepRegistry;
 import dev.yjimmy.printlab.workflow.WorkflowDefinition;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
@@ -101,7 +102,17 @@ public final class App {
                     usage();
                     return;
                 }
-                if (!dumpPdf(Path.of(args[1]), args.length > 2 ? Integer.parseInt(args[2]) : null)) {
+                Integer objectNumber = null;
+                if (args.length > 2) {
+                    try {
+                        objectNumber = Integer.parseInt(args[2]);
+                    } catch (NumberFormatException e) {
+                        System.err.println("dump-pdf: the object number must be a number, not '"
+                                + args[2] + "'");
+                        System.exit(1);
+                    }
+                }
+                if (!dumpPdf(Path.of(args[1]), objectNumber)) {
                     System.exit(1);
                 }
             }
@@ -110,10 +121,19 @@ public final class App {
     }
 
     /** Returns false if the file can't be read as a PDF or the object isn't in it. */
-    private static boolean dumpPdf(Path file, Integer objectNumber) throws Exception {
+    private static boolean dumpPdf(Path file, Integer objectNumber) {
         StringBuilder out = new StringBuilder();
+        PdfDocumentReader pdf;
         try {
-            PdfDocumentReader pdf = PdfDocumentReader.open(file);
+            pdf = PdfDocumentReader.open(file);
+        } catch (IOException e) {
+            System.err.println("dump-pdf: can't read " + file + ": " + e);
+            return false;
+        } catch (PdfFormatException e) {
+            System.err.println("dump-pdf: " + file + ": " + e.getMessage());
+            return false;
+        }
+        try {
             boolean found = true;
             if (objectNumber == null) {
                 new PdfDump().dump(pdf, out);

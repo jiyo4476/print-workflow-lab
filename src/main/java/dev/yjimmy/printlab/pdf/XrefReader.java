@@ -41,6 +41,13 @@ public final class XrefReader {
     private final Map<Integer, Entry> entries = new TreeMap<>();
     private final PdfDictionary trailer;
     private final Map<PdfReference, PdfIndirectObject> cache = new HashMap<>();
+    /**
+     * Reading a stream reads its indirect {@code /Length}, which is read the same way, so a bad
+     * file could chain thousands of reads one inside the other. A real length is a number, so one
+     * level is all a valid file needs; past this, reading fails instead of overflowing the stack.
+     */
+    static final int MAX_NESTED_READS = 32;
+
     /** Objects being read now, to catch one whose stream /Length refers back to it. */
     private final Set<PdfReference> reading = new HashSet<>();
 
@@ -181,10 +188,15 @@ public final class XrefReader {
         if (entry == null || !entry.inUse() || entry.generation() != ref.generation()) {
             return Optional.empty();
         }
-        if (!reading.add(ref)) {
+        if (reading.contains(ref)) {
             throw new PdfFormatException(entry.offset(), "object " + ref
                     + " can't be read: its stream /Length refers back to the object itself");
         }
+        if (reading.size() >= MAX_NESTED_READS) {
+            throw new PdfFormatException(entry.offset(), "object " + ref + " can't be read: objects"
+                    + " nested more than " + MAX_NESTED_READS + " deep through indirect stream lengths");
+        }
+        reading.add(ref);
         try {
             PdfIndirectObject object = read(ref, entry);
             cache.put(ref, object);
@@ -205,6 +217,9 @@ public final class XrefReader {
         try {
             object = parser.parseIndirectObject();
         } catch (PdfFormatException e) {
+            if (reading.size() > 1) {
+                throw e; // a nested read: the outermost one adds the context
+            }
             throw new PdfFormatException(e.offset(), "reading object " + ref + " at offset "
                     + entry.offset() + " from the xref table: " + e.detail());
         }

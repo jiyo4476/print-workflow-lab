@@ -167,7 +167,9 @@ both 2.0) with a UTF-8 `/Title` in its `/Info` dictionary.
   `\n`, `\r\n`, a lone CR and a missing final newline all work (FR-4).
 - A free entry, an object number the table doesn't have, and a reference with a different
   generation all resolve to `PdfNull` (7.3.10). Objects are read when first resolved, then kept
-  (NFR-1). An object whose stream `/Length` refers to itself fails instead of recursing.
+  (NFR-1). An object whose stream `/Length` refers to itself fails instead of recursing, and so
+  does a chain of more than 32 reads nested through indirect lengths (found in review: 20,000
+  chained streams overflowed the stack). Only the outermost read adds its context to the error.
 - An xref offset at the wrong object names both (`the xref entry for object 2 0 R points at
   offset 73, but object 1 0 R is there`, FR-5); one in the middle of an object names the
   object being read.

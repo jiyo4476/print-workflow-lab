@@ -173,6 +173,41 @@ public class XrefReaderTest {
         assertThat(e.getMessage()).contains("its stream /Length refers back to the object itself");
     }
 
+    /**
+     * Each stream's /Length points at the next stream, so reading the first reads them all, one
+     * inside the other. A long chain must fail cleanly, not overflow the stack (NFR-3).
+     */
+    @Test
+    public void longChainOfIndirectLengthsFailsCleanly() {
+        int last = 20_000;
+        PdfBytes pdf = new PdfBytes("1.4").object(1, CATALOG).object(2, PAGES);
+        for (int n = 3; n < last; n++) {
+            pdf.object(n, "<< /Length " + (n + 1) + " 0 R >>\nstream\nabc\nendstream");
+        }
+        pdf.object(last, "3");
+        XrefReader reader = new XrefReader(pdf.build("/Root 1 0 R"));
+
+        PdfFormatException e = assertThrows(PdfFormatException.class,
+                () -> reader.resolve(new PdfReference(3, 0)));
+
+        assertThat(e.getMessage()).contains("objects nested more than " + XrefReader.MAX_NESTED_READS
+                + " deep through indirect stream lengths");
+    }
+
+    @Test
+    public void shortChainOfIndirectLengthsFailsBecauseALengthIsAStream() {
+        PdfBytes pdf = new PdfBytes("1.4").object(1, CATALOG).object(2, PAGES)
+                .object(3, "<< /Length 4 0 R >>\nstream\nabc\nendstream")
+                .object(4, "<< /Length 5 0 R >>\nstream\nabc\nendstream")
+                .object(5, "3");
+        XrefReader reader = new XrefReader(pdf.build("/Root 1 0 R"));
+
+        PdfFormatException e = assertThrows(PdfFormatException.class,
+                () -> reader.resolve(new PdfReference(3, 0)));
+
+        assertThat(e.getMessage()).contains("stream of object 3 0 R needs a non-negative integer /Length");
+    }
+
     @Test
     public void noStartxrefFails() {
         byte[] bytes = new PdfBytes("1.4").object(1, CATALOG).bytes();

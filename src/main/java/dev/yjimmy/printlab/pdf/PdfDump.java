@@ -137,7 +137,12 @@ public final class PdfDump {
     private static Decoded describe(PdfDocumentReader pdf, PdfStream stream) {
         StringBuilder summary = new StringBuilder();
         try {
-            List<String> filters = pdf.filters(stream);
+            List<String> filters;
+            try {
+                filters = pdf.filters(stream);
+            } catch (PdfFormatException e) {
+                return new Decoded(null, stream.length() + " bytes, can't decode: " + e.getMessage());
+            }
             for (String filter : filters) {
                 summary.append('/').append(filter).append(", ");
             }

@@ -4,8 +4,8 @@ import java.util.Arrays;
 
 /**
  * A dictionary followed by {@code stream ... endstream}. {@link #data()} is the bytes as stored
- * in the file, still encoded by the dictionary's {@code /Filter} (decoding them is PR 7b's
- * {@code StreamDecoder}). {@code dataOffset} is where those bytes start in the file.
+ * in the file, still encoded by the dictionary's {@code /Filter}; {@link StreamDecoder} decodes
+ * them. {@code dataOffset} is where those bytes start in the file.
  */
 public record PdfStream(PdfDictionary dictionary, byte[] data, long dataOffset)
         implements PdfObject {

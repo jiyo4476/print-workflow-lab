@@ -104,5 +104,7 @@ public class PdfObjectTest {
         assertEquals("delimiters and hash", "/a#2Fb#28#23", PdfName.of("a/b(#").toString());
         assertEquals("control character", "/x#1B#5B2J", PdfName.of("x" + escape + "[2J").toString());
         assertEquals("high byte", "/caf#E9", PdfName.of("caf" + (char) 0xE9).toString());
+        assertEquals("past 0xFF, as UTF-8", "/caf#C3#A9#E2#82#AC",
+                PdfName.of("caf" + (char) 0xE9 + (char) 0x20AC).toString());
     }
 }

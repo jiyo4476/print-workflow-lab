@@ -1,5 +1,7 @@
 package dev.yjimmy.printlab.pdf;
 
+import java.nio.charset.StandardCharsets;
+
 /**
  * A name, such as {@code /Type}, held without its slash and with {@code #xx} escapes decoded
  * ({@code /A#20B} is {@code A B}). Each byte of the name is one {@code char} (ISO-8859-1), so no
@@ -24,12 +26,16 @@ public record PdfName(String name) implements PdfObject {
      */
     @Override
     public String toString() {
+        // Names from a file are one byte per char; a char past 0xFF (from code) is written as UTF-8.
+        boolean bytesOnly = name.chars().allMatch(c -> c <= 0xFF);
+        byte[] bytes = name.getBytes(bytesOnly ? StandardCharsets.ISO_8859_1 : StandardCharsets.UTF_8);
         StringBuilder text = new StringBuilder("/");
-        for (char c : name.toCharArray()) {
+        for (byte b : bytes) {
+            int c = b & 0xFF;
             if (c < 0x21 || c > 0x7E || c == '#' || PdfLexer.isDelimiter(c)) {
-                text.append(String.format("#%02X", c & 0xFF));
+                text.append(String.format("#%02X", c));
             } else {
-                text.append(c);
+                text.append((char) c);
             }
         }
         return text.toString();

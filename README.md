@@ -70,7 +70,7 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw -q exec:java -Dexec.args="run workflows/statements-afp.yaml *.afp"  # one device on ./hotfolder
 ./mvnw -q exec:java -Dexec.args="dump-afp statement.afp"  # print an AFP file's structure
 ./mvnw -q exec:java -Dexec.args="dump-pdf run.pdf"        # print a PDF's version, trailer and pages
-./mvnw -q exec:java -Dexec.args="dump-pdf run.pdf 5"      # one object, with its stream decoded
+./mvnw -q exec:java -Dexec.args="dump-pdf run.pdf 12"     # one object (a Contents number from the dump)
 ```
 
 Then move `run.pdf` into `hotfolder/pdf/` (or `run.afp` into `hotfolder/afp/`) and look in
@@ -307,7 +307,7 @@ Page 1    31 0 R
   Contents  38 0 R  /FlateDecode, 474 bytes, 1817 decoded
 ```
 
-`dump-pdf run.pdf 38` prints one object: its dictionary one entry per line, and its stream
+`dump-pdf two-statements.pdf 38` prints one object: its dictionary one entry per line, and its stream
 decoded when that gives text (a content stream's `BT /F1 14 Tf ... ET`). Every version from
 PDF 1.0 to 2.0 is read; a page inherits `MediaBox`, `Resources`, `CropBox` and `Rotate` from the
 page-tree nodes above it. Only Flate is decoded: a stream with another filter (`/DCTDecode`, a

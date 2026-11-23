@@ -112,7 +112,9 @@ public final class StreamDecoder {
     private byte[] inflate(byte[] compressed, long offset) {
         Inflater inflater = new Inflater();
         inflater.setInput(compressed);
-        ByteArrayOutputStream out = new ByteArrayOutputStream(Math.max(64, compressed.length * 3));
+        // A first guess at the size, never past the limit (long, so a huge input can't overflow it).
+        ByteArrayOutputStream out = new ByteArrayOutputStream(
+                (int) Math.min(maxDecodedBytes, Math.max(64, compressed.length * 3L)));
         byte[] buffer = new byte[8192];
         try {
             while (!inflater.finished()) {
