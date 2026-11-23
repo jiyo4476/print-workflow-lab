@@ -5,6 +5,9 @@ import dev.yjimmy.printlab.afp.Ebcdic;
 import dev.yjimmy.printlab.input.InputDevice;
 import dev.yjimmy.printlab.input.InputDeviceConfig;
 import dev.yjimmy.printlab.input.InputDevices;
+import dev.yjimmy.printlab.pdf.PdfDocumentReader;
+import dev.yjimmy.printlab.pdf.PdfDump;
+import dev.yjimmy.printlab.pdf.PdfFormatException;
 import dev.yjimmy.printlab.testdata.StatementAfpGenerator;
 import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
 import dev.yjimmy.printlab.workflow.StepRegistry;
@@ -39,6 +42,10 @@ import java.util.List;
  *   dump-afp &lt;file.afp&gt; [codePage]
  *                                print an AFP file's structured fields and TLEs; exits 1 if
  *                                the file has structural problems
+ *   dump-pdf &lt;file.pdf&gt; [objectNumber]
+ *                                print a PDF's version, trailer and pages (MediaBox, fonts,
+ *                                content streams), or one object with its decoded stream;
+ *                                exits 1 if the file can't be read or the object isn't there
  * </pre>
  */
 public final class App {
@@ -89,7 +96,36 @@ public final class App {
                     System.exit(1);
                 }
             }
+            case "dump-pdf" -> {
+                if (args.length < 2) {
+                    usage();
+                    return;
+                }
+                if (!dumpPdf(Path.of(args[1]), args.length > 2 ? Integer.parseInt(args[2]) : null)) {
+                    System.exit(1);
+                }
+            }
             default -> usage();
+        }
+    }
+
+    /** Returns false if the file can't be read as a PDF or the object isn't in it. */
+    private static boolean dumpPdf(Path file, Integer objectNumber) throws Exception {
+        StringBuilder out = new StringBuilder();
+        try {
+            PdfDocumentReader pdf = PdfDocumentReader.open(file);
+            boolean found = true;
+            if (objectNumber == null) {
+                new PdfDump().dump(pdf, out);
+            } else {
+                found = new PdfDump().dumpObject(pdf, objectNumber, out);
+            }
+            System.out.print(out);
+            return found;
+        } catch (PdfFormatException e) {
+            System.out.print(out);
+            System.err.println("dump-pdf: " + file + ": " + e.getMessage());
+            return false;
         }
     }
 
@@ -152,6 +188,9 @@ public final class App {
                                                CUST_NAME and ZIP_CODE
                   dump-afp <file.afp> [codePage]
                                                print an AFP file's structured fields and TLEs;
-                                               code page defaults to IBM037""");
+                                               code page defaults to IBM037
+                  dump-pdf <file.pdf> [objectNumber]
+                                               print a PDF's version, trailer and pages, or
+                                               one object with its decoded stream""");
     }
 }

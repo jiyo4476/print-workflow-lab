@@ -94,4 +94,15 @@ public class PdfObjectTest {
         assertEquals("indirect object", new PdfReference(1, 0),
                 new PdfIndirectObject(new PdfReference(1, 0), PdfNull.INSTANCE, 0).reference());
     }
+
+    /** A name read from a file can hold any byte; printed, it's PDF syntax again (7.3.5). */
+    @Test
+    public void namesPrintWithHashEscapes() {
+        String escape = String.valueOf((char) 0x1B);
+
+        assertEquals("space", "/A#20B", PdfName.of("A B").toString());
+        assertEquals("delimiters and hash", "/a#2Fb#28#23", PdfName.of("a/b(#").toString());
+        assertEquals("control character", "/x#1B#5B2J", PdfName.of("x" + escape + "[2J").toString());
+        assertEquals("high byte", "/caf#E9", PdfName.of("caf" + (char) 0xE9).toString());
+    }
 }

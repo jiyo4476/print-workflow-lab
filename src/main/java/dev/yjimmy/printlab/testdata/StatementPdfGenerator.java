@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import dev.yjimmy.printlab.testdata.StatementLayout.TextLine;
 import java.util.List;
+import org.apache.pdfbox.pdfwriter.compress.CompressParameters;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -17,6 +18,10 @@ import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
  * find it. The statements come from {@link StatementDataGenerator}, so
  * {@link StatementAfpGenerator} writes the same ones as AFP for the same seed.
  * {@link StatementLayout} says where each piece of text goes.
+ *
+ * <p>The file has a classic cross-reference table, not the cross-reference stream PDFBox writes
+ * by default, so {@code dump-pdf} can read it until PR 8 reads streams. Content streams are still
+ * Flate-compressed.
  */
 public final class StatementPdfGenerator {
 
@@ -59,7 +64,7 @@ public final class StatementPdfGenerator {
                     }
                 }
             }
-            doc.save(out.toFile());
+            doc.save(out.toFile(), CompressParameters.NO_COMPRESSION);
         }
     }
 

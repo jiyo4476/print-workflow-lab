@@ -500,20 +500,29 @@ PR handles each version's changes.
   object of a generated statement PDF, parsed at the offset PDFBox's xref gives, equals the
   object PDFBox read (dictionaries, arrays and references all the way down; raw stream bytes),
   with one stream's `/Length` made indirect first
-- 7b, Unit — `PdfStringTest.utf8TextStringWithBomDecodes`; `PdfDocumentReaderTest`:
-  `versionFromHeader`, `catalogVersionOverridesAnEarlierHeader`, `pdf20FileReads`
-- Unit — `XrefReaderTest`
-  - `findsStartxrefWithTrailingWhitespaceVariants` (`\n`, `\r\n`, missing final newline)
+- 7b, Unit — `PdfStringTest`: `utf8TextStringWithBomDecodes`,
+  `pdfDocEncodingMatchesPdfBoxForEveryDefinedByte`
+- 7b, Unit — `PdfDocumentReaderTest`
+  - `versionFromHeader`, `catalogVersionOverridesAnEarlierHeader`, `aLaterVersionIsReadNotRejected`,
+    `pdf20FileReads`
+  - `pagesInheritMediaBoxAndResourcesFromTheirAncestors`, `pageTreeLoopFails`,
+    `contentsMayBeOneStreamOrAnArray`
+- 7b, Unit — `XrefReaderTest`
+  - `findsStartxrefWithTrailingWhitespaceVariants` (`\n`, `\r\n`, CR, missing final newline)
   - `parsesMultipleSubsections`, `freeEntriesResolveToNull`
-  - `offsetPointingAtWrongObjectFailsWithMessage`
-- Unit — `StreamDecoderTest`
+  - `offsetPointingAtWrongObjectFailsWithMessage`, `streamWhoseLengthIsItselfFailsCleanly`
+  - `crossReferenceStreamIsReportedAsPr8`, `incrementalUpdateIsReportedAsPr8`
+- 7b, Unit — `StreamDecoderTest`
   - `flateRoundTrip` (compress with `Deflater`, decode, compare)
-  - `unknownFilterReportedAsUnsupported`
-- Differential — `PdfReaderVsPdfBoxTest` (generated files, several seeds)
-  - same page count, MediaBox per page and font resource names as PDFBox
+  - `unknownFilterReportedAsUnsupported`, `flateWithAPredictorIsReportedAsUnsupported`
+  - `truncatedFlateDataFails`, `decodingStopsPastTheSizeLimit`
+- 7b, Differential — `PdfReaderVsPdfBoxTest` (generated files, seeds 1, 7 and 42)
+  - `xrefOffsetsMatchPdfBox`
+  - `pagesMediaBoxesAndFontNamesMatchPdfBox`
   - `decodedContentStreamsMatchPdfBoxByteForByte`
-- Golden-file — `DumpPdfTest`: dump of `fixtures/pdf/two-statements.pdf` equals
-  `fixtures/pdf/two-statements.dump.txt`.
+- 7b, Golden-file — `DumpPdfTest`: dump of `fixtures/pdf/two-statements.pdf` equals
+  `fixtures/pdf/two-statements.dump.txt`, and object 38 (a content stream) equals
+  `two-statements.object-38.dump.txt`; `fixtureIsWhatClassicPdfWritesForSeed7`.
 - Manual: compare `dump-pdf` with `qpdf --qdf` or `mutool show` output for a real-world PDF.
 
 ### PR 8 — Modern PDF structure: xref streams, object streams, incremental updates `M`

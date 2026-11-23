@@ -21,6 +21,19 @@ Small checked-in files that tests read: AFP samples, workflow YAMLs, golden dump
   field (EPF at `0x31E7`, length 8) ends at byte 12,784, the file's size. The file has no named
   page groups or TLEs, so it checks the reader, not PRD-05's split.
 
+## `pdf/`
+
+- `two-statements.pdf` (6 KB): two generated statements, six pages, written by
+  `testsupport/ClassicPdf` for seed 7: a classic xref table, Flate content streams, and a fixed
+  `/ID`, so `DumpPdfTest.fixtureIsWhatClassicPdfWritesForSeed7` can check it's still what the
+  code writes. PDFBox renumbers the objects when it re-saves, so objects 1-28 are free entries.
+  Regenerate with `ClassicPdf 7 2 src/test/resources/fixtures/pdf/two-statements.pdf` (run its
+  `main` on the test classpath), then the golden dumps with `App dump-pdf`, and check the
+  differences by hand.
+- `two-statements.dump.txt`: the golden `dump-pdf` output for the file.
+- `two-statements.object-38.dump.txt`: the golden `dump-pdf <file> 38` output: page 1's
+  content stream, decoded.
+
 ## Local-only samples (`samples/`, not in git)
 
 Third-party files with no redistribution license stay on your machine in the gitignored

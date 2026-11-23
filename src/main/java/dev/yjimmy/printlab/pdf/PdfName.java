@@ -17,8 +17,21 @@ public record PdfName(String name) implements PdfObject {
         return new PdfName(name);
     }
 
+    /**
+     * The name as PDF syntax: {@code /A#20B} for {@code A B}. Bytes outside {@code 21-7E},
+     * delimiters and {@code #} are written {@code #xx} (7.3.5), so a name read from a file can't
+     * put control characters in a dump.
+     */
     @Override
     public String toString() {
-        return "/" + name;
+        StringBuilder text = new StringBuilder("/");
+        for (char c : name.toCharArray()) {
+            if (c < 0x21 || c > 0x7E || c == '#' || PdfLexer.isDelimiter(c)) {
+                text.append(String.format("#%02X", c & 0xFF));
+            } else {
+                text.append(c);
+            }
+        }
+        return text.toString();
     }
 }
