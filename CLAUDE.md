@@ -122,8 +122,8 @@ report's line total rounded *down* to two decimals, in its own commit.
   `Ebcdic.encodeStrict` rejects characters the code page lacks).
   `AfpWriter.write(StructuredField)` copies a field read from a file (padding dropped). Build
   small AFP test input with `testsupport/AfpBytes`.
-- **`pdf/`** reads PDF syntax without PDFBox (ISO 32000-1, section 7); PDFBox stays as the test
-  oracle (`PdfParserVsPdfBoxTest`). `PdfLexer` tokenizes a byte array (it can `seek`, because
+- **`pdf/`** reads PDF without PDFBox (ISO 32000-1, section 7); PDFBox stays as the test
+  oracle (`PdfParserVsPdfBoxTest`, `PdfReaderVsPdfBoxTest`). `PdfLexer` tokenizes a byte array (it can `seek`, because
   PDFs are read from xref offsets) and decodes name `#xx` and string escapes. `PdfParser` builds
   the sealed `PdfObject` records (`PdfDictionary`, `PdfArray`, `PdfName`, `PdfString` (bytes),
   `PdfNumber`, `PdfBoolean`, `PdfNull`, `PdfReference`, `PdfStream` (raw, still filtered
@@ -131,9 +131,18 @@ report's line total rounded *down* to two decimals, in its own commit.
   `n g obj ... endobj` with stream data, sized by `/Length`, which may be a reference resolved
   through the constructor's resolver. Null dictionary entries are dropped; nesting is capped at
   500 so bad input can't overflow the stack. Errors are `PdfFormatException` with the byte
-  offset. Nothing rejects a PDF version (1.0-2.0 share the syntax); PDF 2.0 UTF-8 text strings
-  are 7b (PRD-07, "PDF versions"). The xref table, Flate decoding, the page tree and
-  `dump-pdf` are PR 7b.
+  offset. `XrefReader` finds the last `startxref`, reads one classic `xref` table and trailer,
+  and resolves objects lazily (cached; free, missing or wrong-generation references are
+  `PdfNull`); a cross-reference stream, `/Prev` or `/XRefStm` fails naming PR 8.
+  `StreamDecoder` undoes `/FlateDecode` (with a decoded-size cap) and throws
+  `UnsupportedFilterException` for anything else, including a `/Predictor`.
+  `PdfDocumentReader` reads the version (header, raised by the catalog's `/Version`; none is
+  rejected), the catalog, and the page tree, walked with a stack (a node seen twice fails), with
+  `Resources`, `MediaBox`, `CropBox` and `Rotate` inherited into each `PdfPage`. `PdfString.text()`
+  decodes UTF-16BE, UTF-8 (PDF 2.0) and PDFDocEncoding. `PdfDump` backs `App dump-pdf`; names
+  and strings print as PDF syntax, so file bytes never reach the terminal raw. Build small PDF
+  test input with `testsupport/PdfBytes`; `testsupport/ClassicPdf` writes a seeded statement PDF
+  with a fixed `/ID` (the `fixtures/pdf/` fixture).
 - **`testdata/`**: `StatementDataGenerator` draws the statements for a seed, `StatementLayout`
   places their text, and `StatementPdfGenerator` / `StatementAfpGenerator` write them, so one
   seed gives the same statements in both formats (`AfpStatementWorkflowTest` checks that the PDF
@@ -169,7 +178,8 @@ report's line total rounded *down* to two decimals, in its own commit.
   fixed id `test0001`), `TestWorkflows.of`/`step`/`load` (`load` reads a real YAML and redirects
   `WriteOutput.outputDir`), `RecordingStep` (records calls, can throw on the Nth call),
   `TickingClock` (deterministic clock, +1 s per read), `AfpBytes` (builds AFP fields, TLEs and
-  triplets as bytes). Always give the engine an `errorDir` under
+  triplets as bytes), `PdfBytes` (builds a PDF from object text, with the xref offsets worked
+  out), `ClassicPdf` (a seeded statement PDF, same bytes every time). Always give the engine an `errorDir` under
   the temp folder.
   `web/TomcatTestServer` is embedded Tomcat on a random port for HTTP-level servlet tests.
   Fixtures go in `src/test/resources/fixtures/` and are loaded from the classpath. Update golden

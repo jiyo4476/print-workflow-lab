@@ -49,6 +49,7 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 | `RunExternalProgramStep` | External steps calling other programs |
 | `documents.csv` | Document properties file |
 | `afp/`: `AfpReader`, `AfpWriter`, `TleDecoder`, `TleEncoder`, `dump-afp` | AFP structured fields, page groups and TLEs |
+| `pdf/`: `XrefReader`, `PdfDocumentReader`, `dump-pdf` | What's inside the PDF input a workflow receives |
 | `generate-afp` | AFP print files from a composition system, with index tags per document |
 | WAR on Tomcat, `/api/*` servlets | The workflow server and its web services |
 | Marionette dashboard (`src/main/webapp/`) | The operator web interface |
@@ -68,6 +69,8 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw -q exec:java -Dexec.args="run --devices my-devices.yaml"  # ...from another devices file
 ./mvnw -q exec:java -Dexec.args="run workflows/statements-afp.yaml *.afp"  # one device on ./hotfolder
 ./mvnw -q exec:java -Dexec.args="dump-afp statement.afp"  # print an AFP file's structure
+./mvnw -q exec:java -Dexec.args="dump-pdf run.pdf"        # print a PDF's version, trailer and pages
+./mvnw -q exec:java -Dexec.args="dump-pdf run.pdf 12"     # one object (a Contents number from the dump)
 ```
 
 Then move `run.pdf` into `hotfolder/pdf/` (or `run.afp` into `hotfolder/afp/`) and look in
@@ -282,6 +285,37 @@ compared document by document. A bad-address statement has an empty `name` TLE o
 ID. `--tle-names legacy` names the TLEs `ACCT_NO`, `CUST_NAME` and `ZIP_CODE` instead, the way
 another composition application might.
 
+### Reading PDF
+
+A PDF is read from the end, unlike AFP. `startxref` near the end gives the offset of the
+cross-reference table, which gives the byte offset of every numbered object (`12 0 obj ...
+endobj`); the trailer after it points at the catalog, and the catalog at the page tree. Objects
+refer to each other as `12 0 R` and are read only when something asks for them. Page content is
+a stream of drawing operators, usually Flate-compressed.
+
+`dump-pdf` prints what the `pdf/` package finds, without PDFBox:
+
+```
+PDF       1.4
+Trailer   <</Root 29 0 R /ID [<99170FBB...> <99170FBB...>] /Size 57>>
+Objects   28 in use, 29 free; xref at offset 0x000011DB (4571)
+Catalog   29 0 R  <</Type /Catalog /Version /1.4 /Pages 30 0 R>>
+Pages     6
+Page 1    31 0 R
+  MediaBox  [0.0 0.0 612.0 792.0]
+  Fonts     /F1 Helvetica-Bold, /F2 Helvetica
+  Contents  38 0 R  /FlateDecode, 474 bytes, 1817 decoded
+```
+
+`dump-pdf two-statements.pdf 38` prints one object: its dictionary one entry per line, and its stream
+decoded when that gives text (a content stream's `BT /F1 14 Tf ... ET`). Every version from
+PDF 1.0 to 2.0 is read; a page inherits `MediaBox`, `Resources`, `CropBox` and `Rotate` from the
+page-tree nodes above it. Only Flate is decoded: a stream with another filter (`/DCTDecode`, a
+JPEG) is reported as not decoded, and the rest of the file still dumps. Files with a
+cross-reference stream (most files PDFBox and Acrobat write since PDF 1.5) or an incremental
+update fail with a message naming PR 8, which adds them; `generate` saves a classic table so its
+runs can be dumped. The exit code is 1 when the file can't be read or the object isn't there.
+
 ### Splitting AFP
 
 `workflows/statements-afp.yaml` is the statement workflow for AFP input. Its `SplitAfp` step
@@ -358,7 +392,7 @@ all three together.
 
 ```
 src/main/java/dev/yjimmy/printlab/
-  App.java                 entry point: run | generate | generate-afp | dump-afp
+  App.java                 entry point: run | generate | generate-afp | dump-afp | dump-pdf
   workflow/                Job, Document, Step, WorkflowDefinition, WorkflowEngine, StepRegistry
   workflow/rules/          Condition, Rule, RuleParser: routing rules and `when:`
   steps/                   SetJobPropsFromTextFile, SplitPdf, SplitAfp, MapProperties,
@@ -368,6 +402,7 @@ src/main/java/dev/yjimmy/printlab/
   testdata/                fake statement print runs: shared data and layout, PDF and AFP writers
   afp/                     AFP reader and writer, field names, EBCDIC, TLE decoder and encoder,
                            dump tool
+  pdf/                     PDF lexer, parser, xref table, Flate decoding, page tree, dump tool
   web/                     servlets (HealthServlet)
 src/main/webapp/
   index.html               dashboard page; loads WebJars, then js/
@@ -394,6 +429,12 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
   - [x] Test-data writer with page groups + TLEs
   - [x] `SplitAfp` step that reads document properties from TLEs, and `MapProperties` for
         other TLE names
+- [ ] **PDF without PDFBox:**
+  - [x] Object reader, cross-reference table, page tree and `dump-pdf`
+  - [ ] Cross-reference streams, object streams, incremental updates
+  - [ ] Content streams and text positions
+  - [ ] PDF/VT document parts (DPart) indexing
+  - [ ] Preflight step
 - [x] Routing rules: send documents to an exception queue (e.g. invalid zip), flag large
       documents for a different envelope
 - [ ] Barcode step (ZXing) for inserter control

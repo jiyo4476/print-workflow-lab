@@ -14,12 +14,17 @@
  *       string escapes.</li>
  *   <li>{@link dev.yjimmy.printlab.pdf.PdfParser} builds objects from tokens: direct objects,
  *       and indirect objects with their stream data.</li>
+ *   <li>{@link dev.yjimmy.printlab.pdf.XrefReader} reads the cross-reference table and trailer,
+ *       and reads objects through it when they're asked for.</li>
+ *   <li>{@link dev.yjimmy.printlab.pdf.StreamDecoder} undoes a stream's Flate filter.</li>
+ *   <li>{@link dev.yjimmy.printlab.pdf.PdfDocumentReader} gives the version, the catalog and the
+ *       pages, with inherited attributes resolved; {@link dev.yjimmy.printlab.pdf.PdfDump}
+ *       prints them for {@code App dump-pdf}.</li>
  * </ul>
  *
- * <p>Planned next (PR 7b): the cross-reference table and trailer, Flate stream decoding, the
- * page tree, and {@code App dump-pdf}. Then xref and object streams (PR 8) and content streams
- * (PR 9). PDFBox stays in the project as the test oracle: tests check this package against what
- * PDFBox reports for the same file.
+ * <p>Next: cross-reference streams, object streams and incremental updates (PR 8), then content
+ * streams (PR 9). PDFBox stays in the project as the test oracle: tests check this package
+ * against what PDFBox reports for the same file.
  *
  * <p>The whole file is held in memory as a byte array, which keeps random access simple; a
  * production reader would map the file instead.

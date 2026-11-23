@@ -80,12 +80,13 @@ and where this project handles it:
 | 1.4 | Catalog `/Version` can raise the header's version (set by an incremental update) | 7b (FR-9) |
 | 1.5 | Cross-reference streams and object streams instead of a classic `xref` table | PR 8 |
 | all | Incremental updates: several xref sections, chained by `/Prev` | PR 8 |
-| 2.0 (ISO 32000-2) | Text strings may be UTF-8, marked `EF BB BF`, besides UTF-16BE (`FE FF`) and PDFDocEncoding | 7b (FR-9): `PdfString.text()` reads only UTF-16BE today |
+| 2.0 (ISO 32000-2) | Text strings may be UTF-8, marked `EF BB BF`, besides UTF-16BE (`FE FF`) and PDFDocEncoding | 7b (FR-9): `PdfString.text()` |
 | 2.0 | Document parts (DPart), from PDF/VT, become part of the base spec (14.12) | PR 10 |
 
-Nothing in 7a rejects a version: a PDF 2.0 file's objects parse the same as a PDF 1.4 file's.
-Test fixtures should include a PDF 2.0 file once 7b reads headers (PDFBox can write one with
-`document.setVersion(2.0f)`), with a UTF-8 text string in its `/Info` dictionary.
+Nothing rejects a version: a PDF 2.0 file's objects parse the same as a PDF 1.4 file's, and a
+version later than 2.0 is read as 2.0 and reported by `dump-pdf`.
+`PdfDocumentReaderTest.pdf20FileReads` reads a PDF 2.0 file PDFBox wrote (header and catalog
+both 2.0) with a UTF-8 `/Title` in its `/Info` dictionary.
 
 ## Design notes
 
@@ -122,11 +123,19 @@ Test fixtures should include a PDF 2.0 file once 7b reads headers (PDFBox can wr
   `streamWithDirectLength`, `streamWithIndirectLength`, `unterminatedDictionaryFailsWithOffset`
 - Unit — `XrefReaderTest`: `findsStartxrefWithTrailingWhitespaceVariants`,
   `parsesMultipleSubsections`, `freeEntriesResolveToNull`,
-  `offsetPointingAtWrongObjectFailsWithMessage`
-- Unit — `StreamDecoderTest`: `flateRoundTrip`, `unknownFilterReportedAsUnsupported`
+  `offsetPointingAtWrongObjectFailsWithMessage`, plus `streamWhoseLengthIsItselfFailsCleanly`,
+  `crossReferenceStreamIsReportedAsPr8`, `incrementalUpdateIsReportedAsPr8`,
+  `objectsAreReadOnlyWhenResolvedAndThenKept`
+- Unit — `StreamDecoderTest`: `flateRoundTrip`, `unknownFilterReportedAsUnsupported`,
+  `flateWithAPredictorIsReportedAsUnsupported`, `truncatedFlateDataFails`,
+  `decodingStopsPastTheSizeLimit`
+- Unit — `PdfDocumentReaderTest`: `pagesInheritMediaBoxAndResourcesFromTheirAncestors`,
+  `pageTreeLoopFails`, `contentsMayBeOneStreamOrAnArray`
+- Unit — `PdfStringTest.pdfDocEncodingMatchesPdfBoxForEveryDefinedByte`
 - Differential — `PdfReaderVsPdfBoxTest` (several seeds), including
   `decodedContentStreamsMatchPdfBoxByteForByte`
-- Golden-file — `DumpPdfTest` (`fixtures/pdf/two-statements.pdf`)
+- Golden-file — `DumpPdfTest` (`fixtures/pdf/two-statements.pdf`): the whole-file dump, one
+  content stream's object dump, and a check that `ClassicPdf` still writes the fixture's bytes
 - Manual: compare `dump-pdf` with `qpdf --qdf` or `mutool show` on a real-world PDF.
 
 ## Risks and open questions
@@ -149,6 +158,36 @@ Test fixtures should include a PDF 2.0 file once 7b reads headers (PDFBox can wr
   review: 200,000 `[` overflowed the stack.
 - `0 0 R` parses as a reference even though object 0 is always free; 7b's `XrefReader`
   resolves it to null, like any free entry.
+
+**Decided in 7b**
+- One classic `xref` section is read. A trailer with `/Prev` (an incremental update) or
+  `/XRefStm` (a hybrid file), or `startxref` pointing at an object (a cross-reference stream),
+  fails with a message naming PR 8, rather than reading the wrong objects.
+- `startxref` is the last one in the file, found by searching backward from the end, so
+  `\n`, `\r\n`, a lone CR and a missing final newline all work (FR-4).
+- A free entry, an object number the table doesn't have, and a reference with a different
+  generation all resolve to `PdfNull` (7.3.10). Objects are read when first resolved, then kept
+  (NFR-1). An object whose stream `/Length` refers to itself fails instead of recursing, and so
+  does a chain of more than 32 reads nested through indirect lengths (found in review: 20,000
+  chained streams overflowed the stack). Only the outermost read adds its context to the error.
+- An xref offset at the wrong object names both (`the xref entry for object 2 0 R points at
+  offset 73, but object 1 0 R is there`, FR-5); one in the middle of an object names the
+  object being read.
+- The header may follow other bytes within the first 1024 (Annex H); offsets are still from the
+  start of the file. The catalog's `/Version` only raises the version (7.7.2).
+- PDFDocEncoding is the full Annex D table, checked against PDFBox for every defined byte; the
+  three undefined codes (`7F`, `9F`, `AD`) read as U+FFFD.
+- A page inherits all four inheritable attributes (Table 30): `Resources`, `MediaBox`,
+  `CropBox` and `Rotate`, resolved. The tree is walked with a stack, not recursion, and a node
+  that appears twice fails, so a looping tree can't hang or overflow the stack.
+- Flate with a `/Predictor` (xref streams, PNG images) is reported as unsupported until PR 8.
+  Truncated or corrupt Flate data fails (PDFBox is more lenient). One stream may decode to at
+  most 256 MiB, so a small stream can't exhaust memory.
+- An encrypted file is reported (`/Encrypt` in the trailer), not decrypted (PRD-11 detects it).
+- Names print with `#xx` escapes and strings as `(...)` or `<hex>`, so file bytes can't put
+  control characters on the terminal.
+- `generate` now saves a classic xref table (`CompressParameters.NO_COMPRESSION`), so
+  `dump-pdf` reads its runs; content streams are still Flate-compressed.
 
 ## Definition of done
 

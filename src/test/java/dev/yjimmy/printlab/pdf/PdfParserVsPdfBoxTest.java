@@ -31,8 +31,8 @@ import org.junit.rules.TemporaryFolder;
 
 /**
  * Parses every object of a generated statement PDF at the offset PDFBox's cross-reference table
- * gives, and checks it against the object PDFBox read there. Until PR 7b's {@code XrefReader},
- * PDFBox supplies the offsets.
+ * gives, and checks it against the object PDFBox read there. PDFBox supplies the offsets, so this
+ * checks the parser on its own; {@link PdfReaderVsPdfBoxTest} checks {@link XrefReader}'s.
  *
  * <p>PDFBox writes every {@code /Length} directly, so before saving, the first page's content
  * stream gets an indirect one ({@code /Length 65 0 R}): the form writers use when they write the

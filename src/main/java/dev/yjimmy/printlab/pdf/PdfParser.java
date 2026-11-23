@@ -258,6 +258,8 @@ public final class PdfParser {
             int resumeAt = position();
             try {
                 length = resolver.apply(ref);
+            } catch (PdfFormatException e) {
+                throw e; // already says where and what; wrapping at every level would repeat it
             } catch (RuntimeException e) {
                 throw new PdfFormatException(stream.offset(), "stream of object " + owner
                         + " has /Length " + ref + ", which can't be resolved: " + e.getMessage());
