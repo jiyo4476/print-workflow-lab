@@ -76,7 +76,7 @@ common production surprise: a "small edit" that leaves the old content still ins
 - Integration — `ObjectStreamTest`: `objectInsideObjectStreamResolves`,
   `objectStreamWithBadFirstOffsetFailsWithMessage`
 - Integration — `IncrementalUpdateTest`: `newestRevisionWins`, `previousRevisionStillReadable`,
-  `xrefDumpShowsTwoSectionsAndChangedObjects` (golden `fixtures/pdf/two-revisions.xref.txt`),
+  `xrefDumpShowsTwoSectionsAndChangedObjects` (golden `fixtures/pdf/two-revisions.xref.dump.txt`),
   `objectFreedInAnUpdateResolvesToNullButIsInTheEarlierRevision`, `prevLoopFails`
 - Integration — `XrefStreamTest`: also `indexRangesAndAMissingTypeField`,
   `flateStreamWithAPngPredictorReads`, `hybridFileReadsObjectsFromBothTheTableAndTheStream`

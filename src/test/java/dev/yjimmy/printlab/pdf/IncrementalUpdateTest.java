@@ -128,7 +128,7 @@ public class IncrementalUpdateTest {
 
         new PdfDump().dumpXref(pdf, out);
 
-        try (InputStream golden = getClass().getResourceAsStream("/fixtures/pdf/two-revisions.xref.txt")) {
+        try (InputStream golden = getClass().getResourceAsStream("/fixtures/pdf/two-revisions.xref.dump.txt")) {
             assertEquals("dump-pdf --xref", new String(golden.readAllBytes(), StandardCharsets.UTF_8), out.toString());
         }
     }

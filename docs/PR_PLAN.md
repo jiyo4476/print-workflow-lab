@@ -555,7 +555,7 @@ PR handles each version's changes.
   - `newestRevisionWins`
   - `previousRevisionStillReadable`
   - `xrefDumpShowsTwoSectionsAndChangedObjects` (a `PdfBytes` file, golden
-    `fixtures/pdf/two-revisions.xref.txt`)
+    `fixtures/pdf/two-revisions.xref.dump.txt`)
   - `objectFreedInAnUpdateResolvesToNullButIsInTheEarlierRevision`, `prevLoopFails`
 - Differential — `PdfReaderVsPdfBoxTest` extended to compressed files (and the AFPWorld sample
   PDF when downloaded).
