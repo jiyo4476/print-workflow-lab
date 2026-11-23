@@ -100,7 +100,11 @@ public final class App {
                 }
             }
             case "dump-pdf" -> {
-                if (args.length == 3 && args[1].equals("--xref")) {
+                if (args.length > 1 && args[1].equals("--xref")) {
+                    if (args.length != 3) {
+                        usage();
+                        return;
+                    }
                     if (!dumpPdf(Path.of(args[2]), null, true)) {
                         System.exit(1);
                     }

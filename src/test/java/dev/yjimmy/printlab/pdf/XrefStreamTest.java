@@ -213,6 +213,24 @@ public class XrefStreamTest {
         return assertThrows(PdfFormatException.class, () -> new XrefReader(pdf.bytes())).getMessage();
     }
 
+    /**
+     * 20 MB of 1-byte rows compresses to about 20 KB, and would be 20 million entries: more than
+     * a PDF may have (Annex C), so it fails instead of filling memory (NFR-3).
+     */
+    @Test
+    public void moreEntriesThanAPdfMayHaveFail() {
+        PdfBytes pdf = new PdfBytes("1.5").object(1, CATALOG);
+        int xref = pdf.size();
+        int rows = 20_000_000;
+        pdf.stream(3, "/Type /XRef /Size " + rows + " /W [1 0 0] /Filter /FlateDecode", deflate(new byte[rows]))
+                .raw("startxref\n" + xref + "\n%%EOF\n");
+
+        PdfFormatException e = assertThrows(PdfFormatException.class, () -> new XrefReader(pdf.bytes()));
+
+        assertThat(e.getMessage()).contains("cross-reference stream 3 0 R lists 20000000 objects, more than the "
+                + XrefReader.MAX_OBJECTS + " a PDF may have");
+    }
+
     @Test
     public void unknownEntryTypesAreFreeAndHugeValuesFail() {
         PdfBytes pdf = new PdfBytes("1.5").object(1, CATALOG);

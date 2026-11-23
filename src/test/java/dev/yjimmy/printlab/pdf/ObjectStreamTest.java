@@ -131,6 +131,25 @@ public class ObjectStreamTest {
     }
 
     @Test
+    public void tableOrObjectStreamCountPastTheLimitFails() {
+        PdfBytes table = new PdfBytes("1.4").object(1, "<< /Type /Catalog /Pages 2 0 R >>");
+        int xref = table.size();
+        table.raw("xref\n0 9000000\n");
+        assertThat(assertThrows(PdfFormatException.class, () -> new XrefReader(table.raw("startxref\n" + xref
+                + "\n%%EOF\n").bytes())).getMessage())
+                .contains("a subsection of 9000000 entries is more than the " + XrefReader.MAX_OBJECTS);
+
+        PdfBytes pdf = new PdfBytes("1.5").object(1, "<< /Type /Catalog /Pages 2 0 R >>")
+                .object(2, "<< /Type /Pages /Kids [] /Count 0 >>")
+                .stream(3, "/Type /ObjStm /N 9000000 /First 4", ascii("4 0\n42"))
+                .inObjectStream(4, 3, 0);
+        XrefReader xrefReader = new XrefReader(pdf.buildWithXrefStream(5, "/Root 1 0 R"));
+        assertThat(assertThrows(PdfFormatException.class, () -> xrefReader.resolve(new PdfReference(4, 0)))
+                .getMessage()).contains("object stream 3 0 R has /N 9000000, more than the "
+                        + XrefReader.MAX_OBJECTS + " objects a PDF may have");
+    }
+
+    @Test
     public void objectStreamThatCantBeDecodedFails() {
         PdfBytes pdf = new PdfBytes("1.5").object(1, "<< /Type /Catalog /Pages 2 0 R >>")
                 .object(2, "<< /Type /Pages /Kids [] /Count 0 >>")

@@ -113,6 +113,13 @@ public final class XrefReader {
     static final int MAX_SECTIONS = 10_000;
 
     /**
+     * The most indirect objects a PDF may have (ISO 32000-1, Annex C.2). A section or object
+     * stream claiming more is broken, and reading it would fill memory: a small stream can
+     * inflate to 256 MiB of 1-byte rows, 268 million entries.
+     */
+    static final int MAX_OBJECTS = 8_388_607;
+
+    /**
      * Reading a stream reads its indirect {@code /Length}, which is read the same way, so a bad
      * file could chain thousands of reads one inside the other. A real length is a number, so one
      * level is all a valid file needs (two for an object in an object stream); past this, reading
@@ -262,7 +269,12 @@ public final class XrefReader {
                 break;
             }
             int start = nonNegativeInt(first, "a subsection's first object number, or 'trailer'");
-            int count = nonNegativeInt(lexer.next(), "the subsection's entry count");
+            Token countToken = lexer.next();
+            int count = nonNegativeInt(countToken, "the subsection's entry count");
+            if (count > MAX_OBJECTS - table.size()) {
+                throw new PdfFormatException(countToken.offset(), "a subsection of " + count
+                        + " entries is more than the " + MAX_OBJECTS + " objects a PDF may have");
+            }
             for (int i = 0; i < count; i++) {
                 Token position = lexer.next();
                 String entry = "object " + (start + i) + "'s entry";
@@ -334,6 +346,10 @@ public final class XrefReader {
             throw new PdfFormatException(offset, name + " has /W [0 0 0]: rows of no bytes");
         }
         long rowCount = ranges.stream().mapToLong(range -> range[1]).sum();
+        if (rowCount > MAX_OBJECTS) {
+            throw new PdfFormatException(offset, name + " lists " + rowCount + " objects, more than the "
+                    + MAX_OBJECTS + " a PDF may have");
+        }
         if (rowCount * rowLength > rows.length) {
             throw new PdfFormatException(offset, name + " has " + rowCount + " rows of " + rowLength
                     + " bytes in /Index, but only " + rows.length + " decoded bytes");
@@ -596,6 +612,10 @@ public final class XrefReader {
                     + " holds compressed objects, but is not an object stream (/Type /ObjStm)");
         }
         int count = nonNegativeInt(stream.dictionary().get("N"), inFile.offset(), name + " /N");
+        if (count > MAX_OBJECTS) {
+            throw new PdfFormatException(inFile.offset(), name + " has /N " + count + ", more than the "
+                    + MAX_OBJECTS + " objects a PDF may have");
+        }
         int first = nonNegativeInt(stream.dictionary().get("First"), inFile.offset(), name + " /First");
         byte[] decoded;
         try {

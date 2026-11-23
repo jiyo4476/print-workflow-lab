@@ -111,6 +111,13 @@ common production surprise: a "small edit" that leaves the old content still ins
   runs past `/First` all fail naming the stream. The offset in the exception is the object
   stream's in the file; the message gives the offset in its decoded data.
 - A `/Prev` loop fails, and so do more than 10,000 sections.
+- A section or object stream may list at most 8,388,607 objects, PDF's own limit (Annex C.2).
+  Found in review: a 20 KB stream can inflate to 20 MB of 1-byte rows (`/W [1 0 0]`), which
+  would be 20 million entries; up to the 256 MiB decode cap it would exhaust memory (NFR-3).
+- A linearized file ("fast web view") has a second cross-reference section for its first page
+  even if it was never edited, so it reports two revisions. Its entries merge like any other's,
+  so objects resolve correctly; telling linearization apart from an edit (the `/Linearized`
+  dictionary) is left out, as PRD-08's non-goals say.
 - `xrefDumpShowsTwoSectionsAndChangedObjects` uses a file built with `PdfBytes`, not PDFBox's
   `saveIncremental`, because PDFBox writes a new random `/ID` on every incremental save, so its
   output can't be a golden file. A second test checks the dump of a PDFBox update names the
