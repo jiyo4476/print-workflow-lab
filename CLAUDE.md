@@ -140,11 +140,20 @@ report's line total rounded *down* to two decimals, in its own commit.
   `StreamDecoder` undoes `/FlateDecode` (with a decoded-size cap) and PNG predictors 10-15
   (`PngPredictor`), and throws `UnsupportedFilterException` for anything else, including the
   TIFF predictor.
+  `ContentStreamParser` turns a page's decoded content (`PdfDocumentReader.content(page)`, its
+  streams joined with newlines) into `Operation(operator, operands, offset)`; operands are the
+  ordinary objects, any other keyword is an operator (not checked against `ContentOperators`,
+  Annex A's 73). An inline image is one `BI` operation whose operand is a `PdfStream`; its data
+  ends by `/L`, else the size its parameters give when unfiltered, else (or when that size
+  doesn't end at `EI`) a scan for an `EI` followed by content. Operands are capped (1,000 per
+  operator, 100,000 items per array); operators print with `#xx` escapes (`PdfLexer.printable`). PDFBox's `PDFStreamParser` is the oracle for operators but not inline
+  images (3.0.3 loses what follows them).
   `PdfDocumentReader` reads the version (header, raised by the catalog's `/Version`; none is
   rejected), the catalog, and the page tree, walked with a stack (a node seen twice fails), with
   `Resources`, `MediaBox`, `CropBox` and `Rotate` inherited into each `PdfPage`. `PdfString.text()`
   decodes UTF-16BE, UTF-8 (PDF 2.0) and PDFDocEncoding. `PdfDump` backs `App dump-pdf` (and
-  `dump-pdf --xref`, the sections and what each update changed); names
+  `dump-pdf --xref`, the sections and what each update changed) and `App dump-content`
+  (operators indented inside `q`/`Q`, `BT`/`ET`, marked content, each described); names
   and strings print as PDF syntax, so file bytes never reach the terminal raw. Build small PDF
   test input with `testsupport/PdfBytes` (classic tables, cross-reference streams, object
   streams and incremental updates, all uncompressed); `testsupport/ClassicPdf` writes a seeded

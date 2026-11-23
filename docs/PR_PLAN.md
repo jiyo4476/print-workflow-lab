@@ -575,10 +575,17 @@ PR handles each version's changes.
 - Out of scope, documented: CID/Type 0 fonts and `ToUnicode` maps (detected and reported).
 
 **Tests**
-- Unit — `ContentStreamParserTest`
+- Split in two (PRD-09): 9a is the parser and `dump-content`, 9b the state, positions and
+  extractor.
+- Unit — `ContentStreamParserTest` (9a)
   - `operandsAttachToFollowingOperator`
   - `tjArrayWithKerningNumbers`
-  - `inlineImageContainingEiBytesIsSkipped`
+  - `inlineImageContainingEiBytesIsSkipped` (ended by the size its parameters give)
+  - `inlineImageLengthIsUsedWhenGiven`, `filteredInlineImageEndsAtTheEiFollowedByContent`
+- Differential — `ContentStreamVsPdfBoxTest` (9a): the same operators as PDFBox's
+  `PDFStreamParser` for generated statements; inline images checked by hand, since PDFBox
+  3.0.3 loses what follows them
+- Golden — `DumpContentTest.twoStatementsPageOneMatchesGoldenDump` (9a)
 - Unit — `GraphicsStateTest`
   - `qAndQRestoreState`
   - `cmConcatenatesInCorrectOrder`

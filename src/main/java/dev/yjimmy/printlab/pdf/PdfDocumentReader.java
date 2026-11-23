@@ -1,5 +1,6 @@
 package dev.yjimmy.printlab.pdf;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -235,6 +236,39 @@ public final class PdfDocumentReader {
             streams.add(object.get());
         }
         return streams;
+    }
+
+    /**
+     * The page's content, decoded: its content streams joined with a newline between them, as
+     * 7.8.2 says to read them (a split may fall between any two tokens, never inside one).
+     * Empty for a page with no content.
+     *
+     * @throws UnsupportedFilterException if a stream uses a filter {@link StreamDecoder} lacks
+     */
+    public byte[] content(PdfPage page) {
+        List<PdfIndirectObject> streams = contentStreams(page);
+        List<byte[]> parts = new ArrayList<>();
+        for (PdfIndirectObject stream : streams) {
+            parts.add(decode((PdfStream) stream.object()));
+        }
+        return join(page, streams, parts);
+    }
+
+    /** {@code parts}, the page's decoded {@code streams}, joined as {@link #content} joins them. */
+    static byte[] join(PdfPage page, List<PdfIndirectObject> streams, List<byte[]> parts) {
+        ByteArrayOutputStream joined = new ByteArrayOutputStream();
+        for (int i = 0; i < parts.size(); i++) {
+            byte[] part = parts.get(i);
+            if ((long) joined.size() + part.length + (i > 0 ? 1 : 0) > StreamDecoder.DEFAULT_MAX_DECODED_BYTES) {
+                throw new PdfFormatException(streams.get(i).offset(), "page " + page.number()
+                        + "'s content is more than " + StreamDecoder.DEFAULT_MAX_DECODED_BYTES + " bytes decoded");
+            }
+            if (i > 0) {
+                joined.write('\n');
+            }
+            joined.writeBytes(part);
+        }
+        return joined.toByteArray();
     }
 
     /** The stream's filter names, resolved through the xref. */

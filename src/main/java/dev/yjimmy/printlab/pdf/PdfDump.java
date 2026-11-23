@@ -156,6 +156,174 @@ public final class PdfDump {
         }
     }
 
+    /** Where the descriptions start in {@link #dumpContent}, unless the operation is longer. */
+    static final int COMMENT_COLUMN = 40;
+
+    /**
+     * Prints page {@code pageNumber}'s operators, one per line, indented inside {@code q}/{@code Q},
+     * {@code BT}/{@code ET} and marked content, each with what it does:
+     * <pre>
+     * Page 1 of 6  3 0 R
+     *   Contents  10 0 R  /FlateDecode, 474 bytes, 1817 decoded
+     * BT                                      % begin text
+     *   /F1 14 Tf                             % font and size: Helvetica-Bold
+     *   72 752 Td                             % next line, offset by tx ty
+     *   (Front Range Credit Union) Tj         % show text
+     * ET                                      % end text
+     * 118 operations
+     * </pre>
+     * An inline image is one line with its size; {@code Do} names the XObject's subtype, and a
+     * form XObject's own content isn't followed. An unmatched {@code Q}, {@code ET} or
+     * {@code EMC} and an operator Annex A doesn't list are noted on their line, and the dump
+     * stops, with a note, at content that can't be parsed.
+     *
+     * @return false if there's no such page or its content can't be decoded or parsed
+     */
+    public boolean dumpContent(PdfDocumentReader pdf, int pageNumber, Appendable out) {
+        List<PdfPage> pages = pdf.pages();
+        if (pageNumber < 1 || pageNumber > pages.size()) {
+            line(out, "Page " + pageNumber + " is not in the document (it has " + pages.size()
+                    + (pages.size() == 1 ? " page)" : " pages)"));
+            return false;
+        }
+        PdfPage page = pages.get(pageNumber - 1);
+        line(out, "Page " + pageNumber + " of " + pages.size() + "  "
+                + (page.reference() == null ? "(direct)" : page.reference()));
+        List<PdfIndirectObject> streams = pdf.contentStreams(page);
+        if (streams.isEmpty()) {
+            line(out, "  Contents  none");
+        }
+        List<byte[]> parts = new ArrayList<>();
+        for (PdfIndirectObject stream : streams) {
+            Decoded decoded = describe(pdf, (PdfStream) stream.object());
+            parts.add(decoded.data());
+            line(out, "  Contents  " + stream.reference() + "  " + decoded.summary());
+        }
+        if (parts.contains(null)) {
+            line(out, "% the content can't be shown: a stream above can't be decoded");
+            return false;
+        }
+        ContentStreamParser parser = new ContentStreamParser(PdfDocumentReader.join(page, streams, parts));
+        Map<String, Integer> open = new TreeMap<>();
+        int depth = 0;
+        int compatibility = 0;
+        int count = 0;
+        while (true) {
+            Operation op;
+            try {
+                op = parser.next();
+            } catch (PdfFormatException e) {
+                line(out, "% stopped: " + e.getMessage());
+                return false;
+            }
+            if (op == null) {
+                break;
+            }
+            count++;
+            String operator = op.operator();
+            String note = null;
+            String closes = switch (operator) {
+                case "Q" -> "q";
+                case "ET" -> "BT";
+                case "EMC" -> "BMC";
+                default -> null;
+            };
+            if (closes != null) {
+                if (open.getOrDefault(closes, 0) > 0) {
+                    open.merge(closes, -1, Integer::sum);
+                    depth--;
+                } else {
+                    note = operator + " without a " + (closes.equals("BMC") ? "BMC or BDC" : closes) + " before it";
+                }
+            }
+            if (operator.equals("EX")) {
+                compatibility = Math.max(0, compatibility - 1);
+            }
+            String description = note != null ? note : description(pdf, page, op, compatibility > 0);
+            String text = "  ".repeat(depth) + op;
+            line(out, text.length() < COMMENT_COLUMN
+                    ? String.format("%-" + COMMENT_COLUMN + "s%% %s", text, description)
+                    : text + "  % " + description);
+            String opens = switch (operator) {
+                case "q" -> "q";
+                case "BT" -> "BT";
+                case "BMC", "BDC" -> "BMC";
+                default -> null;
+            };
+            if (opens != null) {
+                open.merge(opens, 1, Integer::sum);
+                depth++;
+            }
+            if (operator.equals("BX")) {
+                compatibility++;
+            }
+        }
+        line(out, count + (count == 1 ? " operation" : " operations"));
+        open.forEach((operator, left) -> {
+            if (left > 0) {
+                String closer = switch (operator) {
+                    case "q" -> "Q";
+                    case "BT" -> "ET";
+                    default -> "EMC";
+                };
+                line(out, "% " + left + " " + (operator.equals("BMC") ? "BMC/BDC" : operator)
+                        + " not closed by " + closer);
+            }
+        });
+        return true;
+    }
+
+    private static String description(PdfDocumentReader pdf, PdfPage page, Operation op, boolean compatibility) {
+        String operator = op.operator();
+        if (!ContentOperators.isKnown(operator)) {
+            return compatibility ? "not a PDF operator; ignored inside BX/EX" : "not a PDF operator";
+        }
+        String description = ContentOperators.describe(operator).orElseThrow();
+        List<PdfObject> operands = op.operands();
+        if (operator.equals("Tf") && !operands.isEmpty() && operands.get(0) instanceof PdfName name
+                && resource(pdf, page, "Font", name) instanceof PdfDictionary font
+                && pdf.resolve(font.get("BaseFont")) instanceof PdfName base) {
+            return description + ": " + base.name();
+        }
+        if (operator.equals("Do") && !operands.isEmpty() && operands.get(0) instanceof PdfName name) {
+            if (!(resource(pdf, page, "XObject", name) instanceof PdfStream xobject)) {
+                return description + ": not in the page's /XObject resources";
+            }
+            PdfDictionary dictionary = xobject.dictionary();
+            if (pdf.resolve(dictionary.get("Subtype")) instanceof PdfName subtype) {
+                if (subtype.name().equals("Image")) {
+                    return description + ": image " + size(pdf.resolve(dictionary.get("Width")),
+                            pdf.resolve(dictionary.get("Height")));
+                }
+                if (subtype.name().equals("Form")) {
+                    return description + ": form, its content not shown here";
+                }
+                return description + ": " + subtype.name();
+            }
+        }
+        if (op.isInlineImage()) {
+            PdfDictionary parameters = ((PdfStream) operands.get(0)).dictionary();
+            PdfObject width = parameters.get("W") != null ? parameters.get("W") : parameters.get("Width");
+            PdfObject height = parameters.get("H") != null ? parameters.get("H") : parameters.get("Height");
+            return description + ": " + size(width, height);
+        }
+        return description;
+    }
+
+    /** {@code 2 x 1}, or {@code size unknown} when either is missing. */
+    private static String size(PdfObject width, PdfObject height) {
+        return width == null || height == null ? "size unknown" : width + " x " + height;
+    }
+
+    /** {@code /Resources /<kind> /<name>}, resolved; null if it isn't there. */
+    private static PdfObject resource(PdfDocumentReader pdf, PdfPage page, String kind, PdfName name) {
+        if (pdf.resolve(page.resources().get(kind)) instanceof PdfDictionary resources) {
+            PdfObject value = resources.get(name.name());
+            return value == null ? null : pdf.resolve(value);
+        }
+        return null;
+    }
+
     private static String list(List<String> numbers) {
         return numbers.isEmpty() ? "none" : String.join(", ", numbers);
     }

@@ -43,7 +43,7 @@ public final class PdfLexer {
         public String toString() {
             return switch (kind) {
                 case VALUE -> value.toString();
-                case KEYWORD -> keyword;
+                case KEYWORD -> printable(keyword);
                 case ARRAY_START -> "[";
                 case ARRAY_END -> "]";
                 case DICTIONARY_START -> "<<";
@@ -51,6 +51,24 @@ public final class PdfLexer {
                 case END_OF_FILE -> "end of file";
             };
         }
+    }
+
+    /**
+     * A keyword as it can be shown: a keyword is any run of regular characters, which includes
+     * control bytes and bytes past 0x7E, so those (and {@code #}) are written {@code #xx}, the way
+     * {@link PdfName#toString()} writes names. A file's bytes never reach a terminal raw.
+     */
+    public static String printable(String keyword) {
+        StringBuilder text = new StringBuilder(keyword.length());
+        for (int i = 0; i < keyword.length(); i++) {
+            char c = keyword.charAt(i);
+            if (c < 0x21 || c > 0x7E || c == '#') {
+                text.append(String.format("#%02X", c & 0xFF));
+            } else {
+                text.append(c);
+            }
+        }
+        return text.toString();
     }
 
     private static final Pattern NUMBER = Pattern.compile("[+-]?(\\d+\\.?\\d*|\\.\\d+)");

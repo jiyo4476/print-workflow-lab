@@ -33,6 +33,8 @@ Small checked-in files that tests read: AFP samples, workflow YAMLs, golden dump
 - `two-statements.dump.txt`: the golden `dump-pdf` output for the file.
 - `two-statements.object-10.dump.txt`: the golden `dump-pdf <file> 10` output: page 1's
   content stream, decoded.
+- `two-statements.content-1.dump.txt`: the golden `dump-content <file> 1` output: page 1's
+  operators, indented and described.
 - `two-revisions.xref.dump.txt`: the golden `dump-pdf --xref` output for the two-revision file
   `IncrementalUpdateTest.twoRevisions()` builds with `PdfBytes` (built in the test, so no PDF is
   checked in). The offsets were checked by hand when it was created: revision 1's table starts
