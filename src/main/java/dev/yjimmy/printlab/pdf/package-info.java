@@ -20,11 +20,15 @@
  *   <li>{@link dev.yjimmy.printlab.pdf.PdfDocumentReader} gives the version, the catalog and the
  *       pages, with inherited attributes resolved; {@link dev.yjimmy.printlab.pdf.PdfDump}
  *       prints them for {@code App dump-pdf}.</li>
+ *   <li>{@link dev.yjimmy.printlab.pdf.ContentStreamParser} splits a page's decoded content into
+ *       {@link dev.yjimmy.printlab.pdf.Operation}s, inline images included;
+ *       {@code PdfDump.dumpContent} prints them for {@code App dump-content}.</li>
  * </ul>
  *
  * <p>{@code XrefReader} reads classic tables and cross-reference streams, objects packed in
- * object streams, and every revision of an incrementally updated file (PR 8). Next: content
- * streams (PR 9). PDFBox stays in the project as the test oracle: tests check this package
+ * object streams, and every revision of an incrementally updated file (PR 8), and parses
+ * content streams into operators (PR 9a). Next: graphics and text state and glyph positions
+ * (PR 9b). PDFBox stays in the project as the test oracle: tests check this package
  * against what PDFBox reports for the same file.
  *
  * <p>The whole file is held in memory as a byte array, which keeps random access simple; a

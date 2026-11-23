@@ -49,6 +49,10 @@ import java.util.List;
  *                                --xref lists each cross-reference section (one per revision)
  *                                and what each incremental update changed;
  *                                exits 1 if the file can't be read or the object isn't there
+ *   dump-content &lt;file.pdf&gt; &lt;page&gt;
+ *                                print a page's content-stream operators, indented inside
+ *                                q/Q, BT/ET and marked content, each with what it does;
+ *                                exits 1 if there's no such page or its content can't be read
  * </pre>
  */
 public final class App {
@@ -128,7 +132,41 @@ public final class App {
                     System.exit(1);
                 }
             }
+            case "dump-content" -> {
+                if (args.length != 3) {
+                    usage();
+                    return;
+                }
+                int page;
+                try {
+                    page = Integer.parseInt(args[2]);
+                } catch (NumberFormatException e) {
+                    System.err.println("dump-content: the page must be a number, not '" + args[2] + "'");
+                    System.exit(1);
+                    return;
+                }
+                if (!dumpContent(Path.of(args[1]), page)) {
+                    System.exit(1);
+                }
+            }
             default -> usage();
+        }
+    }
+
+    /** Returns false if the file can't be read, the page isn't there or its content can't be read. */
+    private static boolean dumpContent(Path file, int page) {
+        StringBuilder out = new StringBuilder();
+        try {
+            boolean ok = new PdfDump().dumpContent(PdfDocumentReader.open(file), page, out);
+            System.out.print(out);
+            return ok;
+        } catch (IOException e) {
+            System.err.println("dump-content: can't read " + file + ": " + e);
+            return false;
+        } catch (PdfFormatException e) {
+            System.out.print(out);
+            System.err.println("dump-content: " + file + ": " + e.getMessage());
+            return false;
         }
     }
 
@@ -227,6 +265,8 @@ public final class App {
                                                print a PDF's version, trailer and pages, or
                                                one object with its decoded stream
                   dump-pdf --xref <file.pdf>   list the cross-reference sections and what
-                                               each incremental update changed""");
+                                               each incremental update changed
+                  dump-content <file.pdf> <page>
+                                               print a page's content-stream operators""");
     }
 }

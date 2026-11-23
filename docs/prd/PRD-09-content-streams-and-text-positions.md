@@ -63,6 +63,42 @@ metadata (PRD-10) are more reliable than reading text off the page.
   Helvetica-Bold), or read them from PDFBox's bundled AFM files.
 - Keep `pdfbox` as the default extractor until parity holds over many seeds.
 
+## Split into two PRs
+
+- **9a** (`feature/09a-content-stream-parser`): `ContentStreamParser`, `Operation`,
+  `ContentOperators` (Annex A's 73 operators with a description each),
+  `PdfDocumentReader.content(page)` and `App dump-content`. FR-1, FR-2.
+- **9b** (`feature/09b-text-positions`): graphics and text state, glyph positions,
+  `RegionTextExtractor` and `extractor: builtin | pdfbox`. FR-3 to FR-8.
+
+## Decided in 9a
+
+- **Operands and operators.** Operands are the ordinary objects, read by the lexer and, for
+  arrays and dictionaries, `PdfParser`; `true`, `false` and `null` are operands; any other
+  keyword is an operator. Content has no references, so `1 0 R` is two numbers and an operator
+  `R`. Operators aren't checked against Annex A by the parser (an unknown one is legal inside
+  `BX`/`EX`); `dump-content` notes them. Operands left at the end with no operator, `ID` or
+  `EI` outside an inline image, and braces are errors with the offset.
+- **An inline image is one `Operation`**, `BI`, whose operand is a `PdfStream` (its parameters
+  and its still-encoded bytes), since that's what it is.
+- **Where an inline image's data ends**, in order: `/L` or `/Length` (PDF 2.0); for an
+  unfiltered image, `ceil(W x components x BPC / 8) x H`, with components from `/CS`
+  (`G`, `RGB`, `CMYK`, an `I` indexed array) or 1 for `/IM true`; otherwise the first `EI`
+  with white space before it, white space or the end after it, and 32 bytes of text after that.
+  A named color space (from the page resources) falls back to the scan; 9b can look it up.
+- **PDFBox isn't the oracle for inline images.** 3.0.3's `PDFStreamParser` returns nothing after
+  `BI` on a page PDFBox itself wrote (`q cm BI ... ID <8 bytes> EI Q BT ET`). Generated
+  statements are compared operator by operator with PDFBox; inline images are checked against
+  written-out expectations.
+- **Multiple content streams** are joined with a newline between them (7.8.2: a split falls
+  between tokens), capped at the decoder's 256 MiB.
+- **`dump-content <file> <page>`** prints the page and its streams, then one operation per line,
+  indented two spaces inside `q`/`Q`, `BT`/`ET` and `BMC`/`BDC`...`EMC`, with a `%` comment from
+  column 40: the Annex A description, plus the base font for `Tf` and the XObject subtype (image
+  size, or "form", not followed) for `Do`. Unmatched closers, unclosed openers and unknown
+  operators are noted; content that can't be parsed stops the dump with a note. Exit code 1 for
+  no such page, a stream that can't be decoded, or content that can't be parsed.
+
 ## Acceptance criteria
 
 | # | Criterion | Verified by |
@@ -76,8 +112,16 @@ metadata (PRD-10) are more reliable than reading text off the page.
 
 ## Test plan
 
-- Unit — `ContentStreamParserTest`: `operandsAttachToFollowingOperator`,
-  `tjArrayWithKerningNumbers`, `inlineImageContainingEiBytesIsSkipped`
+- Unit — `ContentStreamParserTest` (9a): `operandsAttachToFollowingOperator`,
+  `tjArrayWithKerningNumbers`, `inlineImageContainingEiBytesIsSkipped`,
+  `inlineImageLengthIsUsedWhenGiven`, `filteredInlineImageEndsAtTheEiFollowedByContent`,
+  `imageParametersGiveTheDataSize`, `malformedInlineImagesFailWithTheirOffset`,
+  `malformedContentFailsWithItsOffset`
+- Differential — `ContentStreamVsPdfBoxTest` (9a): `generatedStatementsParseAsPdfBoxParsesThem`;
+  `inlineImagesPdfBoxWritesAreReadByTheirSize`
+- Golden — `DumpContentTest` (9a): `twoStatementsPageOneMatchesGoldenDump`
+  (`fixtures/pdf/two-statements.content-1.dump.txt`), `nestingIsIndentedAndResourcesNamed`,
+  `unmatchedAndUnknownOperatorsAreNoted`
 - Unit — `GraphicsStateTest`: `qAndQRestoreState`, `cmConcatenatesInCorrectOrder`,
   `tdMovesLineMatrix`, `tStarUsesLeading`
 - Unit — `TextPositionTest`: `accountNumberFoundAtGeneratorPosition`,

@@ -51,6 +51,7 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 | `afp/`: `AfpReader`, `AfpWriter`, `TleDecoder`, `TleEncoder`, `dump-afp` | AFP structured fields, page groups and TLEs |
 | `pdf/`: `XrefReader`, `PdfDocumentReader`, `dump-pdf` | What's inside the PDF input a workflow receives |
 | `dump-pdf --xref`, `PdfDocumentReader.revision(n)` | Incremental updates: an edited PDF still holds every earlier version |
+| `ContentStreamParser`, `dump-content` | What a page is: positioned drawing operators, not lines of text |
 | `generate-afp` | AFP print files from a composition system, with index tags per document |
 | WAR on Tomcat, `/api/*` servlets | The workflow server and its web services |
 | Marionette dashboard (`src/main/webapp/`) | The operator web interface |
@@ -73,6 +74,7 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw -q exec:java -Dexec.args="dump-pdf run.pdf"        # print a PDF's version, trailer and pages
 ./mvnw -q exec:java -Dexec.args="dump-pdf run.pdf 12"     # one object (a Contents number from the dump)
 ./mvnw -q exec:java -Dexec.args="dump-pdf --xref edited.pdf"  # each revision, and what it changed
+./mvnw -q exec:java -Dexec.args="dump-content run.pdf 1"  # page 1's drawing operators
 ```
 
 Then move `run.pdf` into `hotfolder/pdf/` (or `run.afp` into `hotfolder/afp/`) and look in
@@ -334,6 +336,38 @@ Revision 2  table at 0x000001D4 (468): 3 entries, /Prev 213
 In code, `PdfDocumentReader.revision(1)` reads the file as it was before any update. That's why
 a "small edit" to a PDF can leave the old content in the file for anyone with a parser.
 
+### Content streams
+
+A page's content is a program of postfix operators: the operands, then the operator. There are
+no lines or words, only "set the font", "move to x y" and "show these bytes" (Annex A lists 73
+operators). `dump-content` prints a page's operators, indented inside `q`/`Q` (save and restore
+the graphics state), `BT`/`ET` (a text object) and marked content, each with what it does:
+
+```
+Page 1 of 6  3 0 R
+  Contents  10 0 R  /FlateDecode, 474 bytes, 1817 decoded
+BT                                      % begin text
+  /F1 14 Tf                             % font and size: Helvetica-Bold
+  72 752 Td                             % next line, offset by tx ty
+  (Front Range Credit Union) Tj         % show text
+ET                                      % end text
+...
+140 operations
+```
+
+`72 752` is in PDF's own coordinates: points from the *bottom*-left corner, so 752 is 40 pt from
+the top of a 792-pt page. A page whose `/Contents` is an array is read as the streams joined.
+`Do` names what it paints (an image's size, or "form" for a form XObject, whose own content
+isn't followed); an unmatched `Q` or `ET` and an operator that isn't in Annex A are noted on
+their line.
+
+Inline images (`BI ... ID <bytes> EI`) are the one part of content that isn't tokens: the bytes
+can hold anything, including `EI`. `ContentStreamParser` ends them by a declared length
+(`/L`, PDF 2.0), else by the size the image's own parameters give (width, height, bits and
+color components), and only scans for `EI` when neither is known (a filtered image, or a named
+color space). PDFBox 3.0.3's parser scans, and loses everything after an inline image it wrote
+itself (`ContentStreamVsPdfBoxTest`).
+
 ### Splitting AFP
 
 `workflows/statements-afp.yaml` is the statement workflow for AFP input. Its `SplitAfp` step
@@ -410,7 +444,8 @@ all three together.
 
 ```
 src/main/java/dev/yjimmy/printlab/
-  App.java                 entry point: run | generate | generate-afp | dump-afp | dump-pdf
+  App.java                 entry point: run | generate | generate-afp | dump-afp | dump-pdf |
+                           dump-content
   workflow/                Job, Document, Step, WorkflowDefinition, WorkflowEngine, StepRegistry
   workflow/rules/          Condition, Rule, RuleParser: routing rules and `when:`
   steps/                   SetJobPropsFromTextFile, SplitPdf, SplitAfp, MapProperties,
@@ -420,7 +455,8 @@ src/main/java/dev/yjimmy/printlab/
   testdata/                fake statement print runs: shared data and layout, PDF and AFP writers
   afp/                     AFP reader and writer, field names, EBCDIC, TLE decoder and encoder,
                            dump tool
-  pdf/                     PDF lexer, parser, xref table, Flate decoding, page tree, dump tool
+  pdf/                     PDF lexer, parser, xref table, Flate decoding, page tree, content
+                           stream parser, dump tools
   web/                     servlets (HealthServlet)
 src/main/webapp/
   index.html               dashboard page; loads WebJars, then js/
@@ -450,7 +486,7 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
 - [ ] **PDF without PDFBox:**
   - [x] Object reader, cross-reference table, page tree and `dump-pdf`
   - [x] Cross-reference streams, object streams, incremental updates
-  - [ ] Content streams and text positions
+  - [ ] Content streams and text positions (operators and `dump-content` done)
   - [ ] PDF/VT document parts (DPart) indexing
   - [ ] Preflight step
 - [x] Routing rules: send documents to an exception queue (e.g. invalid zip), flag large

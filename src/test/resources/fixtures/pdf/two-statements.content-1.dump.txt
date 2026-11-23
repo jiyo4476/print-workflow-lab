@@ -1,0 +1,143 @@
+Page 1 of 6  3 0 R
+  Contents  10 0 R  /FlateDecode, 474 bytes, 1817 decoded
+BT                                      % begin text
+  /F1 14 Tf                             % font and size: Helvetica-Bold
+  72 752 Td                             % next line, offset by tx ty
+  (Front Range Credit Union) Tj         % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  340 752 Td                            % next line, offset by tx ty
+  (Account:) Tj                         % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  400 752 Td                            % next line, offset by tx ty
+  (1669164236) Tj                       % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 9 Tf                              % font and size: Helvetica
+  400 738 Td                            % next line, offset by tx ty
+  (Page 1 of 3) Tj                      % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 11 Tf                             % font and size: Helvetica
+  72 672 Td                             % next line, offset by tx ty
+  (Reese Lee) Tj                        % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 11 Tf                             % font and size: Helvetica
+  72 658 Td                             % next line, offset by tx ty
+  (6944 Colfax Ave) Tj                  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 11 Tf                             % font and size: Helvetica
+  72 644 Td                             % next line, offset by tx ty
+  (Seattle, WA 98168) Tj                % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 8 Tf                              % font and size: Helvetica
+  500 644 Td                            % next line, offset by tx ty
+  (98168) Tj                            % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 572 Td                             % next line, offset by tx ty
+  (2026-10-19   Transaction 001      -604.66) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 554 Td                             % next line, offset by tx ty
+  (2026-10-01   Transaction 002      -862.88) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 536 Td                             % next line, offset by tx ty
+  (2026-10-25   Transaction 003       889.11) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 518 Td                             % next line, offset by tx ty
+  (2026-10-12   Transaction 004      -103.38) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 500 Td                             % next line, offset by tx ty
+  (2026-10-22   Transaction 005      -492.62) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 482 Td                             % next line, offset by tx ty
+  (2026-10-04   Transaction 006       382.79) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 464 Td                             % next line, offset by tx ty
+  (2026-10-19   Transaction 007       439.24) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 446 Td                             % next line, offset by tx ty
+  (2026-10-08   Transaction 008       770.51) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 428 Td                             % next line, offset by tx ty
+  (2026-10-23   Transaction 009      -379.96) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 410 Td                             % next line, offset by tx ty
+  (2026-10-04   Transaction 010       374.00) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 392 Td                             % next line, offset by tx ty
+  (2026-10-01   Transaction 011      -501.89) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 374 Td                             % next line, offset by tx ty
+  (2026-10-28   Transaction 012       780.73) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 356 Td                             % next line, offset by tx ty
+  (2026-10-16   Transaction 013      -361.09) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 338 Td                             % next line, offset by tx ty
+  (2026-10-16   Transaction 014      -835.08) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 320 Td                             % next line, offset by tx ty
+  (2026-10-19   Transaction 015       175.06) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 302 Td                             % next line, offset by tx ty
+  (2026-10-11   Transaction 016       232.34) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 284 Td                             % next line, offset by tx ty
+  (2026-10-26   Transaction 017      -511.20) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 266 Td                             % next line, offset by tx ty
+  (2026-10-22   Transaction 018       780.47) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 248 Td                             % next line, offset by tx ty
+  (2026-10-14   Transaction 019      -256.05) Tj  % show text
+ET                                      % end text
+BT                                      % begin text
+  /F2 10 Tf                             % font and size: Helvetica
+  72 230 Td                             % next line, offset by tx ty
+  (2026-10-25   Transaction 020       582.89) Tj  % show text
+ET                                      % end text
+140 operations
