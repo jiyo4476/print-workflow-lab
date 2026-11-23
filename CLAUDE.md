@@ -144,8 +144,9 @@ report's line total rounded *down* to two decimals, in its own commit.
   streams joined with newlines) into `Operation(operator, operands, offset)`; operands are the
   ordinary objects, any other keyword is an operator (not checked against `ContentOperators`,
   Annex A's 73). An inline image is one `BI` operation whose operand is a `PdfStream`; its data
-  ends by `/L`, else the size its parameters give when unfiltered, else a scan for `EI`
-  followed by text. PDFBox's `PDFStreamParser` is the oracle for operators but not inline
+  ends by `/L`, else the size its parameters give when unfiltered, else (or when that size
+  doesn't end at `EI`) a scan for an `EI` followed by content. Operands are capped (1,000 per
+  operator, 100,000 items per array); operators print with `#xx` escapes (`PdfLexer.printable`). PDFBox's `PDFStreamParser` is the oracle for operators but not inline
   images (3.0.3 loses what follows them).
   `PdfDocumentReader` reads the version (header, raised by the catalog's `/Version`; none is
   rejected), the catalog, and the page tree, walked with a stack (a node seen twice fails), with

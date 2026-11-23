@@ -193,17 +193,17 @@ public final class PdfDump {
         if (streams.isEmpty()) {
             line(out, "  Contents  none");
         }
-        boolean decodable = true;
+        List<byte[]> parts = new ArrayList<>();
         for (PdfIndirectObject stream : streams) {
             Decoded decoded = describe(pdf, (PdfStream) stream.object());
-            decodable &= decoded.data() != null;
+            parts.add(decoded.data());
             line(out, "  Contents  " + stream.reference() + "  " + decoded.summary());
         }
-        if (!decodable) {
+        if (parts.contains(null)) {
             line(out, "% the content can't be shown: a stream above can't be decoded");
             return false;
         }
-        ContentStreamParser parser = new ContentStreamParser(pdf.content(page));
+        ContentStreamParser parser = new ContentStreamParser(PdfDocumentReader.join(page, streams, parts));
         Map<String, Integer> open = new TreeMap<>();
         int depth = 0;
         int compatibility = 0;
@@ -292,8 +292,8 @@ public final class PdfDump {
             PdfDictionary dictionary = xobject.dictionary();
             if (pdf.resolve(dictionary.get("Subtype")) instanceof PdfName subtype) {
                 if (subtype.name().equals("Image")) {
-                    return description + ": image " + pdf.resolve(dictionary.get("Width")) + " x "
-                            + pdf.resolve(dictionary.get("Height"));
+                    return description + ": image " + size(pdf.resolve(dictionary.get("Width")),
+                            pdf.resolve(dictionary.get("Height")));
                 }
                 if (subtype.name().equals("Form")) {
                     return description + ": form, its content not shown here";
@@ -303,11 +303,16 @@ public final class PdfDump {
         }
         if (op.isInlineImage()) {
             PdfDictionary parameters = ((PdfStream) operands.get(0)).dictionary();
-            Object width = parameters.get("W") != null ? parameters.get("W") : parameters.get("Width");
-            Object height = parameters.get("H") != null ? parameters.get("H") : parameters.get("Height");
-            return description + ": " + width + " x " + height;
+            PdfObject width = parameters.get("W") != null ? parameters.get("W") : parameters.get("Width");
+            PdfObject height = parameters.get("H") != null ? parameters.get("H") : parameters.get("Height");
+            return description + ": " + size(width, height);
         }
         return description;
+    }
+
+    /** {@code 2 x 1}, or {@code size unknown} when either is missing. */
+    private static String size(PdfObject width, PdfObject height) {
+        return width == null || height == null ? "size unknown" : width + " x " + height;
     }
 
     /** {@code /Resources /<kind> /<name>}, resolved; null if it isn't there. */

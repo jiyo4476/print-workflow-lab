@@ -26,11 +26,16 @@ import java.util.Map;
  *       {@code ceil(W × components × BPC / 8) × H}, the components coming from {@code /CS}
  *       ({@code /G}, {@code /RGB}, {@code /CMYK}, or an {@code /I} indexed array) or 1 for an
  *       {@code /IM true} image mask;</li>
- *   <li>otherwise, the first {@code EI} that has white space before it, white space or the end
- *       after it, and then only text (printable ASCII and white space) for the next
- *       {@value #LOOK_AHEAD} bytes, which is what content looks like and compressed image data
+ *   <li>otherwise, or if no {@code EI} follows the data at that size (wrong parameters), the
+ *       first {@code EI} that has white space before it, white space, a delimiter or the end
+ *       after it, then no control bytes but white space for the next {@value #LOOK_AHEAD} bytes
+ *       and a token that lexes: what content looks like, and compressed image data mostly
  *       doesn't.</li>
  * </ol>
+ *
+ * <p>{@code ID} is followed by one white-space byte; for a known size, CR LF is accepted too.
+ * An operator may have at most {@value #MAX_OPERANDS} operands, and an array or dictionary
+ * operand at most {@value #MAX_ITEMS} items, so bad content fails instead of filling the heap.
  *
  * <p>Errors are {@link PdfFormatException}s with the offset in the decoded content.
  */
@@ -38,6 +43,15 @@ public final class ContentStreamParser {
 
     /** How many bytes after a candidate {@code EI} must look like content. */
     static final int LOOK_AHEAD = 32;
+
+    /**
+     * The most operands one operator may have. Real operators take at most a few dozen (a
+     * DeviceN color); without a limit, content of nothing but numbers would fill the heap.
+     */
+    static final int MAX_OPERANDS = 1_000;
+
+    /** The most items an array operand (a {@code TJ} array) or dictionary operand may have. */
+    static final int MAX_ITEMS = 100_000;
 
     private final byte[] data;
     private final PdfLexer lexer;
@@ -47,7 +61,9 @@ public final class ContentStreamParser {
     public ContentStreamParser(byte[] content) {
         this.data = content;
         this.lexer = new PdfLexer(content);
-        this.parser = new PdfParser(content);
+        this.parser = new PdfParser(content, ref -> {
+            throw new IllegalStateException("content has no references: " + ref);
+        }, MAX_ITEMS);
     }
 
     /** All the operations in {@code content}, in order. */
@@ -69,6 +85,10 @@ public final class ContentStreamParser {
             if (start < 0) {
                 start = token.offset();
             }
+            if (operands.size() == MAX_OPERANDS && token.kind() != PdfLexer.Kind.KEYWORD
+                    && token.kind() != PdfLexer.Kind.END_OF_FILE) {
+                throw tooManyOperands(start);
+            }
             switch (token.kind()) {
                 case END_OF_FILE -> {
                     if (operands.isEmpty()) {
@@ -80,6 +100,9 @@ public final class ContentStreamParser {
                 case KEYWORD -> {
                     PdfObject constant = constant(token.keyword());
                     if (constant != null) {
+                        if (operands.size() == MAX_OPERANDS) {
+                            throw tooManyOperands(start);
+                        }
                         operands.add(constant);
                         break;
                     }
@@ -102,6 +125,10 @@ public final class ContentStreamParser {
                 default -> operands.add(operand(token));
             }
         }
+    }
+
+    private static PdfFormatException tooManyOperands(int start) {
+        return new PdfFormatException(start, "more than " + MAX_OPERANDS + " operands before an operator");
     }
 
     private static PdfObject constant(String keyword) {
@@ -168,26 +195,36 @@ public final class ContentStreamParser {
         if (length < 0 && !parameters.entries().containsKey("F") && !parameters.entries().containsKey("Filter")) {
             length = unfilteredSize(parameters);
         }
-        int dataEnd;
+        int dataEnd = -1;
         if (length >= 0) {
-            if (length > data.length - dataStart) {
-                throw new PdfFormatException(dataStart, "inline image needs " + length + " bytes of data, but only "
-                        + (data.length - dataStart) + " are left");
+            // ID is followed by one white-space byte, but some writers put CR LF there.
+            boolean crLf = data[afterId] == '\r' && dataStart < data.length && data[dataStart] == '\n';
+            for (int start : crLf ? new int[] {dataStart, dataStart + 1} : new int[] {dataStart}) {
+                if (length <= data.length - start && eiAt(start + length)) {
+                    dataStart = start;
+                    dataEnd = start + length;
+                    break;
+                }
             }
-            dataEnd = dataStart + length;
-            lexer.seek(dataEnd);
-            Token ei = lexer.next();
-            if (!ei.isKeyword("EI")) {
-                throw new PdfFormatException(ei.offset(), "expected 'EI' after the " + length
-                        + " bytes of inline image data, found '" + ei + "'");
-            }
-        } else {
+        }
+        if (dataEnd < 0) {
+            // No length, or one the data doesn't match (wrong parameters): find EI instead.
             int ei = findEi(dataStart, bi.offset());
             dataEnd = Math.max(dataStart, ei - 1);
             lexer.seek(ei + 2);
         }
         PdfStream image = new PdfStream(parameters, Arrays.copyOfRange(data, dataStart, dataEnd), dataStart);
         return new Operation("BI", List.of(image), bi.offset());
+    }
+
+    /** True if {@code EI} is the next token at {@code at}; the lexer is then after it. */
+    private boolean eiAt(int at) {
+        lexer.seek(at);
+        try {
+            return lexer.next().isKeyword("EI");
+        } catch (PdfFormatException e) {
+            return false;
+        }
     }
 
     /** {@code /L} or {@code /Length}, or -1 if neither is given. */
@@ -255,7 +292,8 @@ public final class ContentStreamParser {
         for (int i = from; i + 1 < data.length; i++) {
             if (data[i] == 'E' && data[i + 1] == 'I'
                     && PdfLexer.isWhiteSpace(data[i - 1] & 0xFF)
-                    && (i + 2 == data.length || PdfLexer.isWhiteSpace(data[i + 2] & 0xFF))
+                    && (i + 2 == data.length || PdfLexer.isWhiteSpace(data[i + 2] & 0xFF)
+                            || PdfLexer.isDelimiter(data[i + 2] & 0xFF))
                     && looksLikeContent(i + 2)) {
                 return i;
             }
@@ -263,15 +301,24 @@ public final class ContentStreamParser {
         throw new PdfFormatException(biOffset, "inline image has no 'EI' after its data");
     }
 
+    /**
+     * True if the bytes from {@code from} could be content: no control bytes other than white
+     * space in the next {@value #LOOK_AHEAD} (bytes past 0x7F are fine, since a WinAnsi string
+     * with accented letters is written raw), and the next token lexes.
+     */
     private boolean looksLikeContent(int from) {
         int end = Math.min(data.length, from + LOOK_AHEAD);
         for (int i = from; i < end; i++) {
             int b = data[i] & 0xFF;
-            boolean text = (b >= 0x20 && b <= 0x7E) || b == '\t' || b == '\n' || b == '\r' || b == '\f';
-            if (!text) {
+            if (b < 0x20 && b != '\t' && b != '\n' && b != '\r' && b != '\f') {
                 return false;
             }
         }
-        return true;
+        try {
+            new PdfLexer(data, from).next();
+            return true;
+        } catch (PdfFormatException e) {
+            return false;
+        }
     }
 }

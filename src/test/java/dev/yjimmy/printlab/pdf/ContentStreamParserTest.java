@@ -178,10 +178,70 @@ public class ContentStreamParserTest {
         assertThat(failure("BI /W ID x EI")).contains("inline image key /W has no value");
         assertThat(failure("BI /W 1 /H 1 /F /Fl ID\tx")).contains("inline image has no 'EI' after its data");
         assertThat(failure("BI /F /Fl ID")).contains("'ID' must be followed by one white-space byte");
-        assertThat(failure("BI /L 10 ID abc EI")).contains("needs 10 bytes of data, but only 6 are left");
-        assertThat(failure("BI /L 2 ID abc EI")).contains("expected 'EI' after the 2 bytes of inline image data, found 'c'");
+        assertThat(failure("BI /L 10 ID abc")).contains("inline image has no 'EI' after its data");
         assertThat(failure("BI /L -1 ID abc EI")).contains("inline image length must be a whole number, found -1");
         assertThat(failure("1 BI /L 0 ID  EI")).contains("operands before 'BI'");
+    }
+
+    /** A size the data doesn't match (wrong parameters, a bad /L) falls back to the scan for EI. */
+    @Test
+    public void wrongLengthFallsBackToTheScanForEi() {
+        List<Operation> ops = ContentStreamParser.parse(ascii("BI /L 2 ID abc EI Q"));
+        assertThat(((PdfStream) ops.get(0).operands().get(0)).data()).containsExactly('a', 'b', 'c');
+        assertEquals("then Q", "Q", ops.get(1).operator());
+
+        List<Operation> tooLong = ContentStreamParser.parse(ascii("BI /W 9 /H 9 /BPC 8 /CS /G ID xy EI Q"));
+        assertThat(((PdfStream) tooLong.get(0).operands().get(0)).data()).containsExactly('x', 'y');
+    }
+
+    /** Some writers put CR LF after ID; with a known size, both bytes are the separator. */
+    @Test
+    public void crLfAfterIdIsOneSeparatorForAKnownSize() {
+        byte[] data = {1, 2, 3, 4};
+        List<Operation> ops = ContentStreamParser.parse(content("BI /W 4 /H 1 /BPC 8 /CS /G ID\r\n", data, "\nEI Q"));
+
+        assertThat(((PdfStream) ops.get(0).operands().get(0)).data()).containsExactly(data);
+        assertEquals("then Q", "Q", ops.get(1).operator());
+    }
+
+    /**
+     * After the real EI may come a raw WinAnsi string with accented letters, or a delimiter;
+     * both still end the image. The first EI is followed by a control byte, so it's data.
+     */
+    @Test
+    public void eiFollowedByAccentedTextOrADelimiterEndsTheImage() {
+        byte[] data = {0x78, ' ', 'E', 'I', ' ', 0x01, 0x02};
+        byte[] text = content("BI /F /Fl ID ", data, " EI BT (Caf" + (char) 0xE9 + ") Tj ET");
+        List<Operation> ops = ContentStreamParser.parse(text);
+        assertThat(ops).extracting(Operation::operator).containsExactly("BI", "BT", "Tj", "ET");
+        assertThat(((PdfStream) ops.get(0).operands().get(0)).data()).containsExactly(data);
+
+        List<Operation> delimiter = ContentStreamParser.parse(content("BI /F /Fl ID ", new byte[] {9, 9}, " EI/GS0 gs"));
+        assertThat(delimiter).extracting(Operation::toString).containsExactly("BI <</F /Fl>> ID 2 bytes EI", "/GS0 gs");
+    }
+
+    @Test
+    public void operandsAndArrayItemsAreLimited() {
+        String ok = "1 ".repeat(ContentStreamParser.MAX_OPERANDS) + "sc";
+        assertEquals("at the limit", ContentStreamParser.MAX_OPERANDS, parse(ok).get(0).operands().size());
+
+        assertThat(failure("q " + "1 ".repeat(ContentStreamParser.MAX_OPERANDS + 1) + "sc"))
+                .contains("(2)").contains("more than 1000 operands before an operator");
+        assertThat(failure("true ".repeat(ContentStreamParser.MAX_OPERANDS + 1) + "sc"))
+                .contains("more than 1000 operands");
+        assertThat(failure("[" + "0 ".repeat(ContentStreamParser.MAX_ITEMS + 1) + "] TJ"))
+                .contains("(0)").contains("array has more than 100000 items");
+    }
+
+    /** An operator can hold any regular byte; printed, control and high bytes are #xx. */
+    @Test
+    public void operatorBytesArePrintedEscaped() {
+        String escape = String.valueOf((char) 0x1B);
+        List<Operation> ops = parse("1 x" + escape + "2J" + (char) 0xE9 + "#");
+
+        assertEquals("kept as read", "x" + escape + "2J" + (char) 0xE9 + "#", ops.get(0).operator());
+        assertEquals("printed", "1 x#1B2J#E9#23", ops.get(0).toString());
+        assertThat(failure("[(a) " + escape + "z] TJ")).contains("'#1Bz'").doesNotContain(escape);
     }
 
     @Test

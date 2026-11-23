@@ -83,9 +83,17 @@ metadata (PRD-10) are more reliable than reading text off the page.
   and its still-encoded bytes), since that's what it is.
 - **Where an inline image's data ends**, in order: `/L` or `/Length` (PDF 2.0); for an
   unfiltered image, `ceil(W x components x BPC / 8) x H`, with components from `/CS`
-  (`G`, `RGB`, `CMYK`, an `I` indexed array) or 1 for `/IM true`; otherwise the first `EI`
-  with white space before it, white space or the end after it, and 32 bytes of text after that.
-  A named color space (from the page resources) falls back to the scan; 9b can look it up.
+  (`G`, `RGB`, `CMYK`, an `I` indexed array) or 1 for `/IM true`; otherwise, or when no `EI`
+  follows the data at that size, the first `EI` with white space before it, white space, a
+  delimiter or the end after it, then no control bytes but white space in the next 32 bytes
+  (bytes past 0x7F are allowed: WinAnsi strings are written raw) and a token that lexes. For a
+  known size, CR LF after `ID` is accepted as the separator. A named color space (from the page
+  resources) falls back to the scan; 9b can look it up.
+- **Limits.** At most 1,000 operands per operator and 100,000 items in an array or dictionary
+  operand, so content of nothing but numbers fails with the offset instead of filling the heap.
+- **Operators are shown escaped.** A keyword is any run of regular bytes, control bytes
+  included, so `Operation.toString()` and error messages write bytes outside `21-7E` (and `#`)
+  as `#xx` (`PdfLexer.printable`), as names are.
 - **PDFBox isn't the oracle for inline images.** 3.0.3's `PDFStreamParser` returns nothing after
   `BI` on a page PDFBox itself wrote (`q cm BI ... ID <8 bytes> EI Q BT ET`). Generated
   statements are compared operator by operator with PDFBox; inline images are checked against

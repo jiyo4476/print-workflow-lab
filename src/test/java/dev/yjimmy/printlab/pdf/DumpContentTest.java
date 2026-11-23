@@ -98,6 +98,24 @@ public class DumpContentTest {
     }
 
     @Test
+    public void imagesWithoutASizeSayItsUnknown() {
+        PdfDocumentReader pdf = page("/Contents 4 0 R /Resources << /XObject << /Im1 5 0 R >> >>", new PdfBytes("1.4")
+                .stream(4, "", "/Im1 Do BI /F /Fl ID xy EI".getBytes(StandardCharsets.US_ASCII))
+                .stream(5, "/Type /XObject /Subtype /Image", new byte[0]));
+
+        assertThat(dump(pdf, 1, true)).contains("% paint XObject: image size unknown\n")
+                .contains("% inline image: size unknown\n");
+    }
+
+    @Test
+    public void escapeBytesInAnOperatorDontReachTheOutput() {
+        String out = dump(content("x" + (char) 0x1B + "[2J"), 1, false);
+
+        assertThat(out).doesNotContain(String.valueOf((char) 0x1B));
+        assertThat(dump(content("x" + (char) 0x1B + "y"), 1, true)).contains("x#1By ").doesNotContain(String.valueOf((char) 0x1B));
+    }
+
+    @Test
     public void unparseableContentStopsTheDumpWithANote() {
         String out = dump(content("q (open"), 1, false);
 

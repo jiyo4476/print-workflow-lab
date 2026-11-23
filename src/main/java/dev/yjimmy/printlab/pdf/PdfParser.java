@@ -30,6 +30,7 @@ public final class PdfParser {
 
     private final PdfLexer lexer;
     private final Function<PdfReference, PdfObject> resolver;
+    private final int maxItems;
     /** Tokens read ahead to tell a reference from two numbers, next one first. */
     private final Deque<Token> pushedBack = new ArrayDeque<>();
 
@@ -45,8 +46,18 @@ public final class PdfParser {
      *     {@code /Length}
      */
     public PdfParser(byte[] data, Function<PdfReference, PdfObject> resolver) {
+        this(data, resolver, Integer.MAX_VALUE);
+    }
+
+    /**
+     * @param maxItems the most items an array, or entries a dictionary, may have; past it,
+     *     parsing fails. Content streams use a limit, so a stream of a million numbers inside
+     *     {@code [ ]} fails cleanly instead of filling the heap.
+     */
+    PdfParser(byte[] data, Function<PdfReference, PdfObject> resolver, int maxItems) {
         this.lexer = new PdfLexer(data);
         this.resolver = resolver;
+        this.maxItems = maxItems;
     }
 
     /** Where the next token is read from. */
@@ -83,7 +94,7 @@ public final class PdfParser {
                 case "false" -> PdfBoolean.FALSE;
                 case "null" -> PdfNull.INSTANCE;
                 default -> throw new PdfFormatException(token.offset(),
-                        "expected an object, found the keyword '" + token.keyword() + "'");
+                        "expected an object, found the keyword '" + PdfLexer.printable(token.keyword()) + "'");
             };
             case ARRAY_END, DICTIONARY_END -> throw new PdfFormatException(token.offset(),
                     "expected an object, found '" + token + "'");
@@ -157,6 +168,9 @@ public final class PdfParser {
                 throw new PdfFormatException(token.offset(),
                         "array opened at offset " + start.offset() + " is not closed with ']'");
             }
+            if (items.size() == maxItems) {
+                throw new PdfFormatException(start.offset(), "array has more than " + maxItems + " items");
+            }
             items.add(parseObject(token));
         }
     }
@@ -181,6 +195,9 @@ public final class PdfParser {
                 throw new PdfFormatException(value.offset(), "dictionary key " + name + " has no value");
             }
             // A repeated key keeps its last value.
+            if (entries.size() == maxItems && !entries.containsKey(name.name())) {
+                throw new PdfFormatException(start.offset(), "dictionary has more than " + maxItems + " entries");
+            }
             entries.put(name.name(), parseObject(value));
         }
     }

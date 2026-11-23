@@ -33,16 +33,20 @@ public record Operation(String operator, List<PdfObject> operands, int offset) {
         return operator.equals("BI") && operands.size() == 1 && operands.get(0) instanceof PdfStream;
     }
 
-    /** The operation as content-stream syntax; an inline image's bytes are given as a count. */
+    /**
+     * The operation as content-stream syntax; an inline image's bytes are given as a count, and
+     * an operator's control or non-ASCII bytes as {@code #xx} ({@link PdfLexer#printable}).
+     */
     @Override
     public String toString() {
         if (isInlineImage()) {
             PdfStream image = (PdfStream) operands.get(0);
             return "BI " + image.dictionary() + " ID " + image.length() + " bytes EI";
         }
+        String shown = PdfLexer.printable(operator);
         if (operands.isEmpty()) {
-            return operator;
+            return shown;
         }
-        return operands.stream().map(Object::toString).collect(Collectors.joining(" ")) + " " + operator;
+        return operands.stream().map(Object::toString).collect(Collectors.joining(" ")) + " " + shown;
     }
 }
