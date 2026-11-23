@@ -73,15 +73,37 @@ public class StreamDecoderTest {
         assertThat(new StreamDecoder().filters(jpeg)).containsExactly("DCTDecode");
     }
 
+    /** Two rows of 3 bytes with the Up filter (type 2), as a cross-reference stream stores them. */
     @Test
-    public void flateWithAPredictorIsReportedAsUnsupported() {
-        PdfStream png = stream(deflate(CONTENT), "Filter", PdfName.of("FlateDecode"),
-                "DecodeParms", PdfDictionary.of("Predictor", PdfNumber.of(12), "Columns", PdfNumber.of(4)));
+    public void flateWithAPngPredictorIsUndone() {
+        byte[] rows = {2, 1, 0, 16, 2, 0, 0, 16};
+        PdfStream xref = stream(deflate(rows), "Filter", PdfName.of("FlateDecode"),
+                "DecodeParms", PdfDictionary.of("Predictor", PdfNumber.of(12), "Columns", PdfNumber.of(3)));
+
+        assertThat(new StreamDecoder().decode(xref)).containsExactly(1, 0, 16, 1, 0, 32);
+    }
+
+    @Test
+    public void tiffPredictorIsReportedAsUnsupported() {
+        PdfStream tiff = stream(deflate(CONTENT), "Filter", PdfName.of("FlateDecode"),
+                "DecodeParms", PdfDictionary.of("Predictor", PdfNumber.of(2), "Columns", PdfNumber.of(4)));
 
         UnsupportedFilterException e = assertThrows(UnsupportedFilterException.class,
-                () -> new StreamDecoder().decode(png));
+                () -> new StreamDecoder().decode(tiff));
 
-        assertThat(e.getMessage()).contains("/FlateDecode with /Predictor 12 is not supported");
+        assertThat(e.getMessage()).contains("/FlateDecode with /Predictor 2 is not supported; only PNG"
+                + " predictors (10 to 15) are");
+    }
+
+    @Test
+    public void badPngRowTypeFailsWithTheStreamOffset() {
+        PdfStream bad = stream(deflate(new byte[] {7, 1, 2}), "Filter", PdfName.of("FlateDecode"),
+                "DecodeParms", PdfDictionary.of("Predictor", PdfNumber.of(15), "Columns", PdfNumber.of(2)));
+
+        PdfFormatException e = assertThrows(PdfFormatException.class, () -> new StreamDecoder().decode(bad));
+
+        assertThat(e.getMessage()).contains("PNG predictor: row 1 has PNG filter type 7; only 0 to 4 exist");
+        assertEquals("offset", 100, e.offset());
     }
 
     @Test

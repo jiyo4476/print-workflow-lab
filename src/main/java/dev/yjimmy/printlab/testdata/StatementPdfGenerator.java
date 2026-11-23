@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.nio.file.Path;
 import dev.yjimmy.printlab.testdata.StatementLayout.TextLine;
 import java.util.List;
-import org.apache.pdfbox.pdfwriter.compress.CompressParameters;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -19,9 +18,9 @@ import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
  * {@link StatementAfpGenerator} writes the same ones as AFP for the same seed.
  * {@link StatementLayout} says where each piece of text goes.
  *
- * <p>The file has a classic cross-reference table, not the cross-reference stream PDFBox writes
- * by default, so {@code dump-pdf} can read it until PR 8 reads streams. Content streams are still
- * Flate-compressed.
+ * <p>The file is saved the way PDFBox saves by default, as most current tools do: a
+ * cross-reference stream and object streams (PDF 1.5). {@link #document} gives the document
+ * unsaved, for a test that saves it another way.
  */
 public final class StatementPdfGenerator {
 
@@ -47,10 +46,22 @@ public final class StatementPdfGenerator {
 
     /** Writes {@code statements} as one PDF. */
     public static void write(List<Statement> statements, Path out) throws IOException {
+        try (PDDocument doc = document(statements)) {
+            doc.save(out.toFile());
+        }
+    }
+
+    /** The run of {@code statements} for this seed, not yet saved; the caller closes it. */
+    public PDDocument document(int statements) throws IOException {
+        return document(data.generate(statements, 0));
+    }
+
+    /** {@code statements} as one document, not yet saved; the caller closes it. */
+    public static PDDocument document(List<Statement> statements) throws IOException {
         PDType1Font font = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
         PDType1Font bold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
-
-        try (PDDocument doc = new PDDocument()) {
+        PDDocument doc = new PDDocument();
+        try {
             for (Statement statement : statements) {
                 int pages = statement.pageCount();
                 for (int p = 1; p <= pages; p++) {
@@ -64,7 +75,10 @@ public final class StatementPdfGenerator {
                     }
                 }
             }
-            doc.save(out.toFile(), CompressParameters.NO_COMPRESSION);
+            return doc;
+        } catch (IOException | RuntimeException e) {
+            doc.close();
+            throw e;
         }
     }
 

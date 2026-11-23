@@ -50,6 +50,7 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 | `documents.csv` | Document properties file |
 | `afp/`: `AfpReader`, `AfpWriter`, `TleDecoder`, `TleEncoder`, `dump-afp` | AFP structured fields, page groups and TLEs |
 | `pdf/`: `XrefReader`, `PdfDocumentReader`, `dump-pdf` | What's inside the PDF input a workflow receives |
+| `dump-pdf --xref`, `PdfDocumentReader.revision(n)` | Incremental updates: an edited PDF still holds every earlier version |
 | `generate-afp` | AFP print files from a composition system, with index tags per document |
 | WAR on Tomcat, `/api/*` servlets | The workflow server and its web services |
 | Marionette dashboard (`src/main/webapp/`) | The operator web interface |
@@ -71,6 +72,7 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw -q exec:java -Dexec.args="dump-afp statement.afp"  # print an AFP file's structure
 ./mvnw -q exec:java -Dexec.args="dump-pdf run.pdf"        # print a PDF's version, trailer and pages
 ./mvnw -q exec:java -Dexec.args="dump-pdf run.pdf 12"     # one object (a Contents number from the dump)
+./mvnw -q exec:java -Dexec.args="dump-pdf --xref edited.pdf"  # each revision, and what it changed
 ```
 
 Then move `run.pdf` into `hotfolder/pdf/` (or `run.afp` into `hotfolder/afp/`) and look in
@@ -297,24 +299,40 @@ a stream of drawing operators, usually Flate-compressed.
 
 ```
 PDF       1.4
-Trailer   <</Root 29 0 R /ID [<99170FBB...> <99170FBB...>] /Size 57>>
-Objects   28 in use, 29 free; xref at offset 0x000011DB (4571)
-Catalog   29 0 R  <</Type /Catalog /Version /1.4 /Pages 30 0 R>>
+Trailer   <</Root 1 0 R /ID [<99170FBB...> <99170FBB...>] /Size 29>>
+Objects   28 in use, 1 free; xref at offset 0x000011C4 (4548)
+Catalog   1 0 R  <</Type /Catalog /Version /1.4 /Pages 2 0 R>>
 Pages     6
-Page 1    31 0 R
+Page 1    3 0 R
   MediaBox  [0.0 0.0 612.0 792.0]
   Fonts     /F1 Helvetica-Bold, /F2 Helvetica
-  Contents  38 0 R  /FlateDecode, 474 bytes, 1817 decoded
+  Contents  10 0 R  /FlateDecode, 474 bytes, 1817 decoded
 ```
 
-`dump-pdf two-statements.pdf 38` prints one object: its dictionary one entry per line, and its stream
+`dump-pdf two-statements.pdf 10` prints one object: its dictionary one entry per line, and its stream
 decoded when that gives text (a content stream's `BT /F1 14 Tf ... ET`). Every version from
 PDF 1.0 to 2.0 is read; a page inherits `MediaBox`, `Resources`, `CropBox` and `Rotate` from the
 page-tree nodes above it. Only Flate is decoded: a stream with another filter (`/DCTDecode`, a
-JPEG) is reported as not decoded, and the rest of the file still dumps. Files with a
-cross-reference stream (most files PDFBox and Acrobat write since PDF 1.5) or an incremental
-update fail with a message naming PR 8, which adds them; `generate` saves a classic table so its
-runs can be dumped. The exit code is 1 when the file can't be read or the object isn't there.
+JPEG) is reported as not decoded, and the rest of the file still dumps. The exit code is 1 when
+the file can't be read or the object isn't there.
+
+Most files written since PDF 1.5 (including `generate`'s) have no `xref` table: the
+cross-reference section is itself a compressed stream, binary rows usually run through a PNG
+predictor, and most small objects are packed into *object streams* (`Objects   37 in use (27 in
+object streams)` for a 3-statement run). An *incremental update* doesn't rewrite the file: it appends the changed
+objects and a new cross-reference section whose `/Prev` points at the old one, so the old
+version is still in the file. `dump-pdf --xref` lists the sections, one per revision:
+
+```
+Revision 1  table at 0x000000D5 (213): 6 entries
+Revision 2  table at 0x000001D4 (468): 3 entries, /Prev 213
+  Changed   3
+  Added     6
+  Freed     5
+```
+
+In code, `PdfDocumentReader.revision(1)` reads the file as it was before any update. That's why
+a "small edit" to a PDF can leave the old content in the file for anyone with a parser.
 
 ### Splitting AFP
 
@@ -431,7 +449,7 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
         other TLE names
 - [ ] **PDF without PDFBox:**
   - [x] Object reader, cross-reference table, page tree and `dump-pdf`
-  - [ ] Cross-reference streams, object streams, incremental updates
+  - [x] Cross-reference streams, object streams, incremental updates
   - [ ] Content streams and text positions
   - [ ] PDF/VT document parts (DPart) indexing
   - [ ] Preflight step

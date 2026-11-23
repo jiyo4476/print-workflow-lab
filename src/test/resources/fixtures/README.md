@@ -26,13 +26,17 @@ Small checked-in files that tests read: AFP samples, workflow YAMLs, golden dump
 - `two-statements.pdf` (6 KB): two generated statements, six pages, written by
   `testsupport/ClassicPdf` for seed 7: a classic xref table, Flate content streams, and a fixed
   `/ID`, so `DumpPdfTest.fixtureIsWhatClassicPdfWritesForSeed7` can check it's still what the
-  code writes. PDFBox renumbers the objects when it re-saves, so objects 1-28 are free entries.
+  code writes. Objects are numbered 1-28; only object 0 is free.
   Regenerate with `ClassicPdf 7 2 src/test/resources/fixtures/pdf/two-statements.pdf` (run its
   `main` on the test classpath), then the golden dumps with `App dump-pdf`, and check the
   differences by hand.
 - `two-statements.dump.txt`: the golden `dump-pdf` output for the file.
-- `two-statements.object-38.dump.txt`: the golden `dump-pdf <file> 38` output: page 1's
+- `two-statements.object-10.dump.txt`: the golden `dump-pdf <file> 10` output: page 1's
   content stream, decoded.
+- `two-revisions.xref.dump.txt`: the golden `dump-pdf --xref` output for the two-revision file
+  `IncrementalUpdateTest.twoRevisions()` builds with `PdfBytes` (built in the test, so no PDF is
+  checked in). The offsets were checked by hand when it was created: revision 1's table starts
+  at byte 213 (a 15-byte header and objects of 49, 52, 39, 27 and 31 bytes).
 
 ## Local-only samples (`samples/`, not in git)
 

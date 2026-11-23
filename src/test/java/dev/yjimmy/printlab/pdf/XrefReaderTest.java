@@ -68,7 +68,7 @@ public class XrefReaderTest {
         assertEquals("object 5", PdfString.of("five"), reader.resolve(new PdfReference(5, 0)));
         assertEquals("object 3 is in no subsection", PdfNull.INSTANCE, reader.resolve(new PdfReference(3, 0)));
         assertThat(reader.entries()).extracting(XrefReader.Entry::objectNumber).containsExactly(0, 1, 2, 5);
-        assertEquals("entry 5", new XrefReader.Entry(5, pdf.offset(5), 0, true), reader.entry(5).orElseThrow());
+        assertEquals("entry 5", new XrefReader.InFile(5, pdf.offset(5), 0), reader.entry(5).orElseThrow());
     }
 
     @Test
@@ -224,14 +224,14 @@ public class XrefReaderTest {
 
         assertThat(assertThrows(PdfFormatException.class,
                 () -> new XrefReader(concat(body, "startxref\n%%EOF\n"))).getMessage())
-                .contains("expected the cross-reference table's offset after 'startxref'");
+                .contains("expected the cross-reference section's offset after 'startxref'");
         assertThat(assertThrows(PdfFormatException.class,
                 () -> new XrefReader(concat(body, "startxref\n99999\n%%EOF\n"))).getMessage())
                 .contains("startxref 99999 is past the end of the file");
     }
 
     @Test
-    public void crossReferenceStreamIsReportedAsPr8() {
+    public void crossReferenceStreamWithTooLittleDataFails() {
         PdfBytes pdf = new PdfBytes("1.5").object(1, CATALOG);
         int xref = pdf.size();
         pdf.object(2, "<< /Type /XRef /Size 3 /W [1 2 1] /Length 0 >>\nstream\n\nendstream");
@@ -239,7 +239,19 @@ public class XrefReaderTest {
         PdfFormatException e = assertThrows(PdfFormatException.class,
                 () -> new XrefReader(concat(pdf.bytes(), "startxref\n" + xref + "\n%%EOF\n")));
 
-        assertThat(e.getMessage()).contains("probably a cross-reference stream (PDF 1.5), which PR 8 reads");
+        assertThat(e.getMessage()).contains(
+                "cross-reference stream 2 0 R has 3 rows of 4 bytes in /Index, but only 0 decoded bytes");
+    }
+
+    @Test
+    public void startxrefAtAnObjectThatIsNotAnXrefStreamFails() {
+        PdfBytes pdf = new PdfBytes("1.5").object(1, CATALOG);
+
+        PdfFormatException e = assertThrows(PdfFormatException.class,
+                () -> new XrefReader(concat(pdf.bytes(), "startxref\n" + pdf.offset(1) + "\n%%EOF\n")));
+
+        assertThat(e.getMessage()).contains("object 1 0 R at offset " + pdf.offset(1)
+                + " is not a cross-reference stream (/Type /XRef)");
     }
 
     @Test
@@ -250,18 +262,24 @@ public class XrefReaderTest {
         PdfFormatException e = assertThrows(PdfFormatException.class,
                 () -> new XrefReader(concat(pdf.bytes(), "startxref\n" + dictionary + "\n%%EOF\n")));
 
-        assertThat(e.getMessage()).contains("startxref points at '<<', not an 'xref' table")
-                .doesNotContain("PR 8");
+        assertThat(e.getMessage())
+                .contains("startxref points at '<<', not an 'xref' table or a cross-reference stream");
         assertEquals("offset", dictionary, e.offset());
     }
 
     @Test
-    public void incrementalUpdateIsReportedAsPr8() {
-        byte[] bytes = new PdfBytes("1.4").object(1, CATALOG).build("/Root 1 0 R /Prev 9");
+    public void prevMustBeAnOffsetInTheFile() {
+        byte[] past = new PdfBytes("1.4").object(1, CATALOG).build("/Root 1 0 R /Prev 999999");
+        PdfBytes pdf = new PdfBytes("1.4").object(1, CATALOG);
+        int dictionary = pdf.offset(1) + "1 0 obj\n".length();
+        int xref = pdf.size();
+        byte[] notASection = pdf.build("/Root 1 0 R /Prev " + dictionary);
 
-        PdfFormatException e = assertThrows(PdfFormatException.class, () -> new XrefReader(bytes));
-
-        assertThat(e.getMessage()).contains("the trailer has /Prev").contains("PR 8");
+        assertThat(assertThrows(PdfFormatException.class, () -> new XrefReader(past)).getMessage())
+                .contains("the trailer's /Prev must be an offset in the file");
+        assertThat(assertThrows(PdfFormatException.class, () -> new XrefReader(notASection)).getMessage())
+                .contains("/Prev of the section at offset " + xref + " points at '<<'"
+                        + ", not an 'xref' table or a cross-reference stream");
     }
 
     @Test

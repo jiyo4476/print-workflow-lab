@@ -124,7 +124,8 @@ both 2.0) with a UTF-8 `/Title` in its `/Info` dictionary.
 - Unit — `XrefReaderTest`: `findsStartxrefWithTrailingWhitespaceVariants`,
   `parsesMultipleSubsections`, `freeEntriesResolveToNull`,
   `offsetPointingAtWrongObjectFailsWithMessage`, plus `streamWhoseLengthIsItselfFailsCleanly`,
-  `crossReferenceStreamIsReportedAsPr8`, `incrementalUpdateIsReportedAsPr8`,
+  `crossReferenceStreamWithTooLittleDataFails`, `prevMustBeAnOffsetInTheFile` (PR 8 renamed
+  the two "reported as PR 8" tests when it read those files),
   `objectsAreReadOnlyWhenResolvedAndThenKept`
 - Unit — `StreamDecoderTest`: `flateRoundTrip`, `unknownFilterReportedAsUnsupported`,
   `flateWithAPredictorIsReportedAsUnsupported`, `truncatedFlateDataFails`,
@@ -162,7 +163,8 @@ both 2.0) with a UTF-8 `/Title` in its `/Info` dictionary.
 **Decided in 7b**
 - One classic `xref` section is read. A trailer with `/Prev` (an incremental update) or
   `/XRefStm` (a hybrid file), or `startxref` pointing at an object (a cross-reference stream),
-  fails with a message naming PR 8, rather than reading the wrong objects.
+  fails with a message naming PR 8, rather than reading the wrong objects. (PR 8 reads all
+  three.)
 - `startxref` is the last one in the file, found by searching backward from the end, so
   `\n`, `\r\n`, a lone CR and a missing final newline all work (FR-4).
 - A free entry, an object number the table doesn't have, and a reference with a different
@@ -180,14 +182,16 @@ both 2.0) with a UTF-8 `/Title` in its `/Info` dictionary.
 - A page inherits all four inheritable attributes (Table 30): `Resources`, `MediaBox`,
   `CropBox` and `Rotate`, resolved. The tree is walked with a stack, not recursion, and a node
   that appears twice fails, so a looping tree can't hang or overflow the stack.
-- Flate with a `/Predictor` (xref streams, PNG images) is reported as unsupported until PR 8.
+- Flate with a `/Predictor` (xref streams, PNG images) is reported as unsupported until PR 8
+  (which adds the PNG predictors).
   Truncated or corrupt Flate data fails (PDFBox is more lenient). One stream may decode to at
   most 256 MiB, so a small stream can't exhaust memory.
 - An encrypted file is reported (`/Encrypt` in the trailer), not decrypted (PRD-11 detects it).
 - Names print with `#xx` escapes and strings as `(...)` or `<hex>`, so file bytes can't put
   control characters on the terminal.
 - `generate` now saves a classic xref table (`CompressParameters.NO_COMPRESSION`), so
-  `dump-pdf` reads its runs; content streams are still Flate-compressed.
+  `dump-pdf` reads its runs; content streams are still Flate-compressed. PR 8 returned it to
+  PDFBox's default compressed save once those files read.
 
 ## Definition of done
 

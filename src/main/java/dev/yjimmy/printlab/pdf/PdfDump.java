@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 
 /**
  * Prints a PDF's structure for {@code App dump-pdf}:
@@ -38,8 +39,16 @@ public final class PdfDump {
         line(out, "Trailer   " + pdf.trailer());
         XrefReader xref = pdf.xref();
         long inUse = xref.entries().stream().filter(XrefReader.Entry::inUse).count();
-        line(out, String.format("Objects   %d in use, %d free; xref at offset 0x%08X (%d)", inUse,
-                xref.entries().size() - inUse, xref.startxref(), xref.startxref()));
+        long compressed = xref.entries().stream().filter(e -> e instanceof XrefReader.Compressed).count();
+        XrefReader.Section section = xref.sections().get(xref.revision() - 1);
+        line(out, String.format("Objects   %d in use%s, %d free; xref %sat offset 0x%08X (%d)", inUse,
+                compressed > 0 ? " (" + compressed + " in object streams)" : "",
+                xref.entries().size() - inUse, section.isStream() ? section.kind() + " " : "",
+                xref.startxref(), xref.startxref()));
+        if (xref.revisions() > 1) {
+            line(out, "Revisions " + xref.revisions() + ", showing " + xref.revision()
+                    + "; dump-pdf --xref lists what each update changed");
+        }
         line(out, "Catalog   " + pdf.trailer().get("Root") + "  " + pdf.catalog());
         List<PdfPage> pages = pdf.pages();
         line(out, "Pages     " + pages.size());
@@ -75,8 +84,13 @@ public final class PdfDump {
         }
         PdfReference ref = new PdfReference(objectNumber, entry.get().generation());
         PdfIndirectObject object = pdf.xref().indirectObject(ref).orElseThrow();
-        line(out, String.format("%d %d obj  at offset 0x%08X (%d)", ref.objectNumber(),
-                ref.generation(), object.offset(), object.offset()));
+        if (entry.get() instanceof XrefReader.Compressed compressed) {
+            line(out, String.format("%d %d obj  in object stream %d, index %d", ref.objectNumber(),
+                    ref.generation(), compressed.streamNumber(), compressed.index()));
+        } else {
+            line(out, String.format("%d %d obj  at offset 0x%08X (%d)", ref.objectNumber(),
+                    ref.generation(), object.offset(), object.offset()));
+        }
         PdfObject value = object.object();
         if (value instanceof PdfStream stream) {
             dictionary(stream.dictionary(), out);
@@ -97,6 +111,53 @@ public final class PdfDump {
             line(out, value.toString());
         }
         return true;
+    }
+
+    /**
+     * Lists the cross-reference sections, one per revision, oldest first:
+     * <pre>
+     * Revision 1  table at 0x000011DB (4571): 57 entries
+     * Revision 2  stream 60 0 R at 0x00001A2B (6699): 3 entries, /Prev 4571
+     *   Changed   2
+     *   Added     58
+     *   Freed     none
+     * </pre>
+     * An update's entries are sorted into objects it changed (in use before), added (new or
+     * reused numbers) and freed (in use before, free now).
+     */
+    public void dumpXref(PdfDocumentReader pdf, Appendable out) {
+        List<XrefReader.Section> sections = pdf.xref().sections();
+        Map<Integer, XrefReader.Entry> before = new TreeMap<>();
+        for (int i = 0; i < sections.size(); i++) {
+            XrefReader.Section section = sections.get(i);
+            long compressed = section.entries().values().stream()
+                    .filter(e -> e instanceof XrefReader.Compressed).count();
+            line(out, String.format("Revision %d  %s at 0x%08X (%d): %d entries%s%s", i + 1,
+                    section.kind(), section.offset(), section.offset(), section.entries().size(),
+                    compressed > 0 ? " (" + compressed + " in object streams)" : "",
+                    section.trailer().get("Prev") != null ? ", /Prev " + section.trailer().get("Prev") : ""));
+            if (i > 0) {
+                List<String> changed = new ArrayList<>();
+                List<String> added = new ArrayList<>();
+                List<String> freed = new ArrayList<>();
+                section.entries().forEach((number, entry) -> {
+                    boolean wasInUse = before.get(number) != null && before.get(number).inUse();
+                    if (entry.inUse()) {
+                        (wasInUse ? changed : added).add(String.valueOf(number));
+                    } else if (wasInUse) {
+                        freed.add(String.valueOf(number));
+                    }
+                });
+                line(out, "  Changed   " + list(changed));
+                line(out, "  Added     " + list(added));
+                line(out, "  Freed     " + list(freed));
+            }
+            before.putAll(section.entries());
+        }
+    }
+
+    private static String list(List<String> numbers) {
+        return numbers.isEmpty() ? "none" : String.join(", ", numbers);
     }
 
     private static String version(PdfDocumentReader pdf) {

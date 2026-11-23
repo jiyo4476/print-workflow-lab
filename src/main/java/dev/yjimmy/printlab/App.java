@@ -43,9 +43,11 @@ import java.util.List;
  *   dump-afp &lt;file.afp&gt; [codePage]
  *                                print an AFP file's structured fields and TLEs; exits 1 if
  *                                the file has structural problems
- *   dump-pdf &lt;file.pdf&gt; [objectNumber]
+ *   dump-pdf [--xref] &lt;file.pdf&gt; [objectNumber]
  *                                print a PDF's version, trailer and pages (MediaBox, fonts,
  *                                content streams), or one object with its decoded stream;
+ *                                --xref lists each cross-reference section (one per revision)
+ *                                and what each incremental update changed;
  *                                exits 1 if the file can't be read or the object isn't there
  * </pre>
  */
@@ -98,6 +100,16 @@ public final class App {
                 }
             }
             case "dump-pdf" -> {
+                if (args.length > 1 && args[1].equals("--xref")) {
+                    if (args.length != 3) {
+                        usage();
+                        return;
+                    }
+                    if (!dumpPdf(Path.of(args[2]), null, true)) {
+                        System.exit(1);
+                    }
+                    return;
+                }
                 if (args.length < 2) {
                     usage();
                     return;
@@ -112,7 +124,7 @@ public final class App {
                         System.exit(1);
                     }
                 }
-                if (!dumpPdf(Path.of(args[1]), objectNumber)) {
+                if (!dumpPdf(Path.of(args[1]), objectNumber, false)) {
                     System.exit(1);
                 }
             }
@@ -121,7 +133,7 @@ public final class App {
     }
 
     /** Returns false if the file can't be read as a PDF or the object isn't in it. */
-    private static boolean dumpPdf(Path file, Integer objectNumber) {
+    private static boolean dumpPdf(Path file, Integer objectNumber, boolean xref) {
         StringBuilder out = new StringBuilder();
         PdfDocumentReader pdf;
         try {
@@ -135,7 +147,9 @@ public final class App {
         }
         try {
             boolean found = true;
-            if (objectNumber == null) {
+            if (xref) {
+                new PdfDump().dumpXref(pdf, out);
+            } else if (objectNumber == null) {
                 new PdfDump().dump(pdf, out);
             } else {
                 found = new PdfDump().dumpObject(pdf, objectNumber, out);
@@ -211,6 +225,8 @@ public final class App {
                                                code page defaults to IBM037
                   dump-pdf <file.pdf> [objectNumber]
                                                print a PDF's version, trailer and pages, or
-                                               one object with its decoded stream""");
+                                               one object with its decoded stream
+                  dump-pdf --xref <file.pdf>   list the cross-reference sections and what
+                                               each incremental update changed""");
     }
 }
