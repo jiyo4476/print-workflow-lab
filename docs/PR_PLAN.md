@@ -576,7 +576,7 @@ PR handles each version's changes.
 
 **Tests**
 - Split in two (PRD-09): 9a is the parser and `dump-content`, 9b the state, positions and
-  extractor. Follow-up 9c: `App dump-text <file> <page>` prints each glyph's text, position,
+  extractor. Follow-up 9c (done): `App dump-text <file> <page>` prints each glyph's text, position,
   width and size (`DumpTextTest`, a golden file for page 1 of the fixture).
 - Unit — `ContentStreamParserTest` (9a)
   - `operandsAttachToFollowingOperator`

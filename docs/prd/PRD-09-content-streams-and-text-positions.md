@@ -71,9 +71,12 @@ metadata (PRD-10) are more reliable than reading text off the page.
   `PdfDocumentReader.content(page)` and `App dump-content`. FR-1, FR-2.
 - **9b** (`feature/09b-text-positions`): graphics and text state, glyph positions,
   `RegionTextExtractor` and `extractor: builtin | pdfbox`. FR-3 to FR-8.
-- **Follow-up** (`feature/09c-dump-text`): `App dump-text <file> <page>`, each glyph's text,
-  position, width and font size, one per line: the 9b counterpart of `dump-content`. Kept out
-  of 9b to keep that PR to one concern.
+- [x] **Follow-up 9c** (`feature/09c-dump-text`): `App dump-text <file> <page>`, each glyph's
+  text, position, width and font size, one per line: the 9b counterpart of `dump-content`. Kept
+  out of 9b to keep that PR to one concern. Glyph text is quoted, with control and other
+  unprintable characters written `\uXXXX`; a CID font, a rotated page or unreadable content
+  stops the dump with a `% stopped:` note. Tests: `DumpTextTest`
+  (`twoStatementsPageOneMatchesGoldenDump`, `fixtures/pdf/two-statements.text-1.dump.txt`).
 
 ## Decided in 9a
 
