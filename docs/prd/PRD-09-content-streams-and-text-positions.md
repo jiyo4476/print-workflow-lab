@@ -36,7 +36,8 @@ metadata (PRD-10) are more reliable than reading text off the page.
 ## Non-goals
 
 - CID / Type 0 fonts and `ToUnicode` maps: detected and reported as unsupported, never garbled.
-- Rendering, clipping paths, annotations, form XObjects (beyond noting them in the dump).
+- Rendering, clipping paths and annotations. (Form XObjects turned out to be needed: see
+  "Decided in 9b".)
 - Reading order or word reconstruction beyond what region extraction needs.
 
 ## Requirements
@@ -70,6 +71,9 @@ metadata (PRD-10) are more reliable than reading text off the page.
   `PdfDocumentReader.content(page)` and `App dump-content`. FR-1, FR-2.
 - **9b** (`feature/09b-text-positions`): graphics and text state, glyph positions,
   `RegionTextExtractor` and `extractor: builtin | pdfbox`. FR-3 to FR-8.
+- **Follow-up** (`feature/09c-dump-text`): `App dump-text <file> <page>`, each glyph's text,
+  position, width and font size, one per line: the 9b counterpart of `dump-content`. Kept out
+  of 9b to keep that PR to one concern.
 
 ## Decided in 9a
 
@@ -107,6 +111,47 @@ metadata (PRD-10) are more reliable than reading text off the page.
   operators are noted; content that can't be parsed stops the dump with a note. Exit code 1 for
   no such page, a stream that can't be decoded, or content that can't be parsed.
 
+## Decided in 9b
+
+- **State.** `GraphicsState` tracks the CTM with a `q`/`Q` stack, the text state parameters
+  (`Tc`, `Tw`, `Tz`, `TL`, `Tf`, and `Ts`, which costs nothing), and the text and text line
+  matrices. `q`/`Q` saves the text state parameters (they're part of the graphics state, 8.4)
+  but not the text matrices; `BT` resets those. A `Q` with nothing saved is ignored, as viewers
+  do. A state operator with the wrong operands fails with its offset.
+- **`Matrix` follows the spec's row-vector convention**: `a.multiply(b)` applies `a` first, so
+  `cm` is `new × CTM` and a glyph's text rendering matrix is `[Tfs×Th 0 0 Tfs 0 Trise] × Tm × CTM`.
+- **Widths**: a font's `/FirstChar` and `/Widths` (then `/MissingWidth`, else 0); a Standard 14
+  font without them uses Adobe's AFM metrics, parsed (C/WX/N lines) from the copies in the
+  PDFBox jar, with WinAnsi's `nbspace` and `sfthyphen` measured as `space` and `hyphen`, as
+  PDFBox does. `SimpleFontTest` checks every code of 12 fonts against PDFBox.
+- **Encodings**: `WinAnsiEncoding` and `StandardEncoding` from `encodings.txt` (Annex D, plus
+  the Adobe Glyph List's Unicode for each name; checked against PDFBox), a dictionary's
+  `/BaseEncoding` and `/Differences`, and glyph names in the `uniXXXX` and `uXXXX` forms. An
+  unknown name is U+FFFD, never a guess.
+- **Unsupported, reported, never guessed** (`UnsupportedContentException`, message starting
+  "unsupported font"): Type 0 (CID) and Type 3 fonts, `MacRomanEncoding` and other encodings,
+  Symbol and ZapfDingbats with no `/Encoding`, a non-standard font without `/Widths`. Pages with
+  `/Rotate` other than 0 are reported too. `ToUnicode` maps aren't read.
+- **Form XObjects are followed** (with their `/Matrix` and `/Resources`, 20 levels deep at most,
+  so a form that draws itself fails): text inside a form is region text like any other, and
+  PDFBox reads it, so skipping it would silently lose index values.
+- **Page coordinates**: x from the left of the crop box (else the media box), y down from its
+  top, the same coordinates PDFBox's `TextPosition.getX()`/`getY()` use.
+- **Which glyphs a region holds**: those whose baseline start point is inside the rectangle
+  (`Rectangle2D.contains`: left and top edges in, right and bottom out), PDFBox's rule, so the
+  two agree. Two deliberate differences: overlapping regions each get every glyph (PDFBox gives
+  a shared glyph to only one of them, because its suppression of duplicated text is shared by
+  all regions, in hash order), and lines are in reading order, top to bottom (PDFBox keeps the
+  drawing order). Glyphs within half a font size of a baseline are one line; a gap of more than
+  half a space is a word break.
+- **`SplitPdf` `extractor`**: `pdfbox` (default) or `builtin`, checked when the workflow loads.
+  `builtin` reads the region text with `RegionTextExtractor`; the documents are still written
+  with PDFBox. A page it can't read fails the job with the page number. Encrypted PDFs need
+  `pdfbox`.
+- **Parity**: identical region text (white space normalized) for the statement regions on 100
+  statements, and an identical `documents.csv` for a 40-statement run with bad addresses.
+  `pdfbox` stays the default, as planned, until parity has held on more than generated input.
+
 ## Acceptance criteria
 
 | # | Criterion | Verified by |
@@ -131,12 +176,21 @@ metadata (PRD-10) are more reliable than reading text off the page.
   (`fixtures/pdf/two-statements.content-1.dump.txt`), `nestingIsIndentedAndResourcesNamed`,
   `unmatchedAndUnknownOperatorsAreNoted`
 - Unit — `GraphicsStateTest`: `qAndQRestoreState`, `cmConcatenatesInCorrectOrder`,
-  `tdMovesLineMatrix`, `tStarUsesLeading`
+  `tdMovesLineMatrix`, `tStarUsesLeading`, `textRenderingMatrixScalesAndRises`,
+  `wrongOperandsFailWithTheirOffset`
 - Unit — `TextPositionTest`: `accountNumberFoundAtGeneratorPosition`,
-  `tjKerningShiftsFollowingGlyphs`
-- Differential — `RegionExtractorVsPdfBoxTest` (100 generated statements)
-- Workflow — `BuiltinExtractorWorkflowTest`
-- Limitation — `cidFontReportedAsUnsupportedNotGarbled`
+  `tjKerningShiftsFollowingGlyphs`, `glyphsAdvanceByTheirAfmWidths`,
+  `charAndWordSpacingAndHorizontalScaling`, `ctmAndCropBoxMoveTheOrigin`,
+  `textInAFormXObjectIsFound`, `widthsArrayAndDifferencesAreRead`
+- Unit — `RegionTextExtractorTest`: `aGlyphBelongsWhereItsBaselineStarts`,
+  `overlappingRegionsEachGetTheirGlyphs`, `linesAreInReadingOrder`, `wordGapsBecomeSpaces`
+- Differential — `SimpleFontTest`: `encodingTablesMatchPdfBox`, `standard14WidthsMatchPdfBox`
+- Differential — `RegionExtractorVsPdfBoxTest`: `builtinAndPdfBoxRegionTextIdenticalFor100Statements`,
+  `overlappingRegionsAreWhereTheExtractorsDifferByDesign`
+- Workflow — `BuiltinExtractorWorkflowTest.documentsCsvIsIdenticalWithEitherExtractor`
+- Limitation — `TextPositionTest.cidFontReportedAsUnsupportedNotGarbled`,
+  `otherFontsTheExtractorCantReadAreReported`, `rotatedPagesAreReported`;
+  `SplitPdfStepTest.builtinExtractorFailsOnAPageItCantRead`
 
 ## Risks and open questions
 

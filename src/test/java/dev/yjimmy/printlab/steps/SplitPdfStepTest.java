@@ -6,6 +6,9 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import java.nio.file.Path;
 import dev.yjimmy.printlab.workflow.Job;
 import dev.yjimmy.printlab.testsupport.TestJobs;
+import java.nio.file.Files;
+import java.nio.charset.StandardCharsets;
+import dev.yjimmy.printlab.testsupport.PdfBytes;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertThrows;
 
@@ -84,5 +87,38 @@ public class SplitPdfStepTest {
                         "newDocumentWhen", Map.of("property", "a", "operator", "bogus"))));
 
         assertThat(e.getMessage()).contains("'newDocumentWhen'").contains("bogus");
+    }
+
+    @Test
+    public void extractorMustBePdfboxOrBuiltin() {
+        new SplitPdfStep(Map.of("splitOn", "a", "regions", Map.of("a", RECT), "extractor", "builtin"));
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> new SplitPdfStep(Map.of("splitOn", "a", "regions", Map.of("a", RECT), "extractor", "ocr")));
+
+        assertThat(e.getMessage()).isEqualTo("extractor must be pdfbox or builtin, not 'ocr'");
+    }
+
+    /** A CID font fails the job with the page number, instead of indexing the page with wrong text. */
+    @Test
+    public void builtinExtractorFailsOnAPageItCantRead() throws Exception {
+        Path tmp = folder.getRoot().toPath();
+        Path input = tmp.resolve("cid.pdf");
+        Files.write(input, new PdfBytes("1.4")
+                .object(1, "<< /Type /Catalog /Pages 2 0 R >>")
+                .object(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+                .object(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+                        + " /Resources << /Font << /F1 5 0 R >> >> >>")
+                .stream(4, "", "BT /F1 10 Tf 100 700 Td <0041> Tj ET".getBytes(StandardCharsets.US_ASCII))
+                .object(5, "<< /Type /Font /Subtype /Type0 /BaseFont /MSGothic /Encoding /Identity-H >>")
+                .build("/Root 1 0 R"));
+        Job job = TestJobs.newJob(tmp, input);
+        SplitPdfStep step = new SplitPdfStep(Map.of("splitOn", "a", "regions", Map.of("a", RECT),
+                "extractor", "builtin"));
+
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> step.execute(job));
+
+        assertThat(e.getMessage()).startsWith("Page 1: unsupported font MSGothic");
+        assertThat(job.documents()).isEmpty();
     }
 }
