@@ -99,6 +99,38 @@ public class DumpTextTest {
                 .contains("\n\"\\\"\" ").contains("\n\" \" ").contains("\n\"\\\\\" ").contains("\n\"A\" ");
     }
 
+    /** {@code \} then {@code u} and four hex digits, the way quoted writes {@code c}. */
+    private static String escaped(int c) {
+        return "\\" + String.format("u%04X", c);
+    }
+
+    /** A combining mark would join the quote; a no-break or em space would look like a space. */
+    @Test
+    public void marksAndOtherSpacesAreEscaped() {
+        for (int c : new int[] {0x0301, 0x20DD, 0x0903, 0x00A0, 0x2003}) {
+            assertEquals("U+" + Integer.toHexString(c), "\"" + escaped(c) + "\"", PdfDump.quoted(String.valueOf((char) c)));
+        }
+        assertEquals("an ordinary space", "\" \"", PdfDump.quoted(" "));
+    }
+
+    /** Text longer than the column widens it, so every number stays under its heading. */
+    @Test
+    public void longTextWidensTheTextColumn() {
+        String font = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica"
+                + " /Encoding << /BaseEncoding /WinAnsiEncoding /Differences [1 /f_f_i_f_f_l_f_f_i] >> >>";
+
+        String out = dump(page("BT /F1 10 Tf <0141> Tj ET", font), 1, true);
+
+        // "ffifflffi" quoted is 11 wide; the name isn't in Helvetica's AFM, so its width is 0.
+        assertEquals("dump", """
+                Page 1 of 1  3 0 R
+                text               x        y    width    size
+                "ffifflffi"     0.00   792.00     0.00   10.00
+                "A"             0.00   792.00     6.67   10.00
+                2 glyphs
+                """, out);
+    }
+
     @Test
     public void quotedEscapesWhatCantBeShown() {
         assertEquals("empty", "\"\"", PdfDump.quoted(""));

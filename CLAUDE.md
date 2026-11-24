@@ -168,8 +168,9 @@ report's line total rounded *down* to two decimals, in its own commit.
   `dump-pdf --xref`, the sections and what each update changed) and `App dump-content`
   (operators indented inside `q`/`Q`, `BT`/`ET`, marked content, each described) and `App
   dump-text` (`dumpText`: one line per `TextPositionExtractor` glyph, its text quoted with
-  unprintable characters as `\uXXXX`, then x, y from the top-left, width and size; a CID font,
-  rotated page or bad content ends it with `% stopped:`); names and strings print as PDF
+  unprintable, combining and non-ASCII space characters as `\uXXXX`, then x, y from the
+  top-left, width and size; anything `TextPositionExtractor` can't read or bad content ends it
+  with `% stopped:`); names and strings print as PDF
   syntax, so file bytes never reach the terminal raw. Build small PDF
   test input with `testsupport/PdfBytes` (classic tables, cross-reference streams, object
   streams and incremental updates, all uncompressed); `testsupport/ClassicPdf` writes a seeded

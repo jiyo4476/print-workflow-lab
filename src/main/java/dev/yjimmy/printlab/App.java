@@ -8,6 +8,8 @@ import dev.yjimmy.printlab.input.InputDevices;
 import dev.yjimmy.printlab.pdf.PdfDocumentReader;
 import dev.yjimmy.printlab.pdf.PdfDump;
 import dev.yjimmy.printlab.pdf.PdfFormatException;
+import dev.yjimmy.printlab.pdf.UnsupportedContentException;
+import dev.yjimmy.printlab.pdf.UnsupportedFilterException;
 import dev.yjimmy.printlab.testdata.StatementAfpGenerator;
 import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
 import dev.yjimmy.printlab.workflow.StepRegistry;
@@ -56,8 +58,8 @@ import java.util.List;
  *   dump-text &lt;file.pdf&gt; &lt;page&gt;
  *                                print each glyph on a page: its text, x and y (points from the
  *                                top-left of the crop box), width and font size; exits 1 if
- *                                there's no such page or its text can't be read (a CID font,
- *                                a rotated page)
+ *                                there's no such page or the built-in reader can't read its
+ *                                text (a CID font or symbolic font, rotated text, ...)
  * </pre>
  */
 public final class App {
@@ -174,7 +176,8 @@ public final class App {
         } catch (IOException e) {
             System.err.println(command + ": can't read " + file + ": " + e);
             return false;
-        } catch (PdfFormatException e) {
+        } catch (PdfFormatException | UnsupportedFilterException | UnsupportedContentException e) {
+            // From reading the page tree (an object stream's filter, say): the page wasn't reached.
             System.out.print(out);
             System.err.println(command + ": " + file + ": " + e.getMessage());
             return false;
