@@ -14,10 +14,12 @@ import java.util.Map;
  * <p>A glyph belongs to a region when the point where it starts on its baseline is inside the
  * rectangle ({@link Rectangle2D#contains(double, double)}: left and top edges in, right and
  * bottom edges out). That is PDFBox's rule too, so both extractors agree on which glyphs a
- * region holds. Two differences, both deliberate:
+ * region holds. A glyph drawn again at nearly the same place (fake bold: the same text within a
+ * third of its width) is dropped, as PDFBox drops it. Two differences, both deliberate:
  * <ul>
  *   <li>Overlapping regions each get every glyph inside them. PDFBox gives a glyph to only one of
- *       them, because its suppression of duplicated (fake-bold) text is shared by all regions.</li>
+ *       them, because its suppression of duplicated (fake-bold) text is shared by all regions;
+ *       here each region drops its own duplicates.</li>
  *   <li>Lines are put in reading order, top to bottom, then left to right; PDFBox keeps the
  *       order the content draws them in.</li>
  * </ul>
@@ -63,8 +65,13 @@ public final class RegionTextExtractor {
                 text.append('\n');
             }
             line.sort(Comparator.comparingDouble(Glyph::x));
+            List<Glyph> kept = new ArrayList<>();
             Glyph previous = null;
             for (Glyph glyph : line) {
+                if (isDuplicate(glyph, kept)) {
+                    continue;
+                }
+                kept.add(glyph);
                 if (previous != null && isWordGap(previous, glyph)) {
                     text.append(' ');
                 }
@@ -73,6 +80,21 @@ public final class RegionTextExtractor {
             }
         }
         return text.toString();
+    }
+
+    /**
+     * Whether {@code glyph} repeats one already kept (sorted by x) at nearly the same place: the
+     * same text within a third of its width both ways, PDFBox's test for fake-bold text.
+     */
+    private static boolean isDuplicate(Glyph glyph, List<Glyph> kept) {
+        double tolerance = glyph.width() / 3;
+        for (int i = kept.size() - 1; i >= 0 && glyph.x() - kept.get(i).x() <= tolerance; i--) {
+            Glyph other = kept.get(i);
+            if (other.text().equals(glyph.text()) && Math.abs(other.y() - glyph.y()) <= tolerance) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isWordGap(Glyph previous, Glyph next) {

@@ -595,13 +595,15 @@ PR handles each version's changes.
   - `accountNumberFoundAtGeneratorPosition` (x = 400, y = 40 from top, ±0.5 pt)
   - `tjKerningShiftsFollowingGlyphs` (thousandths of text space)
 - Unit — `RegionTextExtractorTest`: `aGlyphBelongsWhereItsBaselineStarts`,
-  `overlappingRegionsEachGetTheirGlyphs`
+  `overlappingRegionsEachGetTheirGlyphs`, `fakeBoldTextIsReadOnce`
 - Differential — `SimpleFontTest`: encodings and Standard 14 widths match PDFBox
 - Differential — `RegionExtractorVsPdfBoxTest`: builtin and PDFBox region text identical for 100
   generated statements.
 - Workflow — `BuiltinExtractorWorkflowTest`: `documents.csv` identical with `extractor: builtin`
   and `extractor: pdfbox`.
-- Limitation — `cidFontReportedAsUnsupportedNotGarbled`; `SplitPdfStepTest.builtinExtractorFailsOnAPageItCantRead`.
+- Limitation — `cidFontReportedAsUnsupportedNotGarbled`, `builtInEncodingsAreReportedNotGuessed`,
+  `textThatIsNotHorizontalIsReported`, `formsDrawnOverAndOverFailPastTheContentLimit`;
+  `SplitPdfStepTest.builtinExtractorFailsOnAPageItCantRead`.
 
 ### PR 10 — PDF/VT-style document parts (DPart) indexing `M`
 

@@ -63,6 +63,11 @@ public class SimpleFontTest {
         assertEquals("a surrogate isn't text", SimpleEncoding.UNKNOWN, SimpleEncoding.unicode("uniD800"));
         assertEquals("not hex", SimpleEncoding.UNKNOWN, SimpleEncoding.unicode("uniZZZZ"));
         assertEquals("unknown name", SimpleEncoding.UNKNOWN, SimpleEncoding.unicode("g123"));
+        assertEquals("a variant suffix is dropped", "A", SimpleEncoding.unicode("A.sc"));
+        assertEquals("on uni names too", "é", SimpleEncoding.unicode("uni00E9.alt"));
+        assertEquals("ligature parts are joined", "ffi", SimpleEncoding.unicode("f_f_i"));
+        assertEquals("an unknown part spoils the ligature", SimpleEncoding.UNKNOWN, SimpleEncoding.unicode("f_g123"));
+        assertEquals("an empty part too", SimpleEncoding.UNKNOWN, SimpleEncoding.unicode("f__i"));
         assertThat(SimpleEncoding.named("MacRomanEncoding")).isNull();
         assertEquals("WinAnsiEncoding", SimpleEncoding.named("WinAnsiEncoding").toString());
     }

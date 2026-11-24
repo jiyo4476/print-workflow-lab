@@ -17,8 +17,9 @@ import java.util.Map;
  * <p>The two base encodings come from {@code encodings.txt}, a copy of Annex D's table with
  * the Adobe Glyph List's Unicode values for each name. A font's {@code /Differences} array
  * replaces some codes' names. A name the table doesn't know is read in the {@code uniXXXX}
- * (one or more four-digit code units) or {@code uXXXX} to {@code uXXXXXX} form, or else is
- * U+FFFD (the replacement character), never a guess.
+ * (one or more four-digit code units) or {@code uXXXX} to {@code uXXXXXX} form, with a variant
+ * suffix ({@code a.sc}) dropped and ligature parts ({@code f_i}) joined, as the Adobe Glyph List
+ * specification says; else it is U+FFFD (the replacement character), never a guess.
  */
 public final class SimpleEncoding {
 
@@ -115,6 +116,21 @@ public final class SimpleEncoding {
         String known = UNICODE.get(glyphName);
         if (known != null) {
             return known;
+        }
+        int dot = glyphName.indexOf('.');
+        if (dot > 0) {
+            return unicode(glyphName.substring(0, dot)); // a.sc, one.oldstyle: a variant of a, one.
+        }
+        if (glyphName.indexOf('_') > 0) {
+            StringBuilder text = new StringBuilder(); // f_i: a ligature of f and i.
+            for (String part : glyphName.split("_", -1)) {
+                String partText = part.isEmpty() ? UNKNOWN : unicode(part);
+                if (partText.equals(UNKNOWN)) {
+                    return UNKNOWN;
+                }
+                text.append(partText);
+            }
+            return text.toString();
         }
         if (glyphName.startsWith("uni") && glyphName.length() > 3 && (glyphName.length() - 3) % 4 == 0) {
             // uni + one or more four-digit UTF-16 code units: uni00660069 is "fi".

@@ -404,14 +404,17 @@ file says never reaches the terminal raw.
 
 Both put a glyph in a region when the point where it starts on its baseline is inside the
 rectangle, and give the same `documents.csv` for generated runs (`BuiltinExtractorWorkflowTest`).
-Two differences are on purpose: overlapping regions each get every glyph inside them (PDFBox
-gives a shared glyph to one region only), and a region's lines come top to bottom.
+Both read fake bold (text drawn twice, slightly apart) once. Two differences are on purpose:
+overlapping regions each get every glyph inside them (PDFBox gives a shared glyph to one region
+only), and a region's lines come top to bottom.
 
 The built-in reader only handles **simple fonts** (Type 1 and TrueType with one byte per
 character, WinAnsi or Standard encoding). A **CID font** (Type 0, as used for CJK text and many
-embedded subsets), a Type 3 font, another encoding or a rotated page fails the job with the
-page number ("unsupported font ...") instead of indexing the page with wrong text. `ToUnicode`
-maps aren't read. Use `pdfbox` for those files.
+embedded subsets), a Type 3 font, another encoding, a font whose own built-in encoding applies
+(symbolic, or embedded with no base encoding), a rotated page or rotated text fails the job with
+the page number ("unsupported font ...") instead of indexing the page with wrong text.
+`ToUnicode` maps aren't read. Use `pdfbox` for those files. `builtin` also reads the whole file
+into memory beside PDFBox's copy.
 
 ### Splitting AFP
 

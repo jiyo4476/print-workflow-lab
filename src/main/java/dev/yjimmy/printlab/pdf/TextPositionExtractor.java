@@ -19,19 +19,37 @@ import java.util.Map;
  * <p>Page coordinates: {@code x} is measured from the left of the crop box (else the media box),
  * {@code y} down from its top, as workflow regions are. A page with {@code /Rotate} other than 0
  * is not supported. Text in form XObjects ({@code Do} on a {@code /Subtype /Form}) is followed,
- * with the form's {@code /Matrix} and {@code /Resources}, to {@value #MAX_FORM_DEPTH} levels.
- * Fonts are {@link SimpleFont}s; any other font throws {@link UnsupportedContentException}.
+ * with the form's {@code /Matrix} and {@code /Resources}, to {@value #MAX_FORM_DEPTH} levels;
+ * the page and every form it draws (each time it is drawn) may come to no more than
+ * {@link StreamDecoder#DEFAULT_MAX_DECODED_BYTES} of content, so forms that draw each other
+ * many times over fail instead of running out of memory, as does a page of more than
+ * {@value #MAX_GLYPHS} glyphs. Text must run left to right along a
+ * horizontal baseline: text that {@code cm}, {@code Tm} or a form's {@code /Matrix} turns
+ * fails rather than come out one glyph per line. Fonts are {@link SimpleFont}s; any other font
+ * throws {@link UnsupportedContentException}.
  */
 public final class TextPositionExtractor {
 
     /** How deep form XObjects may draw each other; deeper (or a form that draws itself) fails. */
     public static final int MAX_FORM_DEPTH = 20;
 
+    /** The most glyphs one page may show; a real page has a few thousand. */
+    public static final int MAX_GLYPHS = 1_000_000;
+
     private final PdfDocumentReader pdf;
+    private final long maxContentBytes;
+    private final int maxGlyphs;
     private final Map<PdfDictionary, SimpleFont> fonts = new IdentityHashMap<>();
 
     public TextPositionExtractor(PdfDocumentReader pdf) {
+        this(pdf, StreamDecoder.DEFAULT_MAX_DECODED_BYTES, MAX_GLYPHS);
+    }
+
+    /** With other limits on the content a page draws and the glyphs it shows (for tests). */
+    TextPositionExtractor(PdfDocumentReader pdf, long maxContentBytes, int maxGlyphs) {
         this.pdf = pdf;
+        this.maxContentBytes = maxContentBytes;
+        this.maxGlyphs = maxGlyphs;
     }
 
     /** Every character {@code page} draws, in the order the content draws them. */
@@ -42,8 +60,10 @@ public final class TextPositionExtractor {
                     + degrees + "); only unrotated pages are read");
         }
         double[] box = box(page);
-        Run run = new Run(box[0], box[3]);
-        run.draw(pdf.content(page), page.resources(), 0);
+        Run run = new Run(page.number(), box[0], box[3]);
+        byte[] content = pdf.content(page);
+        run.drawn = content.length;
+        run.draw(content, page.resources(), 0);
         return run.glyphs;
     }
 
@@ -68,12 +88,17 @@ public final class TextPositionExtractor {
 
     /** One page's walk: the state, and the glyphs found so far. */
     private final class Run {
+        private final int pageNumber;
         private final double left;
         private final double top;
         private final GraphicsState state = new GraphicsState();
         private final List<Glyph> glyphs = new ArrayList<>();
+        private final Map<PdfStream, byte[]> forms = new IdentityHashMap<>();
+        /** Content bytes drawn so far: the page's, plus each form's every time it is drawn. */
+        private long drawn;
 
-        Run(double left, double top) {
+        Run(int pageNumber, double left, double top) {
+            this.pageNumber = pageNumber;
             this.left = left;
             this.top = top;
         }
@@ -116,6 +141,16 @@ public final class TextPositionExtractor {
             for (byte b : text.bytes()) {
                 int code = b & 0xFF;
                 Matrix trm = state.textRenderingMatrix();
+                boolean zeroSize = trm.a() == 0 && trm.b() == 0;
+                if (!zeroSize && (!(trm.a() > 0) || Math.abs(trm.b()) > trm.a() * 1e-3)) {
+                    throw new UnsupportedContentException("page " + pageNumber + " draws text that isn't"
+                            + " horizontal and left to right (it is turned by 'cm', 'Tm' or a form's /Matrix);"
+                            + " only such text is read");
+                }
+                if (glyphs.size() == maxGlyphs) {
+                    throw new UnsupportedContentException("page " + pageNumber + " shows more than "
+                            + maxGlyphs + " glyphs");
+                }
                 double width = font.width(code) / 1000;
                 glyphs.add(new Glyph(font.text(code), trm.e() - left, top - trm.f(),
                         width * trm.xScale(), trm.yScale(), font.width(' ') / 1000 * trm.xScale()));
@@ -161,7 +196,14 @@ public final class TextPositionExtractor {
                     }
                     state.concatenate(new Matrix(n[0], n[1], n[2], n[3], n[4], n[5]));
                 }
-                draw(pdf.decode(stream), formResources, depth + 1);
+                byte[] content = forms.computeIfAbsent(stream, pdf::decode);
+                drawn += content.length;
+                if (drawn > maxContentBytes) {
+                    throw new UnsupportedContentException("page " + pageNumber + " draws more than "
+                            + maxContentBytes + " bytes of content with its form XObjects"
+                            + " (/" + name.name() + " is drawn again and again?)");
+                }
+                draw(content, formResources, depth + 1);
             } finally {
                 while (state.depth() > level) {
                     state.restore(); // Also undoes any q the form left open.

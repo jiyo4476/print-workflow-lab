@@ -42,7 +42,8 @@ import org.apache.pdfbox.text.PDFTextStripperByArea;
  * PDFBox's {@code PDFTextStripperByArea}; {@code builtin} uses this project's own reader
  * ({@link RegionTextExtractor}), which handles simple fonts only and fails the job on a page it
  * can't read (a CID font, say) instead of indexing it wrongly. The documents are written with
- * PDFBox either way.
+ * PDFBox either way, so {@code builtin} holds the file in memory twice: PDFBox's copy and the
+ * reader's bytes.
  *
  * <p>This is the PDF counterpart of AFP indexing: PDF has no built-in document boundaries or index
  * tags, so we infer them from where text sits on the page. A PDF with no pages fails the job.
@@ -163,7 +164,8 @@ public final class SplitPdfStep implements Step {
             try {
                 return RegionTextExtractor.extract(glyphs.glyphs(pages.get(number - 1)), regions);
             } catch (RuntimeException e) {
-                throw new IllegalStateException("Page " + number + ": " + e.getMessage(), e);
+                throw new IllegalStateException("Page " + number + ": "
+                        + (e.getMessage() == null ? e.toString() : e.getMessage()), e);
             }
         };
     }

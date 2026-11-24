@@ -75,6 +75,18 @@ public class RegionTextExtractorTest {
         assertEquals("nothing", "", RegionTextExtractor.text(List.of()));
     }
 
+    /** Fake bold draws everything twice, a little apart; like PDFBox, the copy is dropped. */
+    @Test
+    public void fakeBoldTextIsReadOnce() {
+        List<Glyph> bold = all(List.of(word("1234", 100, 50), word("1234", 100.3, 50.2)));
+
+        assertEquals("1234", RegionTextExtractor.text(bold));
+        assertEquals("a third of the width apart is still a copy", "11",
+                RegionTextExtractor.text(all(List.of(word("1", 0, 0), word("1", 1.6, 0), word("1", 5, 0)))));
+        assertEquals("different text isn't a copy", "il",
+                RegionTextExtractor.text(all(List.of(word("i", 0, 0), word("l", 0.5, 0)))));
+    }
+
     @Test
     public void aPageIsReadStraightIntoRegions() {
         PdfDocumentReader pdf = TextPositionTest.page("", "BT /F1 10 Tf 100 700 Td (Hello) Tj ET",
