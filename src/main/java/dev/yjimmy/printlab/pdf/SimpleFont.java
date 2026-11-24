@@ -18,15 +18,20 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Widths, in thousandths of a text space unit: the font's {@code /FirstChar} and
  * {@code /Widths} when it has them ({@code /MissingWidth} from the descriptor, else 0, for
  * other codes). A Standard 14 font may leave them out (9.6.2.2); its widths then come from
- * Adobe's AFM metrics, read from the copies inside the PDFBox jar.
+ * Adobe's AFM metrics, read from the copies inside the PDFBox jar, which also give the codes its
+ * {@code /Widths} don't cover when there is no {@code /MissingWidth} (as PDFBox does).
  *
  * <p>Encoding: {@code /WinAnsiEncoding}, {@code /StandardEncoding}, or a dictionary with an
- * optional {@code /BaseEncoding} and {@code /Differences}; none means {@code StandardEncoding}.
+ * optional {@code /BaseEncoding} and {@code /Differences}. With no encoding, or no
+ * {@code /BaseEncoding}, the base is {@code StandardEncoding} for a font that is neither
+ * embedded nor symbolic; otherwise it is the font program's own encoding (9.6.6.1), which isn't
+ * read.
  *
  * <p>Everything else throws {@link UnsupportedContentException} ("unsupported font") rather
  * than give wrong text: Type 0 (CID) fonts, Type 3 fonts, other encodings ({@code
- * MacRomanEncoding}), symbolic fonts with no encoding (Symbol, ZapfDingbats), and a non-standard
- * font with no {@code /Widths}. {@code /ToUnicode} maps aren't read.
+ * MacRomanEncoding}), a built-in encoding (Symbol, ZapfDingbats, a font with the symbolic flag,
+ * an embedded font with no base encoding), and a non-standard font with no {@code /Widths}.
+ * {@code /ToUnicode} maps aren't read.
  */
 public final class SimpleFont {
 
@@ -67,15 +72,20 @@ public final class SimpleFont {
         String standard = baseFont == null ? null : withoutSubsetPrefix(baseFont);
         boolean isStandard = standard != null && STANDARD_14.contains(standard);
 
-        SimpleFont result = new SimpleFont(label, encoding(pdf, label, font.get("Encoding"), standard));
+        PdfDictionary descriptor = pdf.resolve(font.get("FontDescriptor")) instanceof PdfDictionary d
+                ? d : PdfDictionary.of();
+        boolean builtInEncoding = "Symbol".equals(standard) || "ZapfDingbats".equals(standard)
+                || (pdf.resolve(descriptor.get("Flags")) instanceof PdfNumber flags && (flags.intValue() & 4) != 0)
+                || descriptor.get("FontFile") != null || descriptor.get("FontFile2") != null
+                || descriptor.get("FontFile3") != null;
+        SimpleFont result = new SimpleFont(label, encoding(pdf, label, font.get("Encoding"), builtInEncoding));
         PdfObject widths = pdf.resolve(font.get("Widths"));
         if (widths instanceof PdfArray array) {
-            double missing = 0;
-            if (pdf.resolve(font.get("FontDescriptor")) instanceof PdfDictionary descriptor
-                    && pdf.resolve(descriptor.get("MissingWidth")) instanceof PdfNumber n) {
-                missing = n.doubleValue();
+            if (pdf.resolve(descriptor.get("MissingWidth")) instanceof PdfNumber n) {
+                java.util.Arrays.fill(result.widths, n.doubleValue());
+            } else if (isStandard) {
+                result.afmWidths(standard);
             }
-            java.util.Arrays.fill(result.widths, missing);
             int first = pdf.resolve(font.get("FirstChar")) instanceof PdfNumber n ? n.intValue() : 0;
             for (int i = 0; i < array.size(); i++) {
                 int code = first + i;
@@ -84,23 +94,32 @@ public final class SimpleFont {
                 }
             }
         } else if (isStandard) {
-            Map<String, Integer> metrics = afm(standard);
-            for (int code = 0; code < 256; code++) {
-                String glyph = result.encoding.glyphName(code);
-                result.widths[code] = glyph == null ? 0 : metrics.getOrDefault(glyph,
-                        metrics.getOrDefault(AFM_ALIASES.getOrDefault(glyph, glyph), 0));
-            }
+            result.afmWidths(standard);
         } else {
             throw unsupported(label, "it has no /Widths and isn't one of the Standard 14 fonts");
         }
         return result;
     }
 
-    private static SimpleEncoding encoding(PdfDocumentReader pdf, String label, PdfObject value, String standard) {
+    /** Every code's width from the Standard 14 font {@code standard}'s AFM, by its glyph name. */
+    private void afmWidths(String standard) {
+        Map<String, Integer> metrics = afm(standard);
+        for (int code = 0; code < 256; code++) {
+            String glyph = encoding.glyphName(code);
+            widths[code] = glyph == null ? 0 : metrics.getOrDefault(glyph,
+                    metrics.getOrDefault(AFM_ALIASES.getOrDefault(glyph, glyph), 0));
+        }
+    }
+
+    /**
+     * The font's encoding; {@code builtInEncoding} when, lacking a base encoding, the font
+     * program's own would apply (a symbolic or embedded font).
+     */
+    private static SimpleEncoding encoding(PdfDocumentReader pdf, String label, PdfObject value, boolean builtInEncoding) {
         PdfObject resolved = pdf.resolve(value);
         if (resolved == null || resolved instanceof PdfNull) {
-            if ("Symbol".equals(standard) || "ZapfDingbats".equals(standard)) {
-                throw unsupported(label, "a symbolic font's built-in encoding isn't read");
+            if (builtInEncoding) {
+                throw unsupported(label, "a symbolic or embedded font's built-in encoding isn't read");
             }
             return SimpleEncoding.STANDARD;
         }
@@ -109,6 +128,10 @@ public final class SimpleFont {
         }
         if (resolved instanceof PdfDictionary dictionary) {
             String baseName = name(pdf.resolve(dictionary.get("BaseEncoding")));
+            if (baseName == null && builtInEncoding) {
+                throw unsupported(label, "its /Differences change a symbolic or embedded font's built-in"
+                        + " encoding, which isn't read (no /BaseEncoding)");
+            }
             SimpleEncoding base = baseName == null ? SimpleEncoding.STANDARD : base(label, baseName);
             return pdf.resolve(dictionary.get("Differences")) instanceof PdfArray differences
                     ? base.withDifferences(differences) : base;

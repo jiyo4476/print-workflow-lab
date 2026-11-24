@@ -154,10 +154,13 @@ report's line total rounded *down* to two decimals, in its own commit.
   `Matrix` uses the spec's row vectors (`a.multiply(b)` applies `a` first). `TextPositionExtractor`
   turns a page into `Glyph`s (top-left coordinates from the crop box, as regions use), following
   form XObjects; fonts are `SimpleFont`s (`/Widths`, else the Standard 14 AFM files in the PDFBox
-  jar; `SimpleEncoding` reads `encodings.txt`, Annex D). CID and Type 3 fonts, other encodings
-  and rotated pages throw `UnsupportedContentException`, never guessed text. `RegionTextExtractor`
-  uses PDFBox's rule (the glyph's baseline start is in the rectangle) but gives overlapping
-  regions every glyph and orders lines top to bottom; `RegionExtractorVsPdfBoxTest` checks parity.
+  jar; `SimpleEncoding` reads `encodings.txt`, Annex D). CID and Type 3 fonts, other encodings,
+  built-in encodings (symbolic or embedded fonts with no base encoding), rotated pages and
+  non-horizontal text throw `UnsupportedContentException`, never guessed text; a page's content
+  with its forms is capped (256 MiB drawn, 1,000,000 glyphs). `RegionTextExtractor`
+  uses PDFBox's rule (the glyph's baseline start is in the rectangle), drops fake-bold copies as
+  PDFBox does, but gives overlapping regions every glyph and orders lines top to bottom;
+  `RegionExtractorVsPdfBoxTest` checks parity.
   `PdfDocumentReader` reads the version (header, raised by the catalog's `/Version`; none is
   rejected), the catalog, and the page tree, walked with a stack (a node seen twice fails), with
   `Resources`, `MediaBox`, `CropBox` and `Rotate` inherited into each `PdfPage`. `PdfString.text()`

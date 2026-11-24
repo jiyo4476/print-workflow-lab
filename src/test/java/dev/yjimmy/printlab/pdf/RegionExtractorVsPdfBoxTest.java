@@ -4,11 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 
 import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
+import dev.yjimmy.printlab.testsupport.PdfBytes;
 import dev.yjimmy.printlab.workflow.WorkflowDefinition.StepDefinition;
 import dev.yjimmy.printlab.workflow.WorkflowDefinition;
 import java.awt.geom.Rectangle2D;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -69,6 +71,31 @@ public class RegionExtractorVsPdfBoxTest {
             }
         }
         assertThat(compared).as("regions compared").isGreaterThan(100 * regions.size());
+    }
+
+    /** Fake bold (each string drawn twice, 0.3 pt apart): both extractors read it once. */
+    @Test
+    public void fakeBoldReadOnceByBoth() throws IOException {
+        byte[] bytes = new PdfBytes("1.4")
+                .object(1, "<< /Type /Catalog /Pages 2 0 R >>")
+                .object(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+                .object(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+                        + " /Resources << /Font << /F1 5 0 R >> >> >>")
+                .stream(4, "", ("BT /F1 10 Tf 400 752 Td (1234567890) Tj ET"
+                        + " BT /F1 10 Tf 400.3 752 Td (1234567890) Tj ET").getBytes(StandardCharsets.US_ASCII))
+                .object(5, TextPositionTest.HELVETICA)
+                .build("/Root 1 0 R");
+        Map<String, Rectangle2D> regions = Map.of("accountNumber", statementRegions().get("accountNumber"));
+        PdfDocumentReader pdf = new PdfDocumentReader(bytes);
+
+        String ours = RegionTextExtractor.extract(pdf, pdf.pages().get(0), regions).get("accountNumber");
+        try (PDDocument doc = Loader.loadPDF(bytes)) {
+            PDFTextStripperByArea stripper = new PDFTextStripperByArea();
+            regions.forEach(stripper::addRegion);
+            stripper.extractRegions(doc.getPage(0));
+            assertEquals("PDFBox", "1234567890", normalized(stripper.getTextForRegion("accountNumber")));
+        }
+        assertEquals("builtin", "1234567890", normalized(ours));
     }
 
     /**

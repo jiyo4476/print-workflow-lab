@@ -162,6 +162,46 @@ public class TextPositionTest {
                 .contains("nested more than 20 deep").contains("/Fm1");
     }
 
+    /** /Fm1 draws /Fm2 four times, and the page draws /Fm1 four times: 16 A's from 2 small forms. */
+    private static PdfDocumentReader formsDrawingForms() {
+        String fourTimes = "/Fm2 Do /Fm2 Do /Fm2 Do /Fm2 Do";
+        return page("", fourTimes.replace("Fm2", "Fm1"), HELVETICA, new PdfBytes("1.4")
+                .stream(6, "/Subtype /Form /Resources << /XObject << /Fm2 7 0 R >> >>",
+                        fourTimes.getBytes(StandardCharsets.US_ASCII))
+                .stream(7, "/Subtype /Form /Resources << /Font << /F1 5 0 R >> >>",
+                        "BT /F1 10 Tf (A) Tj ET".getBytes(StandardCharsets.US_ASCII)));
+    }
+
+    /** Forms that draw each other many times over could make a few bytes into billions of glyphs. */
+    @Test
+    public void formsDrawnOverAndOverFailPastTheContentLimit() {
+        PdfDocumentReader pdf = formsDrawingForms();
+        assertEquals("within the limits", "A".repeat(16), text(glyphs(pdf)));
+
+        // The page's 31 bytes, 31 for each /Fm1 drawn and 22 for each /Fm2: 470 in all, past 300 midway.
+        assertThat(assertThrows(UnsupportedContentException.class,
+                () -> new TextPositionExtractor(pdf, 300, 1000).glyphs(pdf.pages().get(0))).getMessage())
+                .contains("page 1 draws more than 300 bytes of content with its form XObjects");
+        assertThat(assertThrows(UnsupportedContentException.class,
+                () -> new TextPositionExtractor(pdf, 1000, 10).glyphs(pdf.pages().get(0))).getMessage())
+                .contains("page 1 shows more than 10 glyphs");
+    }
+
+    /** Text turned by cm or Tm can't be read as lines; a skew (oblique) and an upside-down y can. */
+    @Test
+    public void textThatIsNotHorizontalIsReported() {
+        assertThat(assertThrows(UnsupportedContentException.class,
+                () -> glyphs("0 1 -1 0 612 0 cm BT /F1 10 Tf (A) Tj ET")).getMessage())
+                .contains("page 1 draws text that isn't horizontal and left to right");
+        assertThat(assertThrows(UnsupportedContentException.class,
+                () -> glyphs("BT /F1 10 Tf -1 0 0 1 300 300 Tm (A) Tj ET")).getMessage())
+                .contains("isn't horizontal");
+
+        assertAt(glyphs("BT /F1 10 Tf 1 0 0.2 1 100 700 Tm (A) Tj ET").get(0), 100, 92);
+        assertAt(glyphs("1 0 0 -1 0 792 cm BT /F1 10 Tf 1 0 0 -1 100 100 Tm (A) Tj ET").get(0), 100, 100);
+        assertEquals("zero-size text has no direction", 1, glyphs("BT /F1 0 Tf (A) Tj ET").size());
+    }
+
     /** A font's own /Widths win over the AFM; /Differences renames codes, uniXXXX names included. */
     @Test
     public void widthsArrayAndDifferencesAreRead() {
@@ -193,13 +233,45 @@ public class TextPositionTest {
         assertThat(unsupported("<< /Subtype /Type1 /BaseFont /Helvetica /Encoding /MacRomanEncoding >>"))
                 .contains("/MacRomanEncoding isn't read");
         assertThat(unsupported("<< /Subtype /Type1 /BaseFont /Symbol >>"))
-                .contains("a symbolic font's built-in encoding isn't read");
+                .contains("a symbolic or embedded font's built-in encoding isn't read");
         assertThat(unsupported("<< /Subtype /TrueType /BaseFont /Arial /Encoding /WinAnsiEncoding >>"))
                 .contains("unsupported font Arial: it has no /Widths and isn't one of the Standard 14 fonts");
         assertThat(unsupported("<< /Subtype /Type1 /BaseFont /Helvetica /Encoding 3 >>"))
                 .contains("its /Encoding is 3");
         assertThat(unsupported("<< /Subtype /Type1 /BaseFont /Helvetica /Encoding << /Differences [65 (A)] >> >>"))
                 .contains("has (A) where a code or glyph name belongs");
+    }
+
+    /** Without a base encoding, an embedded or symbolic font uses its program's own, which isn't read. */
+    @Test
+    public void builtInEncodingsAreReportedNotGuessed() {
+        String widths = " /FirstChar 65 /Widths [500]";
+        assertThat(unsupported("<< /Subtype /TrueType /BaseFont /ABCDEF+Custom" + widths
+                + " /FontDescriptor << /Flags 4 >> >>")).contains("a symbolic or embedded font's built-in encoding");
+        assertThat(unsupported("<< /Subtype /Type1 /BaseFont /ABCDEF+CMR10" + widths
+                + " /FontDescriptor << /Flags 32 /FontFile 9 0 R >> >>")).contains("built-in encoding isn't read");
+        assertThat(unsupported("<< /Subtype /Type1 /BaseFont /ABCDEF+CMR10" + widths
+                + " /FontDescriptor << /FontFile3 9 0 R >> /Encoding << /Differences [65 /B] >> >>"))
+                .contains("its /Differences change a symbolic or embedded font's built-in encoding");
+        assertThat(unsupported("<< /Subtype /Type1 /BaseFont /Symbol /Encoding << /Differences [65 /B] >> >>"))
+                .contains("no /BaseEncoding");
+
+        String embeddedWinAnsi = "<< /Subtype /TrueType /BaseFont /ABCDEF+Custom" + widths
+                + " /FontDescriptor << /Flags 32 /FontFile2 9 0 R >> /Encoding << /BaseEncoding /WinAnsiEncoding"
+                + " /Differences [65 /B] >> >>";
+        assertEquals("a named base encoding is read", "B",
+                text(glyphs(page("", "BT /F1 10 Tf (A) Tj ET", embeddedWinAnsi, new PdfBytes("1.4")))));
+    }
+
+    /** Codes past a Standard 14 font's /Widths, with no /MissingWidth, take the AFM width, as in PDFBox. */
+    @Test
+    public void standard14CodesOutsideWidthsUseTheAfm() {
+        String font = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding"
+                + " /FirstChar 65 /LastChar 65 /Widths [600] >>";
+        List<Glyph> glyphs = glyphs(page("", "BT /F1 10 Tf (AB) Tj ET", font, new PdfBytes("1.4")));
+
+        assertEquals("A from /Widths", 6, glyphs.get(0).width(), 1e-9);
+        assertEquals("B from the AFM", 6.67, glyphs.get(1).width(), 1e-9);
     }
 
     private static String unsupported(String font) {

@@ -126,28 +126,36 @@ metadata (PRD-10) are more reliable than reading text off the page.
   PDFBox does. `SimpleFontTest` checks every code of 12 fonts against PDFBox.
 - **Encodings**: `WinAnsiEncoding` and `StandardEncoding` from `encodings.txt` (Annex D, plus
   the Adobe Glyph List's Unicode for each name; checked against PDFBox), a dictionary's
-  `/BaseEncoding` and `/Differences`, and glyph names in the `uniXXXX` and `uXXXX` forms. An
-  unknown name is U+FFFD, never a guess.
+  `/BaseEncoding` and `/Differences`, and glyph names in the `uniXXXX` and `uXXXX` forms, with
+  variant suffixes (`a.sc`) dropped and ligature parts (`f_i`) joined. An unknown name is
+  U+FFFD, never a guess. A Standard 14 font's codes outside its `/Widths` (with no
+  `/MissingWidth`) take the AFM width, as in PDFBox.
 - **Unsupported, reported, never guessed** (`UnsupportedContentException`, message starting
   "unsupported font"): Type 0 (CID) and Type 3 fonts, `MacRomanEncoding` and other encodings,
-  Symbol and ZapfDingbats with no `/Encoding`, a non-standard font without `/Widths`. Pages with
-  `/Rotate` other than 0 are reported too. `ToUnicode` maps aren't read.
+  a built-in encoding (no `/Encoding`, or no `/BaseEncoding`, on Symbol, ZapfDingbats, a font
+  with the symbolic flag or an embedded font: 9.6.6.1 gives those the font program's own
+  encoding), a non-standard font without `/Widths`. Pages with `/Rotate` other than 0, and text
+  that `cm`, `Tm` or a form's `/Matrix` turns off a horizontal left-to-right baseline, are
+  reported too (skewed and upside-down text is read). `ToUnicode` maps aren't read.
 - **Form XObjects are followed** (with their `/Matrix` and `/Resources`, 20 levels deep at most,
   so a form that draws itself fails): text inside a form is region text like any other, and
-  PDFBox reads it, so skipping it would silently lose index values.
+  PDFBox reads it, so skipping it would silently lose index values. The page and every form
+  draw together may come to 256 MiB of content and a page to 1,000,000 glyphs, so forms that
+  draw each other many times over fail instead of exhausting memory.
 - **Page coordinates**: x from the left of the crop box (else the media box), y down from its
   top, the same coordinates PDFBox's `TextPosition.getX()`/`getY()` use.
 - **Which glyphs a region holds**: those whose baseline start point is inside the rectangle
   (`Rectangle2D.contains`: left and top edges in, right and bottom out), PDFBox's rule, so the
-  two agree. Two deliberate differences: overlapping regions each get every glyph (PDFBox gives
-  a shared glyph to only one of them, because its suppression of duplicated text is shared by
-  all regions, in hash order), and lines are in reading order, top to bottom (PDFBox keeps the
+  two agree. Fake bold (the same text again within a third of its width) is read once, as
+  PDFBox reads it. Two deliberate differences: overlapping regions each get every glyph (PDFBox
+  gives a shared glyph to only one of them, because its suppression of duplicated text is shared
+  by all regions, in hash order; here each region drops its own duplicates), and lines are in reading order, top to bottom (PDFBox keeps the
   drawing order). Glyphs within half a font size of a baseline are one line; a gap of more than
   half a space is a word break.
 - **`SplitPdf` `extractor`**: `pdfbox` (default) or `builtin`, checked when the workflow loads.
   `builtin` reads the region text with `RegionTextExtractor`; the documents are still written
-  with PDFBox. A page it can't read fails the job with the page number. Encrypted PDFs need
-  `pdfbox`.
+  with PDFBox, so `builtin` holds the file in memory twice. A page it can't read fails the job
+  with the page number. Encrypted PDFs need `pdfbox`.
 - **Parity**: identical region text (white space normalized) for the statement regions on 100
   statements, and an identical `documents.csv` for a 40-statement run with bad addresses.
   `pdfbox` stays the default, as planned, until parity has held on more than generated input.
@@ -181,15 +189,18 @@ metadata (PRD-10) are more reliable than reading text off the page.
 - Unit — `TextPositionTest`: `accountNumberFoundAtGeneratorPosition`,
   `tjKerningShiftsFollowingGlyphs`, `glyphsAdvanceByTheirAfmWidths`,
   `charAndWordSpacingAndHorizontalScaling`, `ctmAndCropBoxMoveTheOrigin`,
-  `textInAFormXObjectIsFound`, `widthsArrayAndDifferencesAreRead`
+  `textInAFormXObjectIsFound`, `widthsArrayAndDifferencesAreRead`,
+  `standard14CodesOutsideWidthsUseTheAfm`, `formsDrawnOverAndOverFailPastTheContentLimit`
 - Unit — `RegionTextExtractorTest`: `aGlyphBelongsWhereItsBaselineStarts`,
-  `overlappingRegionsEachGetTheirGlyphs`, `linesAreInReadingOrder`, `wordGapsBecomeSpaces`
+  `overlappingRegionsEachGetTheirGlyphs`, `linesAreInReadingOrder`, `wordGapsBecomeSpaces`,
+  `fakeBoldTextIsReadOnce`
 - Differential — `SimpleFontTest`: `encodingTablesMatchPdfBox`, `standard14WidthsMatchPdfBox`
 - Differential — `RegionExtractorVsPdfBoxTest`: `builtinAndPdfBoxRegionTextIdenticalFor100Statements`,
-  `overlappingRegionsAreWhereTheExtractorsDifferByDesign`
+  `fakeBoldReadOnceByBoth`, `overlappingRegionsAreWhereTheExtractorsDifferByDesign`
 - Workflow — `BuiltinExtractorWorkflowTest.documentsCsvIsIdenticalWithEitherExtractor`
 - Limitation — `TextPositionTest.cidFontReportedAsUnsupportedNotGarbled`,
-  `otherFontsTheExtractorCantReadAreReported`, `rotatedPagesAreReported`;
+  `otherFontsTheExtractorCantReadAreReported`, `builtInEncodingsAreReportedNotGuessed`,
+  `rotatedPagesAreReported`, `textThatIsNotHorizontalIsReported`;
   `SplitPdfStepTest.builtinExtractorFailsOnAPageItCantRead`
 
 ## Risks and open questions
