@@ -52,6 +52,7 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 | `pdf/`: `XrefReader`, `PdfDocumentReader`, `dump-pdf` | What's inside the PDF input a workflow receives |
 | `dump-pdf --xref`, `PdfDocumentReader.revision(n)` | Incremental updates: an edited PDF still holds every earlier version |
 | `ContentStreamParser`, `dump-content` | What a page is: positioned drawing operators, not lines of text |
+| `TextPositionExtractor`, `SplitPdf` `extractor: builtin` | Why indexing by text position is fragile, and what PDF/VT or AFP TLEs fix |
 | `generate-afp` | AFP print files from a composition system, with index tags per document |
 | WAR on Tomcat, `/api/*` servlets | The workflow server and its web services |
 | Marionette dashboard (`src/main/webapp/`) | The operator web interface |
@@ -368,6 +369,40 @@ color components), and only scans for `EI` when neither is known (a filtered ima
 color space). PDFBox 3.0.3's parser scans, and loses everything after an inline image it wrote
 itself (`ContentStreamVsPdfBoxTest`).
 
+### Text positions and `extractor: builtin`
+
+Where a glyph lands takes the whole state: the current transformation matrix (`cm`, saved and
+restored by `q`/`Q`), the text matrix (`Td`, `Tm`, `T*`), the font size, character and word
+spacing, horizontal scaling, and the width of every glyph before it on the line, from the
+font's `/Widths` or, for the Standard 14 fonts, Adobe's metrics. A `TJ` array's numbers move
+glyphs by thousandths of a text unit (kerning). `TextPositionExtractor` does all of that and
+gives each character's position in the coordinates workflow regions use: points from the
+top-left of the page.
+
+`SplitPdf` takes the region text from PDFBox by default, or from this reader with
+`extractor: builtin`:
+
+```yaml
+    - name: split-and-index
+      type: SplitPdf
+      params:
+        extractor: builtin    # or pdfbox (the default)
+```
+
+Both put a glyph in a region when the point where it starts on its baseline is inside the
+rectangle, and give the same `documents.csv` for generated runs (`BuiltinExtractorWorkflowTest`).
+Both read fake bold (text drawn twice, slightly apart) once. Two differences are on purpose:
+overlapping regions each get every glyph inside them (PDFBox gives a shared glyph to one region
+only), and a region's lines come top to bottom.
+
+The built-in reader only handles **simple fonts** (Type 1 and TrueType with one byte per
+character, WinAnsi or Standard encoding). A **CID font** (Type 0, as used for CJK text and many
+embedded subsets), a Type 3 font, another encoding, a font whose own built-in encoding applies
+(symbolic, or embedded with no base encoding), a rotated page or rotated text fails the job with
+the page number ("unsupported font ...") instead of indexing the page with wrong text.
+`ToUnicode` maps aren't read. Use `pdfbox` for those files. `builtin` also reads the whole file
+into memory beside PDFBox's copy.
+
 ### Splitting AFP
 
 `workflows/statements-afp.yaml` is the statement workflow for AFP input. Its `SplitAfp` step
@@ -486,7 +521,7 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
 - [ ] **PDF without PDFBox:**
   - [x] Object reader, cross-reference table, page tree and `dump-pdf`
   - [x] Cross-reference streams, object streams, incremental updates
-  - [ ] Content streams and text positions (operators and `dump-content` done)
+  - [x] Content streams and text positions (`dump-content`, `extractor: builtin`)
   - [ ] PDF/VT document parts (DPart) indexing
   - [ ] Preflight step
 - [x] Routing rules: send documents to an exception queue (e.g. invalid zip), flag large

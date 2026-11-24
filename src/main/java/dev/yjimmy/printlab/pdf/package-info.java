@@ -23,12 +23,16 @@
  *   <li>{@link dev.yjimmy.printlab.pdf.ContentStreamParser} splits a page's decoded content into
  *       {@link dev.yjimmy.printlab.pdf.Operation}s, inline images included;
  *       {@code PdfDump.dumpContent} prints them for {@code App dump-content}.</li>
+ *   <li>{@link dev.yjimmy.printlab.pdf.TextPositionExtractor} runs them through a
+ *       {@link dev.yjimmy.printlab.pdf.GraphicsState} to place each
+ *       {@link dev.yjimmy.printlab.pdf.Glyph} on the page, and
+ *       {@link dev.yjimmy.printlab.pdf.RegionTextExtractor} reads the text in page regions for
+ *       {@code SplitPdf}'s {@code extractor: builtin}.</li>
  * </ul>
  *
  * <p>{@code XrefReader} reads classic tables and cross-reference streams, objects packed in
  * object streams, and every revision of an incrementally updated file (PR 8), and parses
- * content streams into operators (PR 9a). Next: graphics and text state and glyph positions
- * (PR 9b). PDFBox stays in the project as the test oracle: tests check this package
+ * content streams into operators (PR 9a) and places their text on the page (PR 9b). PDFBox stays in the project as the test oracle: tests check this package
  * against what PDFBox reports for the same file.
  *
  * <p>The whole file is held in memory as a byte array, which keeps random access simple; a

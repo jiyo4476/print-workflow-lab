@@ -70,7 +70,9 @@ report's line total rounded *down* to two decimals, in its own commit.
   (`[x, y, w, h]` in points from the top-left). The regions in `statements.yaml` match the
   layout `testdata/StatementLayout` describes, so change both together. Its optional
   `newDocumentWhen` (rule syntax, tested against the page's region values) starts a document even
-  when `splitOn` repeats; a PDF with no pages fails. `SplitAfpStep` is the AFP counterpart: one
+  when `splitOn` repeats; a PDF with no pages fails. `extractor: pdfbox` (default) reads the
+  regions with PDFBox's `PDFTextStripperByArea`, `extractor: builtin` with `pdf/RegionTextExtractor`
+  (documents are written with PDFBox either way). `SplitAfpStep` is the AFP counterpart: one
   document per top-level BNG/ENG, written as a standalone AFP file (fields before the first
   group + fields between groups + the group + Ends for the Begins still open), with the group's
   own TLEs as properties. Both split steps set `pageCount` and `format` (`pdf`/`afp`).
@@ -148,6 +150,17 @@ report's line total rounded *down* to two decimals, in its own commit.
   doesn't end at `EI`) a scan for an `EI` followed by content. Operands are capped (1,000 per
   operator, 100,000 items per array); operators print with `#xx` escapes (`PdfLexer.printable`). PDFBox's `PDFStreamParser` is the oracle for operators but not inline
   images (3.0.3 loses what follows them).
+  `GraphicsState` tracks the CTM (`q`/`Q` stack, `cm`), the text state and the text matrices;
+  `Matrix` uses the spec's row vectors (`a.multiply(b)` applies `a` first). `TextPositionExtractor`
+  turns a page into `Glyph`s (top-left coordinates from the crop box, as regions use), following
+  form XObjects; fonts are `SimpleFont`s (`/Widths`, else the Standard 14 AFM files in the PDFBox
+  jar; `SimpleEncoding` reads `encodings.txt`, Annex D). CID and Type 3 fonts, other encodings,
+  built-in encodings (symbolic or embedded fonts with no base encoding), rotated pages and
+  non-horizontal text throw `UnsupportedContentException`, never guessed text; a page's content
+  with its forms is capped (256 MiB drawn, 1,000,000 glyphs). `RegionTextExtractor`
+  uses PDFBox's rule (the glyph's baseline start is in the rectangle), drops fake-bold copies as
+  PDFBox does, but gives overlapping regions every glyph and orders lines top to bottom;
+  `RegionExtractorVsPdfBoxTest` checks parity.
   `PdfDocumentReader` reads the version (header, raised by the catalog's `/Version`; none is
   rejected), the catalog, and the page tree, walked with a stack (a node seen twice fails), with
   `Resources`, `MediaBox`, `CropBox` and `Rotate` inherited into each `PdfPage`. `PdfString.text()`

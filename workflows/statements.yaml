@@ -19,6 +19,9 @@ phases:
       params:
         # A new statement starts whenever the account number in the page header changes...
         splitOn: accountNumber
+        # What reads the region text: pdfbox, or builtin (this project's own PDF reader; simple
+        # fonts only, so a page with a CID font fails the job). See README "Text positions".
+        extractor: pdfbox
         # ...or on a "Page 1 of N" page, so two statements in a row for the same account (a
         # corrected statement, say) aren't merged into one.
         newDocumentWhen: { property: pageNumber, operator: matches, value: 'Page 1 of \d+' }

@@ -1,5 +1,9 @@
 package dev.yjimmy.printlab.steps;
 
+import dev.yjimmy.printlab.pdf.PdfDocumentReader;
+import dev.yjimmy.printlab.pdf.PdfPage;
+import dev.yjimmy.printlab.pdf.RegionTextExtractor;
+import dev.yjimmy.printlab.pdf.TextPositionExtractor;
 import dev.yjimmy.printlab.workflow.Document;
 import dev.yjimmy.printlab.workflow.Job;
 import dev.yjimmy.printlab.workflow.Step;
@@ -34,12 +38,23 @@ import org.apache.pdfbox.text.PDFTextStripperByArea;
  *   newDocumentWhen: { property: pageNumber, operator: matches, value: 'Page 1 of \d+' }
  * </pre>
  *
+ * <p>{@code extractor} picks what reads the region text: {@code pdfbox} (the default) uses
+ * PDFBox's {@code PDFTextStripperByArea}; {@code builtin} uses this project's own reader
+ * ({@link RegionTextExtractor}), which handles simple fonts only and fails the job on a page it
+ * can't read (a CID font, say) instead of indexing it wrongly. The documents are written with
+ * PDFBox either way, so {@code builtin} holds the file in memory twice: PDFBox's copy and the
+ * reader's bytes.
+ *
  * <p>This is the PDF counterpart of AFP indexing: PDF has no built-in document boundaries or index
  * tags, so we infer them from where text sits on the page. A PDF with no pages fails the job.
  */
 public final class SplitPdfStep implements Step {
 
+    /** The values {@code extractor} may have. */
+    public static final List<String> EXTRACTORS = List.of("pdfbox", "builtin");
+
     private final String splitOn;
+    private final String extractor;
     private final Map<String, Rectangle2D> regions = new LinkedHashMap<>();
     /** Starts a document on a page where it's true; {@code null} when not configured. */
     private final Condition newDocumentWhen;
@@ -47,6 +62,10 @@ public final class SplitPdfStep implements Step {
     public SplitPdfStep(Map<String, Object> rawParams) {
         Params params = new Params(rawParams);
         this.splitOn = params.string("splitOn");
+        this.extractor = params.string("extractor", "pdfbox");
+        if (!EXTRACTORS.contains(extractor)) {
+            throw new IllegalArgumentException("extractor must be pdfbox or builtin, not '" + extractor + "'");
+        }
         params.map("regions").forEach((name, value) -> regions.put(name, toRect(name, value)));
         if (!regions.containsKey(splitOn)) {
             throw new IllegalArgumentException("splitOn '" + splitOn + "' must also be a region");
@@ -80,8 +99,8 @@ public final class SplitPdfStep implements Step {
             }
             job.properties().put("totalPages", String.valueOf(totalPages));
 
-            PDFTextStripperByArea stripper = new PDFTextStripperByArea();
-            regions.forEach(stripper::addRegion);
+            PageRegions reader = extractor.equals("builtin")
+                    ? builtin(job.inputFile(), totalPages) : pdfBox(source);
 
             List<PDPage> currentPages = new ArrayList<>();
             Map<String, String> currentProps = null;
@@ -90,11 +109,8 @@ public final class SplitPdfStep implements Step {
 
             for (PDPage page : source.getPages()) {
                 pageNumber++;
-                stripper.extractRegions(page);
                 Map<String, String> pageValues = new LinkedHashMap<>();
-                for (String region : regions.keySet()) {
-                    pageValues.put(region, stripper.getTextForRegion(region).strip());
-                }
+                reader.read(pageNumber, page).forEach((region, text) -> pageValues.put(region, text.strip()));
                 String key = pageValues.get(splitOn);
                 if (key.isEmpty()) {
                     throw new IllegalStateException("No '" + splitOn + "' found on page "
@@ -113,6 +129,45 @@ public final class SplitPdfStep implements Step {
             flush(job, source, currentPages, currentProps, docsDir);
         }
         job.properties().put("documentCount", String.valueOf(job.documents().size()));
+    }
+
+    /** Reads one page's region text; {@code number} is 1 for the first page. */
+    private interface PageRegions {
+        Map<String, String> read(int number, PDPage page) throws Exception;
+    }
+
+    private PageRegions pdfBox(PDDocument source) throws Exception {
+        PDFTextStripperByArea stripper = new PDFTextStripperByArea();
+        regions.forEach(stripper::addRegion);
+        return (number, page) -> {
+            stripper.extractRegions(page);
+            Map<String, String> values = new LinkedHashMap<>();
+            for (String region : regions.keySet()) {
+                values.put(region, stripper.getTextForRegion(region));
+            }
+            return values;
+        };
+    }
+
+    private PageRegions builtin(Path input, int totalPages) throws Exception {
+        PdfDocumentReader pdf = PdfDocumentReader.open(input);
+        if (pdf.isEncrypted()) {
+            throw new IllegalStateException("extractor: builtin can't read an encrypted PDF; use extractor: pdfbox");
+        }
+        List<PdfPage> pages = pdf.pages();
+        if (pages.size() != totalPages) {
+            throw new IllegalStateException("extractor: builtin found " + pages.size()
+                    + " pages, but PDFBox found " + totalPages);
+        }
+        TextPositionExtractor glyphs = new TextPositionExtractor(pdf);
+        return (number, page) -> {
+            try {
+                return RegionTextExtractor.extract(glyphs.glyphs(pages.get(number - 1)), regions);
+            } catch (RuntimeException e) {
+                throw new IllegalStateException("Page " + number + ": "
+                        + (e.getMessage() == null ? e.toString() : e.getMessage()), e);
+            }
+        };
     }
 
     private static void flush(Job job, PDDocument source, List<PDPage> pages,

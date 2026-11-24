@@ -576,7 +576,8 @@ PR handles each version's changes.
 
 **Tests**
 - Split in two (PRD-09): 9a is the parser and `dump-content`, 9b the state, positions and
-  extractor.
+  extractor. Follow-up 9c: `App dump-text <file> <page>` prints each glyph's text, position,
+  width and size (`DumpTextTest`, a golden file for page 1 of the fixture).
 - Unit — `ContentStreamParserTest` (9a)
   - `operandsAttachToFollowingOperator`
   - `tjArrayWithKerningNumbers`
@@ -593,11 +594,16 @@ PR handles each version's changes.
 - Unit — `TextPositionTest`
   - `accountNumberFoundAtGeneratorPosition` (x = 400, y = 40 from top, ±0.5 pt)
   - `tjKerningShiftsFollowingGlyphs` (thousandths of text space)
+- Unit — `RegionTextExtractorTest`: `aGlyphBelongsWhereItsBaselineStarts`,
+  `overlappingRegionsEachGetTheirGlyphs`, `fakeBoldTextIsReadOnce`
+- Differential — `SimpleFontTest`: encodings and Standard 14 widths match PDFBox
 - Differential — `RegionExtractorVsPdfBoxTest`: builtin and PDFBox region text identical for 100
   generated statements.
 - Workflow — `BuiltinExtractorWorkflowTest`: `documents.csv` identical with `extractor: builtin`
   and `extractor: pdfbox`.
-- Limitation — `cidFontReportedAsUnsupportedNotGarbled`.
+- Limitation — `cidFontReportedAsUnsupportedNotGarbled`, `builtInEncodingsAreReportedNotGuessed`,
+  `textThatIsNotHorizontalIsReported`, `formsDrawnOverAndOverFailPastTheContentLimit`;
+  `SplitPdfStepTest.builtinExtractorFailsOnAPageItCantRead`.
 
 ### PR 10 — PDF/VT-style document parts (DPart) indexing `M`
 
