@@ -51,7 +51,7 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 | `afp/`: `AfpReader`, `AfpWriter`, `TleDecoder`, `TleEncoder`, `dump-afp` | AFP structured fields, page groups and TLEs |
 | `pdf/`: `XrefReader`, `PdfDocumentReader`, `dump-pdf` | What's inside the PDF input a workflow receives |
 | `dump-pdf --xref`, `PdfDocumentReader.revision(n)` | Incremental updates: an edited PDF still holds every earlier version |
-| `ContentStreamParser`, `dump-content` | What a page is: positioned drawing operators, not lines of text |
+| `ContentStreamParser`, `dump-content`, `dump-text` | What a page is: positioned drawing operators, not lines of text |
 | `TextPositionExtractor`, `SplitPdf` `extractor: builtin` | Why indexing by text position is fragile, and what PDF/VT or AFP TLEs fix |
 | `generate-afp` | AFP print files from a composition system, with index tags per document |
 | WAR on Tomcat, `/api/*` servlets | The workflow server and its web services |
@@ -76,6 +76,7 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw -q exec:java -Dexec.args="dump-pdf run.pdf 12"     # one object (a Contents number from the dump)
 ./mvnw -q exec:java -Dexec.args="dump-pdf --xref edited.pdf"  # each revision, and what it changed
 ./mvnw -q exec:java -Dexec.args="dump-content run.pdf 1"  # page 1's drawing operators
+./mvnw -q exec:java -Dexec.args="dump-text run.pdf 1"     # page 1's glyphs: text, x, y, width, size
 ```
 
 Then move `run.pdf` into `hotfolder/pdf/` (or `run.afp` into `hotfolder/afp/`) and look in
@@ -377,7 +378,19 @@ spacing, horizontal scaling, and the width of every glyph before it on the line,
 font's `/Widths` or, for the Standard 14 fonts, Adobe's metrics. A `TJ` array's numbers move
 glyphs by thousandths of a text unit (kerning). `TextPositionExtractor` does all of that and
 gives each character's position in the coordinates workflow regions use: points from the
-top-left of the page.
+top-left of the page. `dump-text` prints them, one glyph per line:
+
+```
+Page 1 of 6  3 0 R
+text              x        y    width    size
+"F"           72.00    40.00     8.55   14.00
+"r"           80.55    40.00     5.45   14.00
+...
+919 glyphs
+```
+
+The text is quoted, and a control or other unprintable character is written `\uXXXX`, so what a
+file says never reaches the terminal raw.
 
 `SplitPdf` takes the region text from PDFBox by default, or from this reader with
 `extractor: builtin`:
@@ -480,7 +493,7 @@ all three together.
 ```
 src/main/java/dev/yjimmy/printlab/
   App.java                 entry point: run | generate | generate-afp | dump-afp | dump-pdf |
-                           dump-content
+                           dump-content | dump-text
   workflow/                Job, Document, Step, WorkflowDefinition, WorkflowEngine, StepRegistry
   workflow/rules/          Condition, Rule, RuleParser: routing rules and `when:`
   steps/                   SetJobPropsFromTextFile, SplitPdf, SplitAfp, MapProperties,
@@ -521,7 +534,7 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
 - [ ] **PDF without PDFBox:**
   - [x] Object reader, cross-reference table, page tree and `dump-pdf`
   - [x] Cross-reference streams, object streams, incremental updates
-  - [x] Content streams and text positions (`dump-content`, `extractor: builtin`)
+  - [x] Content streams and text positions (`dump-content`, `dump-text`, `extractor: builtin`)
   - [ ] PDF/VT document parts (DPart) indexing
   - [ ] Preflight step
 - [x] Routing rules: send documents to an exception queue (e.g. invalid zip), flag large

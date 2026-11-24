@@ -5,6 +5,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
@@ -271,6 +272,87 @@ public final class PdfDump {
             }
         });
         return true;
+    }
+
+    /**
+     * Prints the glyphs page {@code pageNumber} draws, one per line in drawing order, with where
+     * each starts (points from the top-left of the crop box, on its baseline), its width and the
+     * font size:
+     * <pre>
+     * Page 1 of 6  3 0 R
+     * text              x        y    width    size
+     * "F"           72.00    40.00     8.55   14.00
+     * "r"           80.55    40.00     5.45   14.00
+     * 919 glyphs
+     * </pre>
+     * The text is quoted, with {@code "} and the backslash escaped and anything that isn't a
+     * printable character written {@code &#92;uXXXX}, so a file's text never reaches the terminal
+     * raw. The text column widens to fit the longest text on the page. A page the built-in
+     * extraction can't read (a CID or symbolic font, a rotated page or rotated text, more than
+     * the content or glyph limits) or whose content can't be decoded or parsed stops the dump
+     * with a note.
+     *
+     * @return false if there's no such page or its text can't be read
+     */
+    public boolean dumpText(PdfDocumentReader pdf, int pageNumber, Appendable out) {
+        List<PdfPage> pages = pdf.pages();
+        if (pageNumber < 1 || pageNumber > pages.size()) {
+            line(out, "Page " + pageNumber + " is not in the document (it has " + pages.size()
+                    + (pages.size() == 1 ? " page)" : " pages)"));
+            return false;
+        }
+        PdfPage page = pages.get(pageNumber - 1);
+        line(out, "Page " + pageNumber + " of " + pages.size() + "  "
+                + (page.reference() == null ? "(direct)" : page.reference()));
+        List<Glyph> glyphs;
+        try {
+            glyphs = new TextPositionExtractor(pdf).glyphs(page);
+        } catch (UnsupportedContentException | UnsupportedFilterException | PdfFormatException e) {
+            line(out, "% stopped: " + e.getMessage());
+            return false;
+        }
+        List<String> texts = glyphs.stream().map(glyph -> quoted(glyph.text())).toList();
+        int width = Math.max(10, texts.stream().mapToInt(String::length).max().orElse(0));
+        line(out, String.format(Locale.ROOT, "%-" + width + "s %8s %8s %8s %7s", "text", "x", "y", "width", "size"));
+        for (int i = 0; i < glyphs.size(); i++) {
+            Glyph glyph = glyphs.get(i);
+            line(out, String.format(Locale.ROOT, "%-" + width + "s %8.2f %8.2f %8.2f %7.2f", texts.get(i),
+                    glyph.x(), glyph.y(), glyph.width(), glyph.fontSize()));
+        }
+        line(out, glyphs.size() + (glyphs.size() == 1 ? " glyph" : " glyphs"));
+        return true;
+    }
+
+    /**
+     * Text in double quotes as it can be shown: {@code "} and the backslash are escaped, and
+     * control, format, private-use, unassigned, separator (every space but U+0020), combining
+     * mark and lone surrogate characters are written {@code &#92;uXXXX} (one per UTF-16 unit),
+     * so nothing invisible, look-alike or joined to the quote reaches the terminal.
+     */
+    static String quoted(String text) {
+        StringBuilder quoted = new StringBuilder(text.length() + 2).append('"');
+        text.codePoints().forEach(c -> {
+            if (c == '"' || c == '\\') {
+                quoted.append('\\').appendCodePoint(c);
+            } else if (printable(c)) {
+                quoted.appendCodePoint(c);
+            } else {
+                for (char unit : Character.toChars(c)) {
+                    quoted.append(String.format(Locale.ROOT, "\\u%04X", (int) unit));
+                }
+            }
+        });
+        return quoted.append('"').toString();
+    }
+
+    private static boolean printable(int c) {
+        return switch (Character.getType(c)) {
+            case Character.CONTROL, Character.FORMAT, Character.PRIVATE_USE, Character.SURROGATE,
+                    Character.UNASSIGNED, Character.LINE_SEPARATOR, Character.PARAGRAPH_SEPARATOR,
+                    Character.NON_SPACING_MARK, Character.ENCLOSING_MARK, Character.COMBINING_SPACING_MARK -> false;
+            case Character.SPACE_SEPARATOR -> c == ' ';
+            default -> true;
+        };
     }
 
     private static String description(PdfDocumentReader pdf, PdfPage page, Operation op, boolean compatibility) {
