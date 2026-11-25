@@ -69,16 +69,18 @@ is structured.
 - **FR-5** Rotation check. A non-zero `/Rotate` on any page fails unless `allowRotate: true`.
   Only multiples of 90 are valid values; any other value fails.
 - **FR-6** Results. Every checked document gets `preflight=pass` or `preflight=fail`.
-  `preflightIssues` lists every issue found, one per line, each with the page number and, where
-  relevant, the font name. A passing document gets an empty `preflightIssues`.
+  `preflightIssues` lists every issue found, joined by `"; "` (a single CSV cell), each with the
+  page number and, where relevant, the font name. After 20 issues the rest are counted ("and N
+  more issues"). A passing document gets an empty `preflightIssues`.
 - **FR-7** Failure handling. With `failJob: true`, the job fails at the first failing document,
   and the error names its sequence and first issue. Otherwise, failing documents are marked and
   routed by PRD-02 rules (the sample routes them to `exceptions`).
 - **FR-8** Generator options for test files: `--page-size a4`, `--encrypt` (user password, using
-  PDFBox `StandardProtectionPolicy`), and `--form-xobject-font non-embedded` (draws text inside a
-  Form XObject with a non-embedded font, for AC-4). All other text the generator draws uses
-  embedded Liberation Sans (SIL Open Font License), a TrueType subset. The generator never uses
-  Helvetica or any other Standard 14 font, so no commercial font is embedded or drawn.
+  PDFBox `StandardProtectionPolicy`), and `--form-xobject-font` (draws each page's text inside a
+  Form XObject with a non-embedded font, for AC-4). Without these flags the output is unchanged.
+  In this PR the generator still draws non-embedded Helvetica. Switching it to embedded
+  Liberation Sans (SIL Open Font License), so that no Standard 14 or commercial font is drawn,
+  is deferred (see "Deferred from this PR").
 
 **Non-functional**
 

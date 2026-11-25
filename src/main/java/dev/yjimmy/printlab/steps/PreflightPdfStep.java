@@ -86,8 +86,16 @@ public final class PreflightPdfStep implements Step {
             return checker.issues(PdfDocumentReader.open(document.file()));
         } catch (IOException | RuntimeException e) {
             log.warn("Preflight could not read document {} ({})", document.sequence(), document.file(), e);
-            return List.of("could not check this file: " + e.getMessage());
+            return List.of(unreadable(e));
         }
+    }
+
+    /** The issue for a file the check failed on; never ends in "null" when there's no message. */
+    static String unreadable(Exception e) {
+        String reason = e.getMessage();
+        return reason == null || reason.isBlank()
+                ? "could not check this file"
+                : "could not check this file: " + reason;
     }
 
     private static String summary(List<String> issues) {

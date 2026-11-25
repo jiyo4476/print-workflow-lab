@@ -3,6 +3,7 @@ package dev.yjimmy.printlab.pdf;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -66,8 +67,10 @@ public final class PreflightChecker {
             if (pageSizes.isEmpty()) {
                 throw new IllegalArgumentException("pageSizes must name at least one size");
             }
-            if (tolerance < 0) {
-                throw new IllegalArgumentException("tolerance can't be negative: " + tolerance);
+            // !isFinite also rejects NaN, which would otherwise fail every page-size comparison.
+            if (!Double.isFinite(tolerance) || tolerance < 0) {
+                throw new IllegalArgumentException(
+                        "tolerance must be a number of points, 0 or more: " + tolerance);
             }
         }
     }
@@ -134,7 +137,8 @@ public final class PreflightChecker {
         }
         String allowed = settings.pageSizes().stream().map(PageSize::label)
                 .reduce((a, b) -> a + " or " + b).orElse("");
-        issues.add(where + String.format("page size %.1f x %.1f pt is not allowed (%s)", width, height, allowed));
+        // Locale.ROOT: the message reads 595.3, not 595,3, whatever the machine's locale.
+        issues.add(where + String.format(Locale.ROOT, "page size %.1f x %.1f pt is not allowed (%s)", width, height, allowed));
     }
 
     private void checkRotation(PdfDocumentReader pdf, PdfPage page, String where, List<String> issues) {

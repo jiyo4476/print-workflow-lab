@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.junit.Before;
 import org.junit.Rule;
@@ -314,6 +315,35 @@ public class PreflightPdfStepTest {
         run(defaults());
         assertThat(only().property("preflight")).isEqualTo("fail");
         assertThat(only().property("preflightIssues")).startsWith("could not check this file: ");
+    }
+
+    @Test
+    public void pageSizeMessageUsesADecimalPointInAnyLocale() throws Exception {
+        Locale before = Locale.getDefault();
+        Locale.setDefault(Locale.GERMANY);
+        try {
+            addPdf(onePage("1.4", "[0 0 595.3 841.9]", "").build("/Root 1 0 R"));
+            run(defaults());
+        } finally {
+            Locale.setDefault(before);
+        }
+        assertThat(only().property("preflightIssues"))
+                .isEqualTo("page 1: page size 595.3 x 841.9 pt is not allowed (letter)");
+    }
+
+    @Test
+    public void internalErrorWithoutAMessageDoesNotSayNull() {
+        assertThat(PreflightPdfStep.unreadable(new NullPointerException()))
+                .isEqualTo("could not check this file");
+        assertThat(PreflightPdfStep.unreadable(new IOException("truncated file")))
+                .isEqualTo("could not check this file: truncated file");
+    }
+
+    @Test
+    public void toleranceMustBeAFiniteNonNegativeNumber() {
+        assertThrows(IllegalArgumentException.class, () -> step(Map.of("tolerance", "NaN")));
+        assertThrows(IllegalArgumentException.class, () -> step(Map.of("tolerance", "Infinity")));
+        assertThrows(IllegalArgumentException.class, () -> step(Map.of("tolerance", -1)));
     }
 
     @Test
