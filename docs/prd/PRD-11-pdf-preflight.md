@@ -161,11 +161,11 @@ is structured.
 
 ## Deferred from this PR
 
-- **FR-8 generator options and the Liberation Sans switch.** Not in this PR. Bundling the font
-  needs its license checked and the file committed, and changing the generator's font moves PR 9's
-  golden files. Until then the generator still draws Helvetica, so the sample workflow sets
-  `allowStandard14: true`. AC-4 is covered by hand-built PDFs (`PreflightPdfStepTest`), not by a
-  generated file.
+- **The Liberation Sans switch.** The generator's failing-file options are in this PR (`generate
+  --page-size a4`, `--encrypt`, `--form-xobject-font`; `PreflightDefectsTest`). The generator still
+  draws Helvetica, though. Switching it to embedded Liberation Sans needs the font downloaded and
+  its license checked, and it moves PR 9's golden files. Until then the sample workflow sets
+  `allowStandard14: true`.
 
 ## Definition of done
 

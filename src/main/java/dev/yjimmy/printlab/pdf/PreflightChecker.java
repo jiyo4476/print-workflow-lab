@@ -81,12 +81,15 @@ public final class PreflightChecker {
     /** Every issue in {@code pdf}, in page order; empty when the file passes. */
     public List<String> issues(PdfDocumentReader pdf) {
         List<String> issues = new ArrayList<>();
+        if (pdf.isEncrypted()) {
+            // The objects of an encrypted file can't be read without its key, so nothing else
+            // can be checked, and the encryption is the one issue to report.
+            issues.add("file is encrypted, so it cannot be printed as supplied");
+            return issues;
+        }
         PdfVersion version = pdf.version();
         if (version.compareTo(settings.maxVersion()) > 0) {
             issues.add("PDF version " + version + " is above the allowed " + settings.maxVersion());
-        }
-        if (pdf.isEncrypted()) {
-            issues.add("file is encrypted, so it cannot be printed as supplied");
         }
         for (PdfPage page : pdf.pages()) {
             checkPage(pdf, page, issues);

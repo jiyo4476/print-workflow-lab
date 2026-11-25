@@ -644,11 +644,11 @@ production print.
   - page size in an allowed list (e.g. Letter ± 1 pt), no unexpected `/Rotate`
 - Results stored as document properties `preflight=pass|fail` and `preflightIssues`; PR 2 rules
   route failures to `exceptions`, or `failJob: true` stops the job.
-- Deferred to a follow-up: generator options for failing files (A4, encryption, non-embedded font
-  in a Form XObject), and switching the generator to embedded Liberation Sans (SIL OFL, license
-  checked before commit). The switch changes what PR 9's extractor reads, so PR 9's Standard 14
-  and golden tests would need updating in the same change. Until then the sample workflow uses
-  `allowStandard14: true`, and the failing cases are hand-built PDFs in the tests.
+- Generator options for failing files (`--page-size a4`, `--encrypt`, `--form-xobject-font`) are
+  in this PR. Deferred to a follow-up: switching the generator to embedded Liberation Sans (SIL
+  OFL, license checked before commit). The switch changes what PR 9's extractor reads, so PR 9's
+  Standard 14 and golden tests would need updating in the same change. Until then the sample
+  workflow uses `allowStandard14: true`.
 
 **Tests**
 - Unit — `PreflightPdfStepTest`, one pass and one fail case per check:
