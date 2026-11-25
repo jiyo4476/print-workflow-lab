@@ -36,9 +36,10 @@ import java.util.List;
  *   run --devices &lt;config.yaml&gt;  the same, from another devices file
  *   run &lt;workflow.yaml&gt; [glob]    one device, "default": watch ./hotfolder and run the workflow
  *                                on each file matching glob (default *.pdf, any case)
- *   generate &lt;count&gt; &lt;out.pdf&gt; [badAddresses] [seed]
+ *   generate &lt;count&gt; &lt;out.pdf&gt; [badAddresses] [seed] [--dpart]
  *                                write a fake statement print run for testing, optionally with
- *                                some bad addresses for the exception queue
+ *                                some bad addresses for the exception queue; --dpart also writes
+ *                                a DPart tree (/DPartRoot) with one document per statement
  *   generate-afp &lt;count&gt; &lt;out.afp&gt; [badAddresses] [seed] [--tle-names legacy]
  *                [--framing padded|rdw|bdw]
  *                                the same run as AFP, one page group with TLEs per statement;
@@ -74,6 +75,16 @@ public final class App {
         switch (command) {
             case "run" -> run(devices(args));
             case "generate", "generate-afp" -> {
+                boolean dpart = Arrays.asList(args).contains("--dpart");
+                if (dpart) {
+                    if (!command.equals("generate")) {
+                        usage();
+                        return;
+                    }
+                    List<String> rest = new ArrayList<>(Arrays.asList(args));
+                    rest.remove("--dpart");
+                    args = rest.toArray(String[]::new);
+                }
                 StatementAfpGenerator.TleNames names = StatementAfpGenerator.TleNames.PROPERTY_NAMES;
                 int flag = Arrays.asList(args).indexOf("--tle-names");
                 if (flag >= 0) {
@@ -107,7 +118,7 @@ public final class App {
                 int bad = args.length > 3 ? Integer.parseInt(args[3]) : 0;
                 long seed = args.length > 4 ? Long.parseLong(args[4]) : System.currentTimeMillis();
                 if (command.equals("generate")) {
-                    new StatementPdfGenerator(seed).generate(count, bad, out);
+                    new StatementPdfGenerator(seed).generate(count, bad, dpart, out);
                 } else {
                     new StatementAfpGenerator(seed).generate(count, bad, names, out);
                     if (framing != AfpFraming.STRICT) {
@@ -297,9 +308,10 @@ public final class App {
                   run --devices <config.yaml>  the same, from another devices file
                   run <workflow.yaml> [glob]   one device: watch ./hotfolder and run the
                                                workflow on files matching glob (default *.pdf)
-                  generate <count> <out.pdf> [badAddresses] [seed]
+                  generate <count> <out.pdf> [badAddresses] [seed] [--dpart]
                                                write a fake statement print run, optionally
-                                               with some bad addresses
+                                               with some bad addresses; --dpart adds a DPart
+                                               tree (/DPartRoot) with one document per statement
                   generate-afp <count> <out.afp> [badAddresses] [seed] [--tle-names legacy]
                                [--framing padded|rdw|bdw]
                                                the same run as AFP (same seed, same
