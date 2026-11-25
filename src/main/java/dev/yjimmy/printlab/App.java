@@ -1,6 +1,7 @@
 package dev.yjimmy.printlab;
 
 import dev.yjimmy.printlab.afp.AfpDump;
+import dev.yjimmy.printlab.afp.AfpFraming;
 import dev.yjimmy.printlab.afp.Ebcdic;
 import dev.yjimmy.printlab.input.InputDevice;
 import dev.yjimmy.printlab.input.InputDeviceConfig;
@@ -10,6 +11,7 @@ import dev.yjimmy.printlab.pdf.PdfDump;
 import dev.yjimmy.printlab.pdf.PdfFormatException;
 import dev.yjimmy.printlab.pdf.UnsupportedContentException;
 import dev.yjimmy.printlab.pdf.UnsupportedFilterException;
+import dev.yjimmy.printlab.testdata.AfpFramer;
 import dev.yjimmy.printlab.testdata.StatementAfpGenerator;
 import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
 import dev.yjimmy.printlab.workflow.StepRegistry;
@@ -39,11 +41,14 @@ import java.util.List;
  *                                some bad addresses for the exception queue; --dpart also writes
  *                                a DPart tree (/DPartRoot) with one document per statement
  *   generate-afp &lt;count&gt; &lt;out.afp&gt; [badAddresses] [seed] [--tle-names legacy]
+ *                [--framing padded|rdw|bdw]
  *                                the same run as AFP, one page group with TLEs per statement;
  *                                the same seed gives the same statements as generate.
  *                                --tle-names legacy names the TLEs ACCT_NO, CUST_NAME and
- *                                ZIP_CODE (workflows/statements-afp-legacy.yaml maps them)
- *   dump-afp &lt;file.afp&gt; [codePage]
+ *                                ZIP_CODE (workflows/statements-afp-legacy.yaml maps them);
+ *                                --framing writes the file as other tools do (line endings and
+ *                                zero padding, record descriptor words, or blocks of records)
+ *   dump-afp &lt;file.afp&gt; [codePage] [--framing strict|padded|rdw|bdw|auto]
  *                                print an AFP file's structured fields and TLEs; exits 1 if
  *                                the file has structural problems
  *   dump-pdf [--xref] &lt;file.pdf&gt; [objectNumber]
@@ -92,6 +97,18 @@ public final class App {
                     rest.subList(flag, flag + 2).clear();
                     args = rest.toArray(String[]::new);
                 }
+                AfpFraming framing = AfpFraming.STRICT;
+                int framingFlag = Arrays.asList(args).indexOf("--framing");
+                if (framingFlag >= 0) {
+                    if (command.equals("generate") || framingFlag + 1 >= args.length) {
+                        usage();
+                        return;
+                    }
+                    framing = AfpFraming.named(args[framingFlag + 1]);
+                    List<String> rest = new ArrayList<>(Arrays.asList(args));
+                    rest.subList(framingFlag, framingFlag + 2).clear();
+                    args = rest.toArray(String[]::new);
+                }
                 if (args.length < 3) {
                     usage();
                     return;
@@ -104,10 +121,25 @@ public final class App {
                     new StatementPdfGenerator(seed).generate(count, bad, dpart, out);
                 } else {
                     new StatementAfpGenerator(seed).generate(count, bad, names, out);
+                    if (framing != AfpFraming.STRICT) {
+                        Files.write(out, AfpFramer.frame(Files.readAllBytes(out), framing));
+                    }
                 }
                 System.out.println("Wrote " + out.toAbsolutePath() + " (seed " + seed + ")");
             }
             case "dump-afp" -> {
+                AfpFraming framing = AfpFraming.STRICT;
+                int framingFlag = Arrays.asList(args).indexOf("--framing");
+                if (framingFlag >= 0) {
+                    if (framingFlag + 1 >= args.length) {
+                        usage();
+                        return;
+                    }
+                    framing = AfpFraming.named(args[framingFlag + 1]);
+                    List<String> rest = new ArrayList<>(Arrays.asList(args));
+                    rest.subList(framingFlag, framingFlag + 2).clear();
+                    args = rest.toArray(String[]::new);
+                }
                 if (args.length < 2) {
                     usage();
                     return;
@@ -115,7 +147,7 @@ public final class App {
                 Charset codePage = args.length > 2 ? Charset.forName(args[2]) : Ebcdic.IBM037;
                 int problems;
                 try (InputStream in = Files.newInputStream(Path.of(args[1]))) {
-                    problems = new AfpDump(codePage).dump(in, System.out);
+                    problems = new AfpDump(codePage, framing).dump(in, System.out);
                 }
                 if (problems > 0) {
                     System.exit(1);
@@ -281,12 +313,14 @@ public final class App {
                                                with some bad addresses; --dpart adds a DPart
                                                tree (/DPartRoot) with one document per statement
                   generate-afp <count> <out.afp> [badAddresses] [seed] [--tle-names legacy]
+                               [--framing padded|rdw|bdw]
                                                the same run as AFP (same seed, same
                                                statements); legacy names the TLEs ACCT_NO,
-                                               CUST_NAME and ZIP_CODE
-                  dump-afp <file.afp> [codePage]
+                                               CUST_NAME and ZIP_CODE; --framing writes line
+                                               endings, record descriptor words or blocks
+                  dump-afp <file.afp> [codePage] [--framing strict|padded|rdw|bdw|auto]
                                                print an AFP file's structured fields and TLEs;
-                                               code page defaults to IBM037
+                                               code page defaults to IBM037, framing to strict
                   dump-pdf <file.pdf> [objectNumber]
                                                print a PDF's version, trailer and pages, or
                                                one object with its decoded stream

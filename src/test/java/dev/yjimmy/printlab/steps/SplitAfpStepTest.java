@@ -5,10 +5,12 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 
 import dev.yjimmy.printlab.afp.AfpFormatException;
+import dev.yjimmy.printlab.afp.AfpFraming;
 import dev.yjimmy.printlab.afp.AfpReader;
 import dev.yjimmy.printlab.afp.Ebcdic;
 import dev.yjimmy.printlab.afp.FieldType;
 import dev.yjimmy.printlab.afp.StructuredField;
+import dev.yjimmy.printlab.testdata.AfpFramer;
 import dev.yjimmy.printlab.testsupport.AfpBytes;
 import dev.yjimmy.printlab.testsupport.TestJobs;
 import dev.yjimmy.printlab.workflow.Document;
@@ -18,6 +20,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.junit.Rule;
 import org.junit.Test;
@@ -272,17 +275,221 @@ public class SplitAfpStepTest {
     }
 
     @Test
-    public void contentAfterTheDocumentEndsFails() throws Exception {
+    public void fieldAfterTheDocumentEndsThatDoesNotBeginAnotherFails() throws Exception {
         AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "RUN");
         group(afp, "G1", 1, "accountNumber", "111");
-        afp.end(FieldType.EDT).begin(FieldType.BDT, "SECOND");
-        group(afp, "G2", 1, "accountNumber", "222");
-        afp.end(FieldType.EDT);
+        afp.end(FieldType.EDT).field(FieldType.NOP, AfpBytes.name8("LOOSE"));
 
         IllegalStateException e = assertThrows(IllegalStateException.class,
                 () -> split(afp, Map.of()));
 
-        assertThat(e.getMessage()).contains("BDT at offset").contains("one document");
+        assertThat(e.getMessage()).contains("NOP at offset")
+                .contains("after the end of the document and doesn't begin another");
+    }
+
+    @Test
+    public void severalDocumentsInOneFileAreEachSplit() throws Exception {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "FIRST");
+        group(afp, "G1", 1, "accountNumber", "111");
+        group(afp, "G2", 2, "accountNumber", "222");
+        afp.end(FieldType.EDT).begin(FieldType.BDT, "SECOND");
+        group(afp, "G3", 3, "accountNumber", "333");
+        afp.end(FieldType.EDT);
+
+        Job job = split(afp, Map.of());
+
+        assertThat(job.documents()).extracting(Document::sequence).containsExactly(1, 2, 3);
+        assertThat(job.documents()).extracting(d -> d.property("accountNumber"))
+                .containsExactly("111", "222", "333");
+        assertEquals("documentCount", "3", job.properties().get("documentCount"));
+        assertEquals("totalPages carries on through the file", "6",
+                job.properties().get("totalPages"));
+        // Each output is wrapped in the BDT it came from.
+        assertThat(fields(job.documents().get(1).file()).get(0).data())
+                .containsExactly(AfpBytes.name8("FIRST"));
+        assertThat(fields(job.documents().get(2).file()).get(0).data())
+                .containsExactly(AfpBytes.name8("SECOND"));
+        assertThat(types(job.documents().get(2).file())).startsWith(FieldType.BDT, FieldType.BNG)
+                .endsWith(FieldType.ENG, FieldType.EDT);
+    }
+
+    @Test
+    public void eachDocumentInAFileHasItsOwnMediumMapAndPreamble() throws Exception {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "FIRST");
+        afp.begin(FieldType.BNG, "G1").tle("accountNumber", "111");
+        page(afp, "G1P1");
+        afp.field(FieldType.IMM, AfpBytes.name8("DUPLEX"));
+        page(afp, "G1P2");
+        afp.end(FieldType.ENG);
+        afp.end(FieldType.EDT).begin(FieldType.BDT, "SECOND");
+        group(afp, "G2", 1, "accountNumber", "222");
+        afp.end(FieldType.EDT);
+
+        Job job = split(afp, Map.of());
+
+        assertEquals("the first document's IMM", List.of("DUPLEX"),
+                mediumMaps(job.documents().get(0).file()));
+        assertEquals("is not carried into the next document", List.of(),
+                mediumMaps(job.documents().get(1).file()));
+    }
+
+    @Test
+    public void documentsWithNoPageGroupsAreSkippedWhenAnotherHasSome() throws Exception {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "EMPTY1").end(FieldType.EDT)
+                .begin(FieldType.BDT, "REAL");
+        group(afp, "G1", 1, "accountNumber", "111");
+        afp.end(FieldType.EDT).begin(FieldType.BDT, "EMPTY2").end(FieldType.EDT);
+
+        Job job = split(afp, Map.of());
+
+        assertThat(job.documents()).extracting(d -> d.property("accountNumber"))
+                .containsExactly("111");
+        assertThat(fields(job.documents().get(0).file()).get(0).data())
+                .containsExactly(AfpBytes.name8("REAL"));
+    }
+
+    @Test
+    public void fileOfOnlyEmptyDocumentsStillFails() throws Exception {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "EMPTY1").end(FieldType.EDT)
+                .begin(FieldType.BDT, "EMPTY2").end(FieldType.EDT);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> split(afp, Map.of()));
+
+        assertThat(e.getMessage()).contains("no named page groups");
+    }
+
+    @Test
+    public void aPageGroupAfterTheDocumentEndedFailsEvenWithoutAnotherBdt() throws Exception {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "RUN");
+        group(afp, "G1", 1, "accountNumber", "111");
+        afp.end(FieldType.EDT);
+        group(afp, "G2", 1, "accountNumber", "222");
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> split(afp, Map.of()));
+
+        assertThat(e.getMessage()).contains("BNG at offset")
+                .contains("starts a page group after its document ended");
+    }
+
+    @Test
+    public void aPageGroupAfterAnEmptyDocumentFailsAndDoesNotLeakItsWrapper() throws Exception {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "EMPTY").end(FieldType.EDT);
+        group(afp, "G1", 1, "accountNumber", "111");
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> split(afp, Map.of()));
+
+        assertThat(e.getMessage()).contains("starts a page group after its document ended");
+    }
+
+    @Test
+    public void aLooseFieldAfterAnyDocumentEndsFailsWhetherOrNotItHadPageGroups() throws Exception {
+        AfpBytes withGroups = AfpBytes.create().begin(FieldType.BDT, "RUN");
+        group(withGroups, "G1", 1, "accountNumber", "111");
+        withGroups.end(FieldType.EDT).field(FieldType.NOP, AfpBytes.name8("LOOSE"))
+                .begin(FieldType.BDT, "NEXT");
+        group(withGroups, "G2", 1, "accountNumber", "222");
+        withGroups.end(FieldType.EDT);
+        AfpBytes empty = AfpBytes.create().begin(FieldType.BDT, "EMPTY").end(FieldType.EDT)
+                .field(FieldType.NOP, AfpBytes.name8("LOOSE")).begin(FieldType.BDT, "NEXT");
+        group(empty, "G2", 1, "accountNumber", "222");
+        empty.end(FieldType.EDT);
+
+        for (AfpBytes afp : List.of(withGroups, empty)) {
+            IllegalStateException e = assertThrows(IllegalStateException.class,
+                    () -> split(afp, Map.of()));
+
+            assertThat(e.getMessage()).contains("NOP at offset")
+                    .contains("after the end of the document and doesn't begin another");
+        }
+    }
+
+    @Test
+    public void everyDocumentInAFileMayWrapItsGroupsInOneBeginAndEnd() throws Exception {
+        AfpBytes afp = AfpBytes.create();
+        for (String name : List.of("FIRST", "SECOND")) {
+            afp.begin(FieldType.BDT, name).begin(FieldType.BRG, "WRAP");
+            group(afp, "G" + name.charAt(0), 1, "accountNumber", name);
+            afp.end(FieldType.ERG).end(FieldType.EDT);
+        }
+
+        Job job = split(afp, Map.of());
+
+        assertThat(job.documents()).extracting(d -> d.property("accountNumber"))
+                .containsExactly("FIRST", "SECOND");
+        assertThat(types(job.documents().get(1).file())).containsExactly(FieldType.BDT,
+                FieldType.BRG, FieldType.BNG, FieldType.TLE, FieldType.BPG, FieldType.EPG,
+                FieldType.ENG, FieldType.ERG, FieldType.EDT);
+    }
+
+    @Test
+    public void aSecondWrapperInsideTheSameDocumentIsNotTakenForANewDocument() throws Exception {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "RUN").begin(FieldType.BRG, "W1");
+        group(afp, "G1", 1, "accountNumber", "111");
+        afp.end(FieldType.ERG).begin(FieldType.BRG, "W2");
+        group(afp, "G2", 1, "accountNumber", "222");
+        afp.end(FieldType.ERG).end(FieldType.EDT);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> split(afp, Map.of()));
+
+        assertThat(e.getMessage()).contains("BRG at offset")
+                .contains("every page group of a document at the same depth");
+    }
+
+    // Framing.
+
+    @Test
+    public void framingDefaultsToStrict() throws Exception {
+        byte[] rdw = AfpFramer.frame(statements(), AfpFraming.RDW);
+
+        AfpFormatException e = assertThrows(AfpFormatException.class,
+                () -> split(rdw, Map.of()));
+
+        assertThat(e.getMessage()).contains("expected 0x5A").contains("rdw");
+    }
+
+    @Test
+    public void everyFramingGivesTheSameDocuments() throws Exception {
+        byte[] strict = statements();
+        List<Map<String, String>> expected = split(strict, Map.of()).documents().stream()
+                .map(Document::properties).toList();
+        assertThat(expected).hasSize(3);
+
+        for (AfpFraming framing : AfpFraming.values()) {
+            byte[] framed = AfpFramer.frame(strict, framing);
+            // The file's framing is the one named, or found, and the output is always strict.
+            Job job = split(framed, Map.of("framing", framing.name().toLowerCase(Locale.ROOT)));
+            assertThat(job.documents().stream().map(Document::properties).toList())
+                    .as(framing.toString()).isEqualTo(expected);
+            assertThat(fields(job.documents().get(0).file())).as(framing.toString())
+                    .isNotEmpty();
+        }
+        // auto finds each framing without being told.
+        for (AfpFraming framing : List.of(AfpFraming.PADDED, AfpFraming.RDW, AfpFraming.BDW)) {
+            assertThat(split(AfpFramer.frame(strict, framing), Map.of("framing", "auto"))
+                    .documents()).as("auto reads " + framing).hasSize(3);
+        }
+    }
+
+    @Test
+    public void unknownFramingFailsWhenTheWorkflowLoads() {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> new SplitAfpStep(Map.of("framing", "blocked")));
+
+        assertThat(e.getMessage()).contains("Unknown framing 'blocked'")
+                .contains("strict, padded, rdw, bdw or auto");
+    }
+
+    /** Three one-group documents of one, two and three pages, as a strict AFP file. */
+    private static byte[] statements() {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "RUN");
+        group(afp, "G1", 1, "accountNumber", "111");
+        group(afp, "G2", 2, "accountNumber", "222");
+        group(afp, "G3", 3, "accountNumber", "333");
+        return afp.end(FieldType.EDT).bytes();
     }
 
     @Test
@@ -331,8 +538,12 @@ public class SplitAfpStepTest {
     }
 
     private Job split(AfpBytes afp, Map<String, Object> params) throws Exception {
+        return split(afp.bytes(), params);
+    }
+
+    private Job split(byte[] bytes, Map<String, Object> params) throws Exception {
         Path root = tmp.getRoot().toPath();
-        Path input = Files.write(root.resolve("in.afp"), afp.bytes());
+        Path input = Files.write(root.resolve("in.afp"), bytes);
         Job job = TestJobs.newJob(root, input);
         new SplitAfpStep(params).execute(job);
         return job;
