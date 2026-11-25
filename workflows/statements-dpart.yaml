@@ -1,0 +1,62 @@
+# Statement run from a PDF that carries a document-part tree: split on the /DPartRoot the file
+# holds, index each document from its DPM entries, presort by zip, and write the results out. The
+# same run as statements.yaml (which finds the boundaries from text on the page), for files
+# written by `generate --dpart`.
+#
+#   ./mvnw -q exec:java -Dexec.args="run workflows/statements-dpart.yaml *.pdf"
+name: statements-dpart
+description: Split a PDF statement run on its DPart tree, index from DPM entries, and presort
+
+# Steps are grouped into ProcessDirector's six phases, which always run in this order: receive,
+# prepare, assemble, print, insert, complete. A phase may be empty ([]) or left out; the job's
+# phase is shown in job.json and error.txt.
+phases:
+  receive:
+    # Job ticket: <input>.jobprops (copied into the hot folder before the input) sets job
+    # properties, one name=value per line. No ticket, no change. See README "Job tickets".
+    - name: set-job-props
+      type: SetJobPropsFromTextFile
+
+  prepare:
+    # One document per node at level 1 of the DPart tree. Its DPM entries become document
+    # properties under the names given here. No text is read from the page.
+    - name: split-and-index
+      type: SplitPdfByDPart
+      params:
+        level: 1                      # omit to use the file's /RecordLevel (1 if it has none)
+        properties:
+          AccountNumber: accountNumber
+          Name: name
+          Zip: zip
+        # A document without one of these (or with it blank) is marked indexError, not failed,
+        # so the route step can send it to the exception queue while the rest of the job completes.
+        requiredProperties: [accountNumber, name, zip]
+
+    - name: route
+      type: RouteDocuments
+      params:
+        routes:
+          # A missing DPM entry (indexError) or a bad zip can't be mailed.
+          - queue: exceptions
+            when: { any: [ { property: indexError, operator: matches, value: '.+' },
+                           { property: zip, operator: notMatches, value: '\d{5}' } ] }
+          - queue: large-envelope
+            when: { property: pageCount, operator: greaterThan, value: 6 }
+        default: standard
+
+    - name: presort
+      type: SortDocuments
+      params:
+        by: zip
+
+  assemble: []
+
+  print:
+    - name: write-output
+      type: WriteOutput
+      params:
+        outputDir: output
+
+  insert: []
+
+  complete: []
