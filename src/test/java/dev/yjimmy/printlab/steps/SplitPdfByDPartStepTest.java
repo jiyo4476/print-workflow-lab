@@ -178,6 +178,36 @@ public class SplitPdfByDPartStepTest {
     }
 
     @Test
+    public void recordsTheTotalSizeOfTheDocuments() throws Exception {
+        Path input = write(flat(2, "<< /Start 3 0 R /End 3 0 R >>", "<< /Start 4 0 R /End 4 0 R >>"));
+
+        Job job = run(input, params(null, null));
+
+        long total = 0;
+        for (Document document : job.documents()) {
+            total += Files.size(document.file());
+        }
+        assertThat(total).isPositive();
+        assertThat(job.properties()).containsEntry("documentBytes", String.valueOf(total));
+    }
+
+    @Test
+    public void aFileTheHeapCannotHoldFailsBeforeAnythingIsRead() throws Exception {
+        Path input = write(flat(2, "<< /Start 3 0 R /End 4 0 R >>"));
+        Job job = TestJobs.newJob("heapjob", folder.getRoot().toPath(), input);
+        // Pretend the JVM was started with 1 MB of heap.
+        SplitPdfByDPartStep step = new SplitPdfByDPartStep(params(null, null), () -> 1024 * 1024);
+
+        assertThatThrownBy(() -> step.execute(job))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("SplitPdfByDPart needs at least about 25 MB")
+                .hasMessageContaining("limit is 1 MB")
+                .hasMessageContaining("-Xmx");
+        assertThat(job.properties()).doesNotContainKey("totalPages");
+        assertThat(job.documents()).isEmpty();
+    }
+
+    @Test
     public void multiPageRangesGetExactlyTheirPages() throws Exception {
         Path input = write(flat(5,
                 "<< /Start 3 0 R /End 5 0 R /DPM << /AccountNumber (1111111111) >> >>",

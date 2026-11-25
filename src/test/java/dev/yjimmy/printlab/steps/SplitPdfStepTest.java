@@ -9,6 +9,7 @@ import dev.yjimmy.printlab.testsupport.TestJobs;
 import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
 import dev.yjimmy.printlab.testsupport.PdfBytes;
+import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertThrows;
 
@@ -78,6 +79,49 @@ public class SplitPdfStepTest {
 
         assertThat(e.getMessage()).contains("no pages");
         assertThat(job.documents()).isEmpty();
+    }
+
+    @Test
+    public void aFileTheHeapCannotHoldFailsBeforeAnythingIsRead() throws Exception {
+        Path tmp = folder.getRoot().toPath();
+        Path input = tmp.resolve("small.pdf");
+        try (PDDocument doc = new PDDocument()) {
+            doc.addPage(new org.apache.pdfbox.pdmodel.PDPage());
+            doc.save(input.toFile());
+        }
+        Job job = TestJobs.newJob(tmp, input);
+        // Pretend the JVM was started with 1 MB of heap.
+        SplitPdfStep step = new SplitPdfStep(Map.of("splitOn", "a", "regions", Map.of("a", RECT)),
+                () -> 1024 * 1024);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> step.execute(job));
+
+        // The 24 MB base plus a few KB of file, rounded up.
+        assertThat(e.getMessage()).contains("SplitPdf needs at least about 25 MB")
+                .contains("limit is 1 MB").contains("-Xmx");
+        assertThat(job.properties()).doesNotContainKey("totalPages");
+        assertThat(job.documents()).isEmpty();
+    }
+
+    @Test
+    public void recordsTheTotalSizeOfTheDocuments() throws Exception {
+        Path tmp = folder.getRoot().toPath();
+        Path input = tmp.resolve("run.pdf");
+        new StatementPdfGenerator(7).generate(3, input);
+        Job job = TestJobs.newJob(tmp, input);
+        SplitPdfStep step = new SplitPdfStep(Map.of("splitOn", "accountNumber",
+                "regions", Map.of("accountNumber", List.of(395, 28, 130, 18))));
+
+        step.execute(job);
+
+        assertThat(job.documents()).hasSize(3);
+        long total = 0;
+        for (var document : job.documents()) {
+            total += Files.size(document.file());
+        }
+        assertThat(job.properties()).containsEntry("documentBytes", String.valueOf(total));
+        assertThat(total).isPositive();
     }
 
     @Test

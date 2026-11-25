@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.LongSupplier;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -61,10 +62,12 @@ import org.slf4j.LoggerFactory;
  * unencrypted.
  *
  * <p><b>Memory:</b> the file is read into memory by this project's reader and again by PDFBox, so
- * the heap needed is a good many times the file's size (about 10 to 20 times in a 23 MB test), and
- * a repaired or decrypted file adds a third copy while it's being saved. Each output document
- * carries its own copy of the fonts and images its pages use, so output can be much larger than
- * the input when the run shares large resources.
+ * the heap needed is a good many times the file's size (see {@link HeapLimit}: about 10 to 16
+ * times in the runs measured), and a repaired or decrypted file adds a third copy while it's being
+ * saved. A file the heap can't hold fails its job at once with the heap to ask for, and running
+ * out of memory part way through fails the job the same way. Each output document carries its own
+ * copy of the fonts and images its pages use, so output can be much larger than the input when the
+ * run shares large resources; the total is the {@code documentBytes} job property.
  */
 public final class SplitPdfByDPartStep implements Step {
 
@@ -78,8 +81,16 @@ public final class SplitPdfByDPartStep implements Step {
     /** DPM key to document property name, in the order written in the YAML. */
     private final Map<String, String> properties = new LinkedHashMap<>();
     private final List<String> requiredProperties;
+    /** The JVM's heap limit; see {@link HeapLimit}. */
+    private final LongSupplier maxHeap;
 
     public SplitPdfByDPartStep(Map<String, Object> rawParams) {
+        this(rawParams, Runtime.getRuntime()::maxMemory);
+    }
+
+    /** As above, with the JVM's heap limit supplied, so a test can pretend it's small. */
+    SplitPdfByDPartStep(Map<String, Object> rawParams, LongSupplier maxHeap) {
+        this.maxHeap = maxHeap;
         Params params = new Params(rawParams);
         if (rawParams.containsKey("level")) {
             this.level = params.integer("level", 1);
@@ -118,6 +129,16 @@ public final class SplitPdfByDPartStep implements Step {
 
     @Override
     public void execute(Job job) throws Exception {
+        HeapLimit.check(job.inputFile(), "SplitPdfByDPart", maxHeap);
+        try {
+            split(job);
+        } catch (OutOfMemoryError e) {
+            throw HeapLimit.outOfMemory(job.inputFile(), "SplitPdfByDPart", maxHeap.getAsLong(), e);
+        }
+        SplitOutput.record(job, "SplitPdfByDPart");
+    }
+
+    private void split(Job job) throws Exception {
         Path docsDir = Files.createDirectories(job.workDir().resolve("documents"));
         Path readable = job.inputFile();
         Parsed parsed;

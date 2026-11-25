@@ -70,6 +70,10 @@ to present and easy to check.
 
 ## Design notes
 
+- Set the JVM heap in the image (for example `-XX:MaxRAMPercentage=75` in `JAVA_TOOL_OPTIONS`) and
+  size the container's memory limit to match. The default heap is a quarter of the limit, and the
+  PDF splitters need about 64 MB + 16 times the input file (README, "Memory and large files"); a
+  file that doesn't fit fails its job with the heap to ask for.
 - The Dockerfile's build stage runs `./mvnw -B -DskipTests package`. Tests run in the normal CI
   job, not in the image build.
 - The smoke test script:

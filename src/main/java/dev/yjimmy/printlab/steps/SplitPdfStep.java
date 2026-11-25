@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.LongSupplier;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -47,6 +48,12 @@ import org.apache.pdfbox.text.PDFTextStripperByArea;
  *
  * <p>This is the PDF counterpart of AFP indexing: PDF has no built-in document boundaries or index
  * tags, so we infer them from where text sits on the page. A PDF with no pages fails the job.
+ *
+ * <p>PDFBox keeps the file's page structure in memory, so the heap needed grows with the file (see
+ * {@link HeapLimit}): a file the heap can't hold fails its job at once with the heap to ask for,
+ * and running out of memory part way through fails the job the same way. Every document carries
+ * its own copy of the fonts and images its pages use, which can make the output many times the
+ * input; the total is the {@code documentBytes} job property.
  */
 public final class SplitPdfStep implements Step {
 
@@ -58,8 +65,16 @@ public final class SplitPdfStep implements Step {
     private final Map<String, Rectangle2D> regions = new LinkedHashMap<>();
     /** Starts a document on a page where it's true; {@code null} when not configured. */
     private final Condition newDocumentWhen;
+    /** The JVM's heap limit; see {@link HeapLimit}. */
+    private final LongSupplier maxHeap;
 
     public SplitPdfStep(Map<String, Object> rawParams) {
+        this(rawParams, Runtime.getRuntime()::maxMemory);
+    }
+
+    /** As above, with the JVM's heap limit supplied, so a test can pretend it's small. */
+    SplitPdfStep(Map<String, Object> rawParams, LongSupplier maxHeap) {
+        this.maxHeap = maxHeap;
         Params params = new Params(rawParams);
         this.splitOn = params.string("splitOn");
         this.extractor = params.string("extractor", "pdfbox");
@@ -88,6 +103,16 @@ public final class SplitPdfStep implements Step {
 
     @Override
     public void execute(Job job) throws Exception {
+        HeapLimit.check(job.inputFile(), "SplitPdf", maxHeap);
+        try {
+            split(job);
+        } catch (OutOfMemoryError e) {
+            throw HeapLimit.outOfMemory(job.inputFile(), "SplitPdf", maxHeap.getAsLong(), e);
+        }
+        SplitOutput.record(job, "SplitPdf");
+    }
+
+    private void split(Job job) throws Exception {
         Path docsDir = job.workDir().resolve("documents");
         Files.createDirectories(docsDir);
 

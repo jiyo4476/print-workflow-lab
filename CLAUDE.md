@@ -85,6 +85,12 @@ report's line total rounded *down* to two decimals, in its own commit.
   silently). The tree is read with the project's own strict reader; if that fails or the file
   is encrypted, PDFBox saves a clean copy (`normalized.pdf` in the work folder) that is read
   instead. `generate --dpart` writes the tree; `workflows/statements-dpart.yaml` uses it.
+  Both PDF splitters first call `HeapLimit.check` (fails the job if the JVM's heap can't hold
+  24 MB + 6x the file, the least anything measured needed; warns below 64 MB + 16x), turn an
+  `OutOfMemoryError` inside the split into a failed job (the engine leaves other Errors to
+  escape), and end with `SplitOutput.record`, which sets the `documentBytes` job property and
+  warns when the output is far larger than the input. Their package-private constructors take a
+  `LongSupplier` for the heap limit so tests can pretend it's small.
   Per-document index problems (`requiredProperties`, repeated TLEs, `MapProperties` rename
   conflicts) are appended to the `indexError` property through `IndexErrors`, never thrown, so
   routing sends them to `exceptions`; structural problems in the file fail the job.

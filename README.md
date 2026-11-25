@@ -441,8 +441,46 @@ of AFP page groups and TLEs. `generate --dpart` writes one, and `dump-pdf` shows
   document at the chosen level covers, and so do overlapping page ranges.
 - An encrypted file (empty user password) or one with a damaged cross-reference table is first
   opened and saved clean by PDFBox, which is more forgiving than this project's own reader.
-- The file is held in memory twice (this project's reader and PDFBox), so the heap needed is
-  roughly 15 to 20 times the file size: a 23 MB run of 20,000 statements needed about 400 MB.
+- The file is held in memory twice (this project's reader and PDFBox); see "Memory and large
+  files" below.
+
+### Memory and large files
+
+The PDF splitters (`SplitPdf` and `SplitPdfByDPart`) keep the file's page structure in memory, so
+the Java heap they need grows with the file. Measured on generated statement runs, both needed
+about 10 to 16 times the file's size:
+
+| Run | File | Split in | Not in |
+|---|---|---|---|
+| 5,000 statements | 5.8 MB | 72 MB of heap | 56 MB |
+| 20,000 statements | 23 MB | 384 MB | 256 MB |
+
+So plan on **64 MB + 16 times the file** (a 100 MB file: about 1.7 GB), and treat anything past a
+few hundred MB as a file to split upstream or to send as AFP. AFP is different: it's read one field
+at a time, and a 59 MB file of 20,000 statements split in 128 MB.
+
+What the steps do about it:
+
+- Before reading a PDF, the step checks the JVM's heap limit. If it can't hold even the least a
+  file can be read in (24 MB + 6 times the file), the job fails at once and the message says what
+  to start the JVM with. Below the recommended heap it only logs a warning.
+- If memory runs out part way through anyway, the job fails into the error folder with the same
+  advice, and the hot folder keeps working with the next file.
+- Every output document carries its own copy of the fonts and images its pages use, so a run that
+  shares a large font comes out many times bigger than it went in (one embedded font turned 885 KB
+  into 32 MB). The total is the `documentBytes` job property, and a log warning appears when the
+  output is over 50 MB and more than 10 times the input.
+
+Setting the heap depends on how it runs:
+
+```bash
+MAVEN_OPTS=-Xmx2g ./mvnw -q exec:java            # the devices run inside Maven's JVM
+./mvnw package cargo:run -Dcargo.jvmargs=-Xmx2g  # Tomcat is started by cargo (with -Xms128m, so
+                                                 # the -Xmx must be at least 128m)
+JAVA_TOOL_OPTIONS=-Xmx2g java ...                # any other JVM; in a container, a JVM's default
+                                                 # is a quarter of the memory limit, so also
+                                                 # consider -XX:MaxRAMPercentage=75
+```
 
 ### Splitting AFP
 
