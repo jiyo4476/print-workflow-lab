@@ -98,7 +98,9 @@ public final class WorkflowEngine {
             } catch (Exception | StackOverflowError | LinkageError e) {
                 // StackOverflowError: PDFBox can recurse too deep on a deeply nested or malformed
                 // PDF. LinkageError: a missing or broken class. Both are about this one job, so
-                // the job fails cleanly. Other Errors (OutOfMemoryError, ...) are left to escape.
+                // the job fails cleanly. Other Errors (OutOfMemoryError, ...) are left to escape,
+                // except that the PDF split steps turn running out of heap into an exception
+                // themselves (steps/HeapLimit), since the memory they use is theirs alone.
                 //
                 // An interrupt means someone wants this thread to stop (a shutdown, say). The job
                 // can't finish, so it fails like any other and its input goes to the error folder

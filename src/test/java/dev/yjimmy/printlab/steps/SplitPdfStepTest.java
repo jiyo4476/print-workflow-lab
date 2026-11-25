@@ -17,6 +17,7 @@ import dev.yjimmy.printlab.testsupport.TestJobs;
 import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
 import dev.yjimmy.printlab.testsupport.PdfBytes;
+import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertThrows;
 
@@ -153,6 +154,42 @@ public class SplitPdfStepTest {
         for (var document : job.documents()) {
             assertSelfContained(document.file());
         }
+    }
+
+    @Test
+    public void aHeapBelowTheRecommendationDoesNotStopAFileThatFits() throws Exception {
+        Path tmp = folder.getRoot().toPath();
+        Path input = tmp.resolve("run.pdf");
+        new StatementPdfGenerator(7).generate(3, input);
+        Job job = TestJobs.newJob(tmp, input);
+        // Pretend the JVM was started with 1 MB of heap: below the recommendation (it warns), but
+        // the step is what knows whether the file fits, and here it does.
+        SplitPdfStep step = new SplitPdfStep(Map.of("splitOn", "accountNumber",
+                "regions", Map.of("accountNumber", List.of(395, 28, 130, 18))), () -> 1024 * 1024);
+
+        step.execute(job);
+
+        assertThat(job.documents()).hasSize(3);
+    }
+
+    @Test
+    public void recordsTheTotalSizeOfTheDocuments() throws Exception {
+        Path tmp = folder.getRoot().toPath();
+        Path input = tmp.resolve("run.pdf");
+        new StatementPdfGenerator(7).generate(3, input);
+        Job job = TestJobs.newJob(tmp, input);
+        SplitPdfStep step = new SplitPdfStep(Map.of("splitOn", "accountNumber",
+                "regions", Map.of("accountNumber", List.of(395, 28, 130, 18))));
+
+        step.execute(job);
+
+        assertThat(job.documents()).hasSize(3);
+        long total = 0;
+        for (var document : job.documents()) {
+            total += Files.size(document.file());
+        }
+        assertThat(job.properties()).containsEntry("documentBytes", String.valueOf(total));
+        assertThat(total).isPositive();
     }
 
     @Test

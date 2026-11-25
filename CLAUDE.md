@@ -97,6 +97,16 @@ report's line total rounded *down* to two decimals, in its own commit.
   `importPage` keeps every key, and a PDF/VT page's `/DPart` leads to the whole tree, so without
   this each output would carry every other document's index values. `generate --dpart` writes
   the tree (and `/DPart` on every page); `workflows/statements-dpart.yaml` uses it.
+  Both PDF splitters run their work through `HeapLimit.run`: it warns when the JVM's heap limit
+  is below 64 MB + 1.8 KB per object (`PdfSize` reads `/Size` from the last trailer) + the file's
+  size, falling back to 16x the file if there is no count (advice, never a refusal: the heap
+  follows the object count, so a 19 MB file of five images splits in 32 MB and a 2 MB file of
+  200,000 blank pages needs 336),
+  and turns an `OutOfMemoryError` for "Java heap space" or "GC overhead limit exceeded" into a
+  failed job (the engine leaves other Errors to escape, and so does `HeapLimit`, for any other
+  kind). `SplitOutput.record` then sets the `documentBytes` job property and warns when the output
+  is far larger than the input; it never fails a job. Their package-private constructors take a
+  `LongSupplier` for the heap limit so tests can pretend it's small.
   Per-document index problems (`requiredProperties`, repeated TLEs, `MapProperties` rename
   conflicts) are appended to the `indexError` property through `IndexErrors`, never thrown, so
   routing sends them to `exceptions`; structural problems in the file fail the job.

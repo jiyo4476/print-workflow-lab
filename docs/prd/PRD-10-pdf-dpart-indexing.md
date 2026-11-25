@@ -84,10 +84,9 @@ That's a compact, convincing demo of how the formats compare.
   `importPage` copies a page's dictionary as it is, so the steps remove the entries that point
   back into the source (FR-9) with a shared helper, `PdfPages`; `SplitPdf` uses it too.
 - The project's own reader is strict, so a file it can't read, or an encrypted one, is saved
-  clean by PDFBox first and read from that copy (FR-8). Memory is about 10 to 16 times the file
-  size (a 5.8 MB file split in 72 MB of heap but not 56 MB; a 23 MB file in 384 MB but not
-  256 MB), because both readers hold the file; each output document also carries its own copy of
-  the fonts and images its pages use.
+  clean by PDFBox first and read from that copy (FR-8). Memory follows the file's object count,
+  about 0.7 to 1.6 KB per object (README, "Memory and large files"), not its size on disk; each
+  output document also carries its own copy of the fonts and images its pages use.
 
 ## Acceptance criteria
 
