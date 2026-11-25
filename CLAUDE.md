@@ -76,6 +76,11 @@ report's line total rounded *down* to two decimals, in its own commit.
   document per top-level BNG/ENG, written as a standalone AFP file (fields before the first
   group + fields between groups + the group + Ends for the Begins still open), with the group's
   own TLEs as properties. Both split steps set `pageCount` and `format` (`pdf`/`afp`).
+  `SplitPdfByDPartStep` is the third splitter: it reads the document-part tree (`pdf/DPartTree`,
+  the `/DPartRoot` catalog entry, whose nodes give each document's first and last page and its
+  `/DPM` entries) instead of page text, maps `DPM` keys to properties through its `properties`
+  param, and fails the job if a page is in no document at its `level` (so it can't be dropped
+  silently). `generate --dpart` writes that tree; `workflows/statements-dpart.yaml` uses it.
   Per-document index problems (`requiredProperties`, repeated TLEs, `MapProperties` rename
   conflicts) are appended to the `indexError` property through `IndexErrors`, never thrown, so
   routing sends them to `exceptions`; structural problems in the file fail the job.

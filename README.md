@@ -43,6 +43,7 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 | `SetJobPropsFromTextFileStep` + `<input>.jobprops` | `SetJobPropsFromTextFile`, the job ticket that starts most workflows |
 | `SplitPdfStep` | Identifying PDF documents by page regions |
 | `SplitAfpStep` | Identifying AFP documents by page groups, with TLEs as document properties |
+| `SplitPdfByDPartStep`, `pdf/DPartTree`, `generate --dpart` | PDF/VT document parts (`/DPartRoot`): the same index as AFP page groups + TLEs, carried inside the PDF |
 | `MapPropertiesStep` | Mapping input index names to document properties |
 | `SortDocumentsStep` | Sorting documents for postal presort |
 | `RouteDocumentsStep` / `when:` | Connectors with rules |

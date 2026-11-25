@@ -3,7 +3,11 @@ package dev.yjimmy.printlab.testdata;
 import java.io.IOException;
 import java.nio.file.Path;
 import dev.yjimmy.printlab.testdata.StatementLayout.TextLine;
+import java.util.ArrayList;
 import java.util.List;
+import org.apache.pdfbox.cos.COSArray;
+import org.apache.pdfbox.cos.COSDictionary;
+import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -41,12 +45,24 @@ public final class StatementPdfGenerator {
      *     statement order), at most {@code statements}
      */
     public void generate(int statements, int badAddresses, Path out) throws IOException {
-        write(data.generate(statements, badAddresses), out);
+        generate(statements, badAddresses, false, out);
+    }
+
+    /** As {@link #generate(int, int, Path)}; with {@code dpart}, the file also gets a DPart tree. */
+    public void generate(int statements, int badAddresses, boolean dpart, Path out)
+            throws IOException {
+        write(data.generate(statements, badAddresses), out, dpart);
     }
 
     /** Writes {@code statements} as one PDF. */
     public static void write(List<Statement> statements, Path out) throws IOException {
-        try (PDDocument doc = document(statements)) {
+        write(statements, out, false);
+    }
+
+    /** Writes {@code statements} as one PDF, with a DPart tree if {@code dpart}. */
+    public static void write(List<Statement> statements, Path out, boolean dpart)
+            throws IOException {
+        try (PDDocument doc = document(statements, dpart)) {
             doc.save(out.toFile());
         }
     }
@@ -58,15 +74,27 @@ public final class StatementPdfGenerator {
 
     /** {@code statements} as one document, not yet saved; the caller closes it. */
     public static PDDocument document(List<Statement> statements) throws IOException {
+        return document(statements, false);
+    }
+
+    /**
+     * {@code statements} as one document, not yet saved; the caller closes it. With {@code dpart},
+     * the catalog also gets a {@code /DPartRoot}: one DPart per statement, from its first page to
+     * its last, with its account number, name and zip as {@code /DPM} entries.
+     */
+    public static PDDocument document(List<Statement> statements, boolean dpart) throws IOException {
         PDType1Font font = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
         PDType1Font bold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
         PDDocument doc = new PDDocument();
         try {
+            List<List<PDPage>> pagesByStatement = new ArrayList<>();
             for (Statement statement : statements) {
                 int pages = statement.pageCount();
+                List<PDPage> own = new ArrayList<>();
                 for (int p = 1; p <= pages; p++) {
                     PDPage page = new PDPage(PDRectangle.LETTER);
                     doc.addPage(page);
+                    own.add(page);
                     try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
                         for (TextLine line : StatementLayout.lines(statement, p)) {
                             text(cs, line.bold() ? bold : font, line.size(), line.x(), line.y(),
@@ -74,12 +102,42 @@ public final class StatementPdfGenerator {
                         }
                     }
                 }
+                pagesByStatement.add(own);
+            }
+            if (dpart) {
+                addDPartTree(doc, statements, pagesByStatement);
             }
             return doc;
         } catch (IOException | RuntimeException e) {
             doc.close();
             throw e;
         }
+    }
+
+    /**
+     * Adds the {@code /DPartRoot}: {@code /DParts} holds one node per statement, with {@code /Start}
+     * and {@code /End} pointing at its first and last page objects and a {@code /DPM} dictionary.
+     */
+    private static void addDPartTree(PDDocument doc, List<Statement> statements,
+            List<List<PDPage>> pagesByStatement) {
+        COSArray parts = new COSArray();
+        for (int i = 0; i < statements.size(); i++) {
+            Statement statement = statements.get(i);
+            List<PDPage> pages = pagesByStatement.get(i);
+            COSDictionary dpm = new COSDictionary();
+            dpm.setString("AccountNumber", statement.accountNumber());
+            dpm.setString("Name", statement.name());
+            dpm.setString("Zip", statement.zip());
+            COSDictionary node = new COSDictionary();
+            node.setName(COSName.TYPE, "DPart");
+            node.setItem(COSName.getPDFName("Start"), pages.get(0).getCOSObject());
+            node.setItem(COSName.getPDFName("End"), pages.get(pages.size() - 1).getCOSObject());
+            node.setItem(COSName.getPDFName("DPM"), dpm);
+            parts.add(node);
+        }
+        COSDictionary root = new COSDictionary();
+        root.setItem(COSName.getPDFName("DParts"), parts);
+        doc.getDocumentCatalog().getCOSObject().setItem(COSName.getPDFName("DPartRoot"), root);
     }
 
     /** Draws text with its baseline at {@code yFromTop} points below the top of the page. */
