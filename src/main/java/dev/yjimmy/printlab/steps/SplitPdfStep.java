@@ -180,7 +180,7 @@ public final class SplitPdfStep implements Step {
         // Save while the source is still open: imported pages share its resources.
         try (PDDocument doc = new PDDocument()) {
             for (PDPage page : pages) {
-                doc.importPage(page);
+                PdfPages.importPage(doc, page);
             }
             doc.save(out.toFile());
         }

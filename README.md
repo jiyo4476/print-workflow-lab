@@ -28,7 +28,8 @@ A billing system writes one big PDF containing hundreds of customer statements. 
    `output/<jobId>/<queue>/`, plus one `documents.csv` index for the whole job.
 
 `job.json` shows which phase the job is in as it goes. The same run works from AFP with
-`workflows/statements-afp.yaml`.
+`workflows/statements-afp.yaml`, and from a PDF that carries a DPart tree with
+`workflows/statements-dpart.yaml`.
 
 ## Concept map
 
@@ -43,6 +44,7 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 | `SetJobPropsFromTextFileStep` + `<input>.jobprops` | `SetJobPropsFromTextFile`, the job ticket that starts most workflows |
 | `SplitPdfStep` | Identifying PDF documents by page regions |
 | `SplitAfpStep` | Identifying AFP documents by page groups, with TLEs as document properties |
+| `SplitPdfByDPartStep`, `pdf/DPartTree`, `generate --dpart` | PDF/VT document parts (`/DPartRoot`): the same index as AFP page groups + TLEs, carried inside the PDF |
 | `MapPropertiesStep` | Mapping input index names to document properties |
 | `SortDocumentsStep` | Sorting documents for postal presort |
 | `RouteDocumentsStep` / `when:` | Connectors with rules |
@@ -65,6 +67,7 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw verify                                     # build + tests
 ./mvnw -q exec:java -Dexec.args="generate 200 run.pdf"   # make a fake 200-statement print run
 ./mvnw -q exec:java -Dexec.args="generate 50 bad.pdf 5"  # ...50 statements, 5 with bad addresses
+./mvnw -q exec:java -Dexec.args="generate 200 run.pdf 0 42 --dpart"  # ...with a DPart tree (seed 42)
 ./mvnw -q exec:java -Dexec.args="generate-afp 200 run.afp"  # the same kind of run as AFP
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 run.afp 5 42"  # 5 bad addresses, seed 42
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 legacy.afp --tle-names legacy"  # ACCT_NO, ...
@@ -416,6 +419,50 @@ the page number ("unsupported font ...") instead of indexing the page with wrong
 `ToUnicode` maps aren't read. Use `pdfbox` for those files. `builtin` also reads the whole file
 into memory beside PDFBox's copy.
 
+### Splitting a PDF on its document parts
+
+`SplitPdf` has to guess where a statement starts from where text sits on the page. A PDF 2.0 or
+PDF/VT file can carry the answer itself: a `/DPartRoot` in the catalog points at a tree of
+*document parts*, where each part names its first and last page (`/Start`, `/End`) and holds
+index values in a `/DPM` dictionary (`AccountNumber`, `Name`, `Zip`). It is the PDF counterpart
+of AFP page groups and TLEs. `generate --dpart` writes a tree of that form (not a PDF/VT
+conformant file: it has no output intents or XMP metadata). `dump-pdf` shows the catalog's
+`/DPartRoot` reference; `dump-pdf <file> <objectNumber>` shows each node.
+
+`workflows/statements-dpart.yaml` uses `SplitPdfByDPart`:
+
+- `level` picks which depth of the tree holds the documents (1 is the root node's children). If
+  it's left out, the file's `/RecordLevel` is used, or 1 if it has none; the job log says which
+  level was used and why. A `/RecordLevel` that isn't a whole number of 1 or more fails the job.
+  The root node counts as level 0, so a `/RecordLevel` of 1 is its children. That is what vendor
+  documentation says (Callas pdfToolbox: "since the root is zero"; PDFlib's examples name the
+  levels `root` and `recipient` with `recordlevel=1`), but the text of ISO 32000-2 itself wasn't
+  available to check, so for a file from another tool, set `level` and look at the documents it
+  makes.
+- `properties` maps DPM keys to document property names (`AccountNumber: accountNumber`), so
+  routing and output are the same as for the other splitters. `requiredProperties` marks a
+  document with `indexError` when one is missing or blank, and the route step sends it to
+  `exceptions`.
+- A branch node may leave out `/Start` and `/End`; its pages are then the ones its children
+  cover. Both `/DParts [a b]` and the PDF 2.0 form `/DParts [[a b]]` are read.
+- A file with no tree fails the job and the message suggests `SplitPdf`. So do overlapping page
+  ranges, and so does a page that no document at the chosen level covers. A cover or separator
+  page outside the records is left out on purpose with `uncoveredPages: ignore` (the number left
+  out is the `uncoveredPages` job property).
+- An encrypted file (empty user password) or one with a damaged cross-reference table is first
+  opened and saved clean by PDFBox, which is more forgiving than this project's own reader. The
+  clean copy is deleted when the step ends; PDFBox also drops any permission restrictions the
+  owner set. A file that needs a password, or that PDFBox can't open either, fails with both
+  reasons in the message.
+- **Output documents carry no back-pointers.** A PDF/VT page has a `/DPart` entry pointing at its
+  node, and through it at the whole tree. Copied as it is, every customer's PDF would hold every
+  other customer's name, account number and zip. The split steps remove `/DPart`, `/B` and
+  `/PieceInfo` from the copied pages and drop link annotations (their destinations reach other
+  pages), for `SplitPdf` as well.
+- The file is held in memory twice (this project's reader and PDFBox), so the heap needed is
+  roughly 10 to 16 times the file size: a 5.8 MB run of 5,000 statements split in 72 MB of heap
+  but not 56 MB, and a 23 MB run of 20,000 statements in 384 MB but not 256 MB.
+
 ### Splitting AFP
 
 `workflows/statements-afp.yaml` is the statement workflow for AFP input. Its `SplitAfp` step
@@ -511,8 +558,8 @@ src/main/webapp/
   js/                      Marionette app: health.js, app.js, main.js
 src/test/js/               dashboard tests (Mocha + jsdom)
 config/input-devices.yaml  the input devices `run` starts
-workflows/                 sample workflows: statements.yaml (PDF), statements-afp.yaml,
-                           statements-afp-legacy.yaml
+workflows/                 sample workflows: statements.yaml (PDF), statements-dpart.yaml (PDF
+                           with a DPart tree), statements-afp.yaml, statements-afp-legacy.yaml
 ```
 
 ## Roadmap
