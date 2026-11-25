@@ -101,9 +101,10 @@ is structured.
   page is not assumed to be embedded just because the parent's dictionary lists it.
 - Standard 14 detection uses the `BaseFont` name, not the absence of a descriptor alone. A
   non-embedded font with a non-standard name (for example `Arial`) is always a failure.
-- The sample statement workflow keeps the strict default (`allowStandard14: false`), since the
-  generator embeds Liberation Sans for all its text. `allowStandard14: true` is still available for
-  real customer files that use Standard 14 fonts, and a test covers it.
+- The sample workflow sets `allowStandard14: true` for now, because the generator still draws
+  Helvetica. Once the generator embeds Liberation Sans (deferred below), the sample moves to the
+  strict default. `allowStandard14: true` stays available for customer files that use Standard 14
+  fonts, and a test covers it.
 - Liberation Sans is metric-compatible with Arial, which matches Helvetica's widths. Text positions
   from the PRD-09 extractor should therefore not move. The embedded font is a different font
   program, though, so PRD-09's Standard 14 tests and golden files need checking after the change.
@@ -136,9 +137,13 @@ is structured.
   - `rotatedPageFailsUnlessAllowed`
   - `issuesListNamesPageAndFont`
   - `internalErrorMarksDocumentWithoutCrashingJob`
+  - `failJobStopsAtTheFirstFailingDocument`, `tooManyIssuesAreSummarised`,
+    `subsetPrefixDoesNotHideANonEmbeddedFont`, `afpDocumentsAreLeftAlone`
 - Unit — `PageSizeToleranceTest`: a MediaBox 1 pt off Letter passes; 1.1 pt off fails.
-- Workflow — `PreflightRoutingTest`: failing documents go to `exceptions`; `documents.csv` shows
-  `preflight` and `preflightIssues`; `failJob: true` stops the job at the first failure.
+- Unit — `PreflightRoutingTest`: a failing document is routed to `exceptions` by a `RouteDocuments`
+  rule on `preflight`, and keeps its issues as properties.
+- Workflow — `PreflightWorkflowTest`: generated statements run `statements-preflight.yaml` to
+  completion, and each document has `preflight=pass` with `preflight` columns in `documents.csv`.
 - Manual: run the sample workflow, open the exceptions output, and check that each message would
   make sense to an operator without reading code.
 
@@ -147,18 +152,24 @@ is structured.
 - Switching the generator from Helvetica to embedded Liberation Sans changes the font the PRD-09
   extractor reads. Its Standard 14 and golden-file tests need updating in the same PR, or in
   PRD-09's follow-up, and that work should be checked before merging.
-- Liberation Sans licence terms must be checked before the font file is committed.
-- Liberation Sans license terms must be checked before the font file is committed.
+- Liberation Sans license terms must be checked before the font file is committed (deferred
+  with FR-8).
 - Form XObject walking adds the most code in this PR. Cycles and deep nesting are covered by the
   visited set and depth cap above, and by their tests.
 - Annotation appearance streams are still unchecked, so a document with a non-embedded font only in
   an annotation can pass. This is recorded as a known gap for a later PR.
 
+## Deferred from this PR
+
+- **FR-8 generator options and the Liberation Sans switch.** Not in this PR. Bundling the font
+  needs its license checked and the file committed, and changing the generator's font moves PR 9's
+  golden files. Until then the generator still draws Helvetica, so the sample workflow sets
+  `allowStandard14: true`. AC-4 is covered by hand-built PDFs (`PreflightPdfStepTest`), not by a
+  generated file.
+
 ## Definition of done
 
 - Shared DoD, plus:
   - The README lists the five checks, the two document properties and how to configure each check.
-  - The font license file is committed beside the bundled font.
-  - A fixture with a non-embedded font inside a Form XObject is committed and covered by AC-4.
-  - The sample workflow runs with the strict default and passes. A second workflow sets
-    `allowStandard14: true` for a file that uses Standard 14 fonts.
+  - The sample workflow (`workflows/statements-preflight.yaml`) runs and passes.
+  - The items in "Deferred from this PR" are either done or tracked as a follow-up.

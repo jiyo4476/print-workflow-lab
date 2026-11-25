@@ -1,6 +1,7 @@
 package dev.yjimmy.printlab.workflow;
 
 import dev.yjimmy.printlab.steps.MapPropertiesStep;
+import dev.yjimmy.printlab.steps.PreflightPdfStep;
 import dev.yjimmy.printlab.steps.RouteDocumentsStep;
 import dev.yjimmy.printlab.steps.RunExternalProgramStep;
 import dev.yjimmy.printlab.steps.SetJobPropsFromTextFileStep;
@@ -24,6 +25,7 @@ public final class StepRegistry {
         registry.register("SplitPdf", SplitPdfStep::new);
         registry.register("SplitPdfByDPart", SplitPdfByDPartStep::new);
         registry.register("SplitAfp", SplitAfpStep::new);
+        registry.register("PreflightPdf", PreflightPdfStep::new);
         registry.register("MapProperties", MapPropertiesStep::new);
         registry.register("SortDocuments", SortDocumentsStep::new);
         registry.register("RouteDocuments", RouteDocumentsStep::new);

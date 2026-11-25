@@ -30,6 +30,35 @@ final class Params {
         return v == null ? fallback : Integer.parseInt(v.toString());
     }
 
+    boolean bool(String key, boolean fallback) {
+        Object v = raw.get(key);
+        if (v == null) {
+            return fallback;
+        }
+        if (v instanceof Boolean b) {
+            return b;
+        }
+        if ("true".equalsIgnoreCase(v.toString())) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(v.toString())) {
+            return false;
+        }
+        throw new IllegalArgumentException("Step param '" + key + "' must be true or false");
+    }
+
+    double number(String key, double fallback) {
+        Object v = raw.get(key);
+        if (v == null) {
+            return fallback;
+        }
+        try {
+            return Double.parseDouble(v.toString());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Step param '" + key + "' must be a number");
+        }
+    }
+
     @SuppressWarnings("unchecked")
     Map<String, Object> map(String key) {
         Object v = raw.get(key);
