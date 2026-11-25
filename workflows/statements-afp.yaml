@@ -29,6 +29,10 @@ phases:
         # or zero bytes), rdw or bdw (record or block descriptor words, as copied from a
         # mainframe), or auto to work it out. See README "Splitting AFP".
         # framing: strict
+        # Which nesting depth of page group is a document: 1 (the default) is a group outside any
+        # other. With 2, the groups around them (a household, say) are wrapped around each
+        # document and their TLEs are inherited. See README "Splitting AFP".
+        # groupLevel: 1
 
     - name: route
       type: RouteDocuments

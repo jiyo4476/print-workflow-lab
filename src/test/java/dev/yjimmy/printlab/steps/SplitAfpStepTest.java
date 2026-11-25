@@ -525,6 +525,168 @@ public class SplitAfpStepTest {
         assertThat(e.getMessage()).contains("codePage").contains("NOT-A-CODE-PAGE");
     }
 
+    /** Two households of two and one accounts: BNG HH(BNG ACCT ...). */
+    private static AfpBytes households() {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "RUN");
+        afp.begin(FieldType.BNG, "HH1").tle("household", "H-1").tle("zip", "80202");
+        group(afp, "A1", 1, "accountNumber", "111");
+        group(afp, "A2", 2, "accountNumber", "222");
+        afp.end(FieldType.ENG);
+        afp.begin(FieldType.BNG, "HH2").tle("household", "H-2");
+        group(afp, "A3", 1, "accountNumber", "333");
+        afp.end(FieldType.ENG);
+        return afp.end(FieldType.EDT);
+    }
+
+    @Test
+    public void groupLevelOneKeepsTheOutermostGroupAsTheDocument() throws Exception {
+        Job job = split(households(), Map.of());
+
+        assertThat(job.documents()).extracting(d -> d.property("household"))
+                .containsExactly("H-1", "H-2");
+        assertThat(job.documents()).extracting(d -> d.property("pageCount"))
+                .containsExactly("3", "1");
+    }
+
+    @Test
+    public void groupLevelTwoSplitsTheGroupsInsideTheOuterOnes() throws Exception {
+        Job job = split(households(), Map.of("groupLevel", 2));
+
+        assertThat(job.documents()).extracting(d -> d.property("accountNumber"))
+                .containsExactly("111", "222", "333");
+        assertThat(job.documents()).extracting(d -> d.property("pageCount"))
+                .containsExactly("1", "2", "1");
+        // The outer group's TLEs are inherited.
+        assertThat(job.documents()).extracting(d -> d.property("household"))
+                .containsExactly("H-1", "H-1", "H-2");
+        assertThat(job.documents()).extracting(d -> d.property("zip"))
+                .containsExactly("80202", "80202", null);
+        assertEquals("totalPages", "4", job.properties().get("totalPages"));
+    }
+
+    @Test
+    public void eachDocumentKeepsItsWrapperAroundIt() throws Exception {
+        Job job = split(households(), Map.of("groupLevel", 2));
+
+        assertThat(types(job.documents().get(1).file())).containsExactly(
+                FieldType.BDT, FieldType.BNG, FieldType.TLE, FieldType.TLE,
+                FieldType.BNG, FieldType.TLE, FieldType.BPG, FieldType.EPG,
+                FieldType.BPG, FieldType.EPG, FieldType.ENG, FieldType.ENG, FieldType.EDT);
+        // The result is a whole file: it reads back as framed fields with nothing left over.
+        assertThat(fields(job.documents().get(2).file())).hasSize(10);
+    }
+
+    @Test
+    public void theDocumentsOwnTleWinsOverTheWrappers() throws Exception {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "RUN")
+                .begin(FieldType.BNG, "HH").tle("name", "HOUSEHOLD").tle("zip", "80202");
+        group(afp, "A1", 1, "name", "AVERY");
+        afp.end(FieldType.ENG).end(FieldType.EDT);
+
+        Job job = split(afp, Map.of("groupLevel", 2));
+
+        assertEquals("name", "AVERY", job.documents().get(0).property("name"));
+        assertEquals("zip", "80202", job.documents().get(0).property("zip"));
+        assertThat(job.documents().get(0).property("indexError")).isNull();
+    }
+
+    @Test
+    public void requiredPropertiesCanComeFromTheWrapper() throws Exception {
+        Job job = split(households(), Map.of("groupLevel", 2,
+                "requiredProperties", List.of("accountNumber", "household")));
+
+        assertThat(job.documents()).extracting(d -> d.property("indexError")).containsOnlyNulls();
+    }
+
+    @Test
+    public void aMissingRequiredPropertyIsStillMarkedWithGroupLevelTwo() throws Exception {
+        Job job = split(households(), Map.of("groupLevel", 2,
+                "requiredProperties", List.of("zip")));
+
+        assertThat(job.documents().get(2).property("indexError")).contains("zip");
+        assertThat(job.documents().get(0).property("indexError")).isNull();
+    }
+
+    @Test
+    public void otherFieldsInAWrapperDoNotLeakIntoTheNextWrapper() throws Exception {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "RUN");
+        afp.begin(FieldType.BNG, "HH1").tle("household", "H-1");
+        // Not an IMM: a medium map stays in effect, so it is carried on by design.
+        afp.field(FieldType.NOP, AfpBytes.bytes(0xC1));
+        group(afp, "A1", 1, "accountNumber", "111");
+        afp.end(FieldType.ENG);
+        afp.begin(FieldType.BNG, "HH2").tle("household", "H-2");
+        group(afp, "A2", 1, "accountNumber", "222");
+        afp.end(FieldType.ENG).end(FieldType.EDT);
+
+        Job job = split(afp, Map.of("groupLevel", 2));
+
+        assertThat(types(job.documents().get(0).file())).contains(FieldType.NOP);
+        assertThat(types(job.documents().get(1).file())).doesNotContain(FieldType.NOP);
+    }
+
+    @Test
+    public void aPageDirectlyInAWrapperFails() throws Exception {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "RUN")
+                .begin(FieldType.BNG, "HH1");
+        page(afp, "P1");
+        afp.end(FieldType.ENG).end(FieldType.EDT);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> split(afp, Map.of("groupLevel", 2)));
+
+        assertThat(e.getMessage()).contains("outside any named page group");
+    }
+
+    @Test
+    public void groupLevelDeeperThanTheFileFailsAndSaysSo() throws Exception {
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> split(statements(), Map.of("groupLevel", 2)));
+
+        assertThat(e.getMessage()).contains("outside any named page group")
+                .contains("groupLevel is 2");
+    }
+
+    @Test
+    public void groupLevelBelowOneIsRejected() {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> new SplitAfpStep(Map.of("groupLevel", 0)));
+
+        assertThat(e.getMessage()).contains("groupLevel").contains("0");
+    }
+
+    @Test
+    public void nestedGroupsWorkInEachOfConcatenatedDocuments() throws Exception {
+        AfpBytes first = households();
+        AfpBytes second = AfpBytes.create().begin(FieldType.BDT, "RUN2")
+                .begin(FieldType.BNG, "HH9").tle("household", "H-9");
+        group(second, "A9", 1, "accountNumber", "999");
+        second.end(FieldType.ENG).end(FieldType.EDT);
+        byte[] both = java.util.stream.Stream.of(first.bytes(), second.bytes())
+                .reduce(new byte[0], (a, b) -> {
+                    byte[] c = java.util.Arrays.copyOf(a, a.length + b.length);
+                    System.arraycopy(b, 0, c, a.length, b.length);
+                    return c;
+                });
+
+        Job job = split(both, Map.of("groupLevel", 2));
+
+        assertThat(job.documents()).extracting(d -> d.property("accountNumber"))
+                .containsExactly("111", "222", "333", "999");
+        assertThat(job.documents()).extracting(d -> d.property("household"))
+                .containsExactly("H-1", "H-1", "H-2", "H-9");
+    }
+
+    @Test
+    public void nestedGroupsSplitFromAnRdwFramedFile() throws Exception {
+        byte[] framed = AfpFramer.frame(households().bytes(), AfpFraming.RDW);
+
+        Job job = split(framed, Map.of("groupLevel", 2, "framing", "rdw"));
+
+        assertThat(job.documents()).extracting(d -> d.property("accountNumber"))
+                .containsExactly("111", "222", "333");
+    }
+
     private static void group(AfpBytes afp, String name, int pages, String tle, String value) {
         afp.begin(FieldType.BNG, name).tle(tle, value);
         for (int p = 1; p <= pages; p++) {

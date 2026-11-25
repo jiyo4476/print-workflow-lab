@@ -78,7 +78,10 @@ report's line total rounded *down* to two decimals, in its own commit.
   group + fields between groups + the group + Ends for the Begins still open), with the group's
   own TLEs as properties. A file may hold several BDT ... EDT documents: each is split with its
   own preamble and medium map, and a document with no groups is skipped. Its `framing` param
-  (default `strict`) picks the `AfpFraming` the file is read with. Both split steps set
+  (default `strict`) picks the `AfpFraming` the file is read with. Its `groupLevel` (default 1)
+  picks the BNG nesting depth that is a document: groups above it are wrappers, written around
+  each document under them, and their TLEs are inherited as properties (the document's win).
+  Both split steps set
   `pageCount` and `format` (`pdf`/`afp`).
   `SplitPdfByDPartStep` is the third splitter: it reads the PDF 2.0 document-part tree
   (`pdf/DPartTree`: the catalog's `/DPartRoot`, `/DPartRootNode`, `/DParts` flat or as an array
