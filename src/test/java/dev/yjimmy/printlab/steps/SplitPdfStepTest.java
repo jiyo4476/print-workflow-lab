@@ -2,7 +2,15 @@ package dev.yjimmy.printlab.steps;
 
 import org.junit.rules.TemporaryFolder;
 import org.junit.Rule;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink;
+import org.apache.pdfbox.pdmodel.interactive.documentnavigation.destination.PDPageFitDestination;
+import dev.yjimmy.printlab.testdata.StatementDataGenerator;
+import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
 import java.nio.file.Path;
 import dev.yjimmy.printlab.workflow.Job;
 import dev.yjimmy.printlab.testsupport.TestJobs;
@@ -81,27 +89,87 @@ public class SplitPdfStepTest {
         assertThat(job.documents()).isEmpty();
     }
 
+    // Pages must not carry the rest of the source file into the output.
+
+    private static SplitPdfStep byAccountNumber() {
+        return new SplitPdfStep(Map.of("splitOn", "accountNumber",
+                "regions", Map.of("accountNumber", List.of(395, 28, 130, 18))));
+    }
+
+    /** True if {@code document} (an output file) has no DPart entries or link annotations. */
+    private static void assertSelfContained(Path file) throws Exception {
+        try (PDDocument output = Loader.loadPDF(file.toFile())) {
+            for (PDPage page : output.getPages()) {
+                assertThat(page.getCOSObject().containsKey(COSName.getPDFName("DPart")))
+                        .as("page /DPart in " + file.getFileName()).isFalse();
+                assertThat(page.getAnnotations())
+                        .as("annotations in " + file.getFileName()).isEmpty();
+            }
+            // A few pages are a few dozen objects; other pages reached through a back-pointer
+            // would bring hundreds.
+            assertThat(output.getDocument().getXrefTable().size())
+                    .as("objects in " + file.getFileName()).isLessThan(60);
+        }
+    }
+
     @Test
-    public void aFileTheHeapCannotHoldFailsBeforeAnythingIsRead() throws Exception {
+    public void outputDocumentsDoNotCarryTheDocumentPartTree() throws Exception {
         Path tmp = folder.getRoot().toPath();
-        Path input = tmp.resolve("small.pdf");
-        try (PDDocument doc = new PDDocument()) {
-            doc.addPage(new org.apache.pdfbox.pdmodel.PDPage());
-            doc.save(input.toFile());
+        Path input = tmp.resolve("run.pdf");
+        StatementPdfGenerator.write(new StatementDataGenerator(9).generate(40, 0), input, true);
+        Job job = TestJobs.newJob(tmp, input);
+
+        byAccountNumber().execute(job);
+
+        assertThat(job.documents()).hasSize(40);
+        for (var document : job.documents()) {
+            assertSelfContained(document.file());
+        }
+    }
+
+    @Test
+    public void linkAnnotationsDoNotDragOtherPagesIntoTheOutput() throws Exception {
+        Path tmp = folder.getRoot().toPath();
+        Path plain = tmp.resolve("plain.pdf");
+        StatementPdfGenerator.write(new StatementDataGenerator(9).generate(40, 0), plain);
+        Path input = tmp.resolve("linked.pdf");
+        try (PDDocument document = Loader.loadPDF(plain.toFile())) {
+            PDPage last = document.getPage(document.getNumberOfPages() - 1);
+            for (PDPage page : document.getPages()) {
+                // A link to the last page: through its /Parent it reaches every page of the file.
+                PDAnnotationLink link = new PDAnnotationLink();
+                link.setRectangle(new PDRectangle(10, 10, 50, 20));
+                PDPageFitDestination destination = new PDPageFitDestination();
+                destination.setPage(last);
+                link.setDestination(destination);
+                page.setAnnotations(List.of(link));
+            }
+            document.save(input.toFile());
         }
         Job job = TestJobs.newJob(tmp, input);
-        // Pretend the JVM was started with 1 MB of heap.
-        SplitPdfStep step = new SplitPdfStep(Map.of("splitOn", "a", "regions", Map.of("a", RECT)),
-                () -> 1024 * 1024);
 
-        IllegalStateException e = assertThrows(IllegalStateException.class,
-                () -> step.execute(job));
+        byAccountNumber().execute(job);
 
-        // The 24 MB base plus a few KB of file, rounded up.
-        assertThat(e.getMessage()).contains("SplitPdf needs at least about 25 MB")
-                .contains("limit is 1 MB").contains("-Xmx");
-        assertThat(job.properties()).doesNotContainKey("totalPages");
-        assertThat(job.documents()).isEmpty();
+        assertThat(job.documents()).hasSize(40);
+        for (var document : job.documents()) {
+            assertSelfContained(document.file());
+        }
+    }
+
+    @Test
+    public void aHeapBelowTheRecommendationDoesNotStopAFileThatFits() throws Exception {
+        Path tmp = folder.getRoot().toPath();
+        Path input = tmp.resolve("run.pdf");
+        new StatementPdfGenerator(7).generate(3, input);
+        Job job = TestJobs.newJob(tmp, input);
+        // Pretend the JVM was started with 1 MB of heap: below the recommendation (it warns), but
+        // the step is what knows whether the file fits, and here it does.
+        SplitPdfStep step = new SplitPdfStep(Map.of("splitOn", "accountNumber",
+                "regions", Map.of("accountNumber", List.of(395, 28, 130, 18))), () -> 1024 * 1024);
+
+        step.execute(job);
+
+        assertThat(job.documents()).hasSize(3);
     }
 
     @Test

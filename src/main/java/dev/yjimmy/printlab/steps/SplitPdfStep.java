@@ -50,10 +50,11 @@ import org.apache.pdfbox.text.PDFTextStripperByArea;
  * tags, so we infer them from where text sits on the page. A PDF with no pages fails the job.
  *
  * <p>PDFBox keeps the file's page structure in memory, so the heap needed grows with the file (see
- * {@link HeapLimit}): a file the heap can't hold fails its job at once with the heap to ask for,
- * and running out of memory part way through fails the job the same way. Every document carries
- * its own copy of the fonts and images its pages use, which can make the output many times the
- * input; the total is the {@code documentBytes} job property.
+ * {@link HeapLimit}): the step warns when the JVM's heap is below the recommendation, and running
+ * out of Java heap space part way through fails the job with the heap to ask for (documents
+ * already written stay in the work folder). Every document carries its own copy of the fonts and
+ * images its pages use, which can make the output many times the input; the total is the
+ * {@code documentBytes} job property.
  */
 public final class SplitPdfStep implements Step {
 
@@ -103,12 +104,7 @@ public final class SplitPdfStep implements Step {
 
     @Override
     public void execute(Job job) throws Exception {
-        HeapLimit.check(job.inputFile(), "SplitPdf", maxHeap);
-        try {
-            split(job);
-        } catch (OutOfMemoryError e) {
-            throw HeapLimit.outOfMemory(job.inputFile(), "SplitPdf", maxHeap.getAsLong(), e);
-        }
+        HeapLimit.run(job.inputFile(), "SplitPdf", maxHeap, () -> split(job));
         SplitOutput.record(job, "SplitPdf");
     }
 
@@ -205,7 +201,7 @@ public final class SplitPdfStep implements Step {
         // Save while the source is still open: imported pages share its resources.
         try (PDDocument doc = new PDDocument()) {
             for (PDPage page : pages) {
-                doc.importPage(page);
+                PdfPages.importPage(doc, page);
             }
             doc.save(out.toFile());
         }

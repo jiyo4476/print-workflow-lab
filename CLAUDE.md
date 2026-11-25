@@ -81,15 +81,21 @@ report's line total rounded *down* to two decimals, in its own commit.
   of arrays, nodes whose `/Start` and `/End` give a document's pages and whose `/DPM` holds its
   index values; a branch's range comes from its children) instead of page text. It maps `DPM`
   keys to properties through its `properties` param, uses `level` or else the file's
-  `/RecordLevel`, and fails the job if a page is in no document (so it can't be dropped
-  silently). The tree is read with the project's own strict reader; if that fails or the file
-  is encrypted, PDFBox saves a clean copy (`normalized.pdf` in the work folder) that is read
-  instead. `generate --dpart` writes the tree; `workflows/statements-dpart.yaml` uses it.
-  Both PDF splitters first call `HeapLimit.check` (fails the job if the JVM's heap can't hold
-  24 MB + 6x the file, the least anything measured needed; warns below 64 MB + 16x), turn an
-  `OutOfMemoryError` inside the split into a failed job (the engine leaves other Errors to
-  escape), and end with `SplitOutput.record`, which sets the `documentBytes` job property and
-  warns when the output is far larger than the input. Their package-private constructors take a
+  `/RecordLevel` (which must be a whole number of 1 or more, with the root node as level 0), and
+  fails the job if a page is in no document (so it can't be dropped silently) unless
+  `uncoveredPages: ignore`. The tree is read with the project's own strict reader; if that fails
+  or the file is encrypted, PDFBox saves a clean copy (`normalized.pdf` in the work folder,
+  deleted when the step ends) that is read instead. Both PDF splitters copy pages with
+  `PdfPages.importPage`, which removes `/DPart`, `/B`, `/PieceInfo` and link annotations: PDFBox's
+  `importPage` keeps every key, and a PDF/VT page's `/DPart` leads to the whole tree, so without
+  this each output would carry every other document's index values. `generate --dpart` writes
+  the tree (and `/DPart` on every page); `workflows/statements-dpart.yaml` uses it.
+  Both PDF splitters run their work through `HeapLimit.run`: it warns when the JVM's heap limit
+  is below 64 MB + 16x the file (advice, never a refusal: a one-image PDF splits in far less),
+  and turns an `OutOfMemoryError` for "Java heap space" or "GC overhead limit exceeded" into a
+  failed job (the engine leaves other Errors to escape, and so does `HeapLimit`, for any other
+  kind). `SplitOutput.record` then sets the `documentBytes` job property and warns when the output
+  is far larger than the input; it never fails a job. Their package-private constructors take a
   `LongSupplier` for the heap limit so tests can pretend it's small.
   Per-document index problems (`requiredProperties`, repeated TLEs, `MapProperties` rename
   conflicts) are appended to the `indexError` property through `IndexErrors`, never thrown, so

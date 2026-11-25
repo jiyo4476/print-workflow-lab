@@ -1,17 +1,19 @@
 package dev.yjimmy.printlab.steps;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.Assert.assertThrows;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
-/** The heap estimates, and what the PDF steps say when a file can't fit. */
+/** The heap recommendation, and what the PDF steps do when memory runs short. */
 public class HeapLimitTest {
 
     private static final long MB = 1024 * 1024;
@@ -19,79 +21,123 @@ public class HeapLimitTest {
     @Rule
     public TemporaryFolder folder = new TemporaryFolder();
 
+    // The recommendation.
+
     @Test
-    public void estimatesGrowWithTheFile() {
-        assertThat(HeapLimit.minimumHeap(0)).isEqualTo(24 * MB);
+    public void theRecommendationGrowsWithTheFile() {
         assertThat(HeapLimit.recommendedHeap(0)).isEqualTo(64 * MB);
-        assertThat(HeapLimit.minimumHeap(10 * MB)).isEqualTo(24 * MB + 60 * MB);
         assertThat(HeapLimit.recommendedHeap(10 * MB)).isEqualTo(64 * MB + 160 * MB);
     }
 
     @Test
-    public void theMinimumIsBelowWhatTheMeasuredRunsNeeded() {
+    public void theRecommendationIsAboveTheHeapsThatWorkedInTheMeasuredRuns() {
         // Measured: a 5.8 MB file split in 72 MB of heap but not 56; a 23 MB file in 384 MB but
-        // not 256. The minimum must never be above a heap that worked.
-        assertThat(HeapLimit.minimumHeap((long) (5.8 * MB))).isLessThan(72 * MB);
-        assertThat(HeapLimit.minimumHeap(23 * MB)).isLessThan(384 * MB);
-        // And the recommendation is above the heaps that failed, or at least what worked.
+        // not 256.
         assertThat(HeapLimit.recommendedHeap((long) (5.8 * MB))).isGreaterThan(72 * MB);
         assertThat(HeapLimit.recommendedHeap(23 * MB)).isGreaterThan(384 * MB);
     }
 
     @Test
-    public void aFileThatFitsPasses() throws IOException {
+    public void aWarningIsGivenOnlyBelowTheRecommendation() throws IOException {
         Path file = fileOfSize(5 * MB);
+        long recommended = HeapLimit.recommendedHeap(5 * MB);
 
-        assertThatCode(() -> HeapLimit.check(file, "SplitPdf", () -> 1024 * MB))
-                .doesNotThrowAnyException();
+        assertThat(HeapLimit.warnIfSmall(file, "SplitPdf", recommended - 1)).isTrue();
+        assertThat(HeapLimit.warnIfSmall(file, "SplitPdf", recommended)).isFalse();
+        assertThat(HeapLimit.warnIfSmall(file, "SplitPdf", recommended + 1)).isFalse();
     }
 
     @Test
-    public void aHeapBetweenTheMinimumAndTheRecommendationStillPasses() throws IOException {
+    public void aMissingFileIsAnIoError() {
+        Path missing = folder.getRoot().toPath().resolve("gone.pdf");
+
+        assertThrows(NoSuchFileException.class,
+                () -> HeapLimit.warnIfSmall(missing, "SplitPdf", 1024 * MB));
+    }
+
+    // Running the work.
+
+    @Test
+    public void theWorkIsDoneEvenWhenTheHeapIsBelowTheRecommendation() throws Exception {
         Path file = fileOfSize(5 * MB);
-        long between = (HeapLimit.minimumHeap(5 * MB) + HeapLimit.recommendedHeap(5 * MB)) / 2;
+        AtomicBoolean ran = new AtomicBoolean();
 
-        assertThatCode(() -> HeapLimit.check(file, "SplitPdf", () -> between))
-                .doesNotThrowAnyException();
+        // 1 MB of heap for a 5 MB file: far below any recommendation, and no refusal.
+        HeapLimit.run(file, "SplitPdf", () -> MB, () -> ran.set(true));
+
+        assertThat(ran).isTrue();
     }
 
     @Test
-    public void aFileThatCannotFitFailsAndSaysWhatToDo() throws IOException {
-        Path file = fileOfSize(100 * MB);
+    public void otherExceptionsPassThroughUnchanged() throws IOException {
+        Path file = fileOfSize(1024);
+        IllegalStateException failure = new IllegalStateException("no pages");
 
-        assertThatThrownBy(() -> HeapLimit.check(file, "SplitPdfByDPart", () -> 256 * MB))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("SplitPdfByDPart needs at least about 624 MB")
-                .hasMessageContaining("100 MB PDF")
-                .hasMessageContaining("1664 MB to run comfortably")
-                .hasMessageContaining("limit is 256 MB")
-                .hasMessageContaining("-Xmx1664m")
-                .hasMessageContaining("JAVA_TOOL_OPTIONS")
-                .hasMessageContaining("README");
+        assertThatThrownBy(() -> HeapLimit.run(file, "SplitPdf", () -> 1024 * MB, () -> {
+            throw failure;
+        })).isSameAs(failure);
     }
 
     @Test
-    public void outOfMemoryBecomesAJobFailureThatNamesTheStepAndTheHeap() throws IOException {
+    public void runningOutOfJavaHeapBecomesAJobFailureThatSaysWhatToDo() throws IOException {
         Path file = fileOfSize(20 * MB);
-        OutOfMemoryError cause = new OutOfMemoryError("Java heap space");
+        for (String message : new String[] {"Java heap space", "GC overhead limit exceeded"}) {
+            OutOfMemoryError cause = new OutOfMemoryError(message);
 
-        IllegalStateException e = HeapLimit.outOfMemory(file, "SplitPdf", 128 * MB, cause);
-
-        assertThat(e).hasMessageContaining("SplitPdf ran out of memory reading a 20 MB PDF")
-                .hasMessageContaining("heap limit of 128 MB")
-                .hasMessageContaining("384 MB would be safer")
-                .hasMessageContaining("-Xmx384m");
-        assertThat(e.getCause()).isSameAs(cause);
+            assertThatThrownBy(() -> HeapLimit.run(file, "SplitPdf", () -> 128 * MB, () -> {
+                throw cause;
+            }))
+                    .as(message)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("SplitPdf ran out of memory (" + message + ")")
+                    .hasMessageContaining("reading a 20 MB PDF")
+                    .hasMessageContaining("heap limit of 128 MB")
+                    .hasMessageContaining("384 MB would be safer")
+                    .hasMessageContaining("-Xmx384m")
+                    .hasMessageContaining("Memory and large files")
+                    .hasCause(cause);
+        }
     }
 
     @Test
-    public void outOfMemoryForAFileThatIsGoneStillMakesAMessage() {
+    public void otherKindsOfOutOfMemoryAreLeftToEscape() throws IOException {
+        Path file = fileOfSize(1024);
+        // None of these is about the file, and a bigger -Xmx wouldn't help.
+        String[] others = {"Metaspace", "unable to create native thread: possibly out of memory"
+                + " or process/resource limits reached", "Direct buffer memory",
+                "Requested array size exceeds VM limit", null};
+        for (String message : others) {
+            OutOfMemoryError error = message == null ? new OutOfMemoryError()
+                    : new OutOfMemoryError(message);
+
+            OutOfMemoryError thrown = assertThrows("" + message, OutOfMemoryError.class,
+                    () -> HeapLimit.run(file, "SplitPdf", () -> 1024 * MB, () -> {
+                        throw error;
+                    }));
+
+            assertThat(thrown).isSameAs(error);
+        }
+    }
+
+    @Test
+    public void onlyJavaHeapExhaustionCountsAsHeapExhaustion() {
+        assertThat(HeapLimit.isHeapExhaustion(new OutOfMemoryError("Java heap space"))).isTrue();
+        assertThat(HeapLimit.isHeapExhaustion(new OutOfMemoryError("Java heap space: failed"
+                + " reallocation of scalar replaced objects"))).isTrue();
+        assertThat(HeapLimit.isHeapExhaustion(new OutOfMemoryError("GC overhead limit exceeded")))
+                .isTrue();
+        assertThat(HeapLimit.isHeapExhaustion(new OutOfMemoryError("Metaspace"))).isFalse();
+        assertThat(HeapLimit.isHeapExhaustion(new OutOfMemoryError())).isFalse();
+    }
+
+    @Test
+    public void theFailureForAFileThatIsGoneStillMakesAMessage() {
         Path missing = folder.getRoot().toPath().resolve("gone.pdf");
 
         IllegalStateException e = HeapLimit.outOfMemory(missing, "SplitPdf", 64 * MB,
-                new OutOfMemoryError());
+                new OutOfMemoryError("Java heap space"));
 
-        assertThat(e).hasMessageContaining("ran out of memory reading a 0 MB PDF");
+        assertThat(e).hasMessageContaining("ran out of memory (Java heap space) reading a 0 MB PDF");
     }
 
     @Test

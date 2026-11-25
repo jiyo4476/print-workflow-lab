@@ -425,30 +425,46 @@ into memory beside PDFBox's copy.
 PDF/VT file can carry the answer itself: a `/DPartRoot` in the catalog points at a tree of
 *document parts*, where each part names its first and last page (`/Start`, `/End`) and holds
 index values in a `/DPM` dictionary (`AccountNumber`, `Name`, `Zip`). It is the PDF counterpart
-of AFP page groups and TLEs. `generate --dpart` writes one, and `dump-pdf` shows it in the catalog.
+of AFP page groups and TLEs. `generate --dpart` writes a tree of that form (not a PDF/VT
+conformant file: it has no output intents or XMP metadata). `dump-pdf` shows the catalog's
+`/DPartRoot` reference; `dump-pdf <file> <objectNumber>` shows each node.
 
 `workflows/statements-dpart.yaml` uses `SplitPdfByDPart`:
 
 - `level` picks which depth of the tree holds the documents (1 is the root node's children). If
-  it's left out, the file's `/RecordLevel` is used, or 1 if it has none.
+  it's left out, the file's `/RecordLevel` is used, or 1 if it has none; the job log says which
+  level was used and why. A `/RecordLevel` that isn't a whole number of 1 or more fails the job.
+  Whether a real file counts its root node as level 0 (as this reader does) or 1 isn't something
+  I could check against the standard, so for a file from another tool, set `level` and look at the
+  documents it makes.
 - `properties` maps DPM keys to document property names (`AccountNumber: accountNumber`), so
   routing and output are the same as for the other splitters. `requiredProperties` marks a
   document with `indexError` when one is missing or blank, and the route step sends it to
   `exceptions`.
 - A branch node may leave out `/Start` and `/End`; its pages are then the ones its children
   cover. Both `/DParts [a b]` and the PDF 2.0 form `/DParts [[a b]]` are read.
-- A file with no tree fails the job and the message suggests `SplitPdf`. So does a page that no
-  document at the chosen level covers, and so do overlapping page ranges.
+- A file with no tree fails the job and the message suggests `SplitPdf`. So do overlapping page
+  ranges, and so does a page that no document at the chosen level covers. A cover or separator
+  page outside the records is left out on purpose with `uncoveredPages: ignore` (the number left
+  out is the `uncoveredPages` job property).
 - An encrypted file (empty user password) or one with a damaged cross-reference table is first
-  opened and saved clean by PDFBox, which is more forgiving than this project's own reader.
+  opened and saved clean by PDFBox, which is more forgiving than this project's own reader. The
+  clean copy is deleted when the step ends; PDFBox also drops any permission restrictions the
+  owner set. A file that needs a password, or that PDFBox can't open either, fails with both
+  reasons in the message.
+- **Output documents carry no back-pointers.** A PDF/VT page has a `/DPart` entry pointing at its
+  node, and through it at the whole tree. Copied as it is, every customer's PDF would hold every
+  other customer's name, account number and zip. The split steps remove `/DPart`, `/B` and
+  `/PieceInfo` from the copied pages and drop link annotations (their destinations reach other
+  pages), for `SplitPdf` as well.
 - The file is held in memory twice (this project's reader and PDFBox); see "Memory and large
-  files" below.
+  files" below for how much heap that takes.
 
 ### Memory and large files
 
 The PDF splitters (`SplitPdf` and `SplitPdfByDPart`) keep the file's page structure in memory, so
-the Java heap they need grows with the file. Measured on generated statement runs, both needed
-about 10 to 16 times the file's size:
+the Java heap they need grows with the file. Measured on generated, text-heavy statement runs,
+both needed about 10 to 16 times the file's size:
 
 | Run | File | Split in | Not in |
 |---|---|---|---|
@@ -456,20 +472,30 @@ about 10 to 16 times the file's size:
 | 20,000 statements | 23 MB | 384 MB | 256 MB |
 
 So plan on **64 MB + 16 times the file** (a 100 MB file: about 1.7 GB), and treat anything past a
-few hundred MB as a file to split upstream or to send as AFP. AFP is different: it's read one field
-at a time, and a 59 MB file of 20,000 statements split in 128 MB.
+few hundred MB as a file to split upstream or to send as AFP. This is for files like those: a 100
+MB PDF that was one large image split in 64 MB, because PDFBox reads stream data as it needs it, so
+the figure is advice and not a limit. AFP is different: it's read one field at a time, and a 59 MB
+file of 20,000 statements split in 128 MB.
 
 What the steps do about it:
 
-- Before reading a PDF, the step checks the JVM's heap limit. If it can't hold even the least a
-  file can be read in (24 MB + 6 times the file), the job fails at once and the message says what
-  to start the JVM with. Below the recommended heap it only logs a warning.
-- If memory runs out part way through anyway, the job fails into the error folder with the same
-  advice, and the hot folder keeps working with the next file.
+- Before splitting, the step compares the JVM's heap limit (`-Xmx`) with that recommendation and
+  logs a warning, with the `-Xmx` to use, if it's lower. It doesn't refuse the file, because only
+  the split itself knows whether it fits.
+- If the JVM runs out of Java heap space (or hits the garbage collector's overhead limit) during
+  the split, the job fails into the error folder with the same advice, and the hot folder keeps
+  working with the next file. Documents already written stay in the job's work folder. Other
+  kinds of out-of-memory (no native threads, direct buffers, metaspace) aren't about the file and
+  still escape as before. A heap far too small can spend minutes in garbage collection before the
+  failure comes: the 5.8 MB file in 62 MB took about 100 seconds.
+- The figures assume the JVM is otherwise idle. They're compared with the heap *limit*, not what
+  is free, so under Tomcat, where the dashboard shares the heap, a file that passes the check can
+  still not fit.
 - Every output document carries its own copy of the fonts and images its pages use, so a run that
   shares a large font comes out many times bigger than it went in (one embedded font turned 885 KB
   into 32 MB). The total is the `documentBytes` job property, and a log warning appears when the
-  output is over 50 MB and more than 10 times the input.
+  output is over 50 MB and more than 10 times the input. It's left out, with a warning, if a
+  document's size can't be read.
 
 Setting the heap depends on how it runs:
 

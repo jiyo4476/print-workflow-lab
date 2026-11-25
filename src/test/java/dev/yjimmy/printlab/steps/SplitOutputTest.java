@@ -53,9 +53,33 @@ public class SplitOutputTest {
     }
 
     @Test
-    public void aHugeRatioIsLoggedAndStillRecorded() throws IOException {
-        // 60 MB of documents from a 1 KB file: over both limits, so it warns; sparse files cost
-        // nothing to make.
+    public void aDocumentThatHasGoneMissingDoesNotFailTheJobAndLeavesThePropertyOut()
+            throws IOException {
+        Job job = jobWithInputOfSize(1000);
+        addDocument(job, 1, 300);
+        addDocument(job, 2, 450);
+        Files.delete(job.documents().get(1).file());
+
+        boolean recorded = SplitOutput.record(job, "SplitPdf");
+
+        assertThat(recorded).isFalse();
+        assertThat(job.properties()).doesNotContainKey("documentBytes");
+    }
+
+    @Test
+    public void aMissingInputDoesNotFailTheJobEither() throws IOException {
+        Job job = jobWithInputOfSize(1000);
+        addDocument(job, 1, 300);
+        Files.delete(job.inputFile());
+
+        assertThat(SplitOutput.record(job, "SplitPdf")).isFalse();
+        assertThat(job.properties()).doesNotContainKey("documentBytes");
+    }
+
+    @Test
+    public void aHugeRatioIsStillRecorded() throws IOException {
+        // 60 MB of documents from a 1 KB file: over both limits, so it warns (the log line isn't
+        // captured here); sparse files cost nothing to make.
         Job job = jobWithInputOfSize(1024);
         Path big = folder.newFile().toPath();
         try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(big.toFile(), "rw")) {

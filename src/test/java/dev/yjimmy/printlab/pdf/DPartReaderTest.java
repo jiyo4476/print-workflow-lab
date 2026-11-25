@@ -359,6 +359,93 @@ public class DPartReaderTest {
                 .hasMessageContaining("which is not a page");
     }
 
+    // /RecordLevel, empty /DParts and an ambiguous root.
+
+    @Test
+    public void aBadRecordLevelFails() {
+        for (String bad : List.of("0", "-1", "1.5", "(one)", "/One", "[1]")) {
+            byte[] bytes = withPages(1, "10 0 R")
+                    .object(10, "<< /DPartRootNode 11 0 R /RecordLevel " + bad + " >>")
+                    .object(11, "<< /DParts [12 0 R] >>")
+                    .object(12, node(1, 1, ""))
+                    .build("/Root 1 0 R");
+
+            assertThatThrownBy(() -> tree(bytes))
+                    .as("/RecordLevel " + bad)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("The file's /RecordLevel must be a whole number of 1 or"
+                            + " more");
+        }
+    }
+
+    @Test
+    public void aRecordLevelThatIsAReferenceIsResolved() {
+        byte[] bytes = withPages(1, "10 0 R")
+                .object(10, "<< /DPartRootNode 11 0 R /RecordLevel 13 0 R >>")
+                .object(11, "<< /DParts [12 0 R] >>")
+                .object(12, node(1, 1, ""))
+                .object(13, "2")
+                .build("/Root 1 0 R");
+
+        assertThat(tree(bytes).recordLevel()).hasValue(2);
+    }
+
+    @Test
+    public void anEmptyDpartsMakesALeafThatNeedsItsOwnRange() {
+        byte[] withRange = withPages(2, "10 0 R")
+                .object(10, "<< /DParts [11 0 R] >>")
+                .object(11, node(1, 2, "/DParts []"))
+                .build("/Root 1 0 R");
+        byte[] withoutRange = withPages(2, "10 0 R")
+                .object(10, "<< /DParts [11 0 R] >>")
+                .object(11, "<< /DParts [] >>")
+                .build("/Root 1 0 R");
+
+        // No children, so it is not a branch: asking for a deeper level says so.
+        assertThat(tree(withRange).nodes()).extracting(DPart::hasChildren).containsExactly(false);
+        assertThatThrownBy(() -> tree(withRange).atLevel(2))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("has no children");
+        assertThatThrownBy(() -> tree(withoutRange))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("has no /Start page (its /DParts is empty)");
+    }
+
+    @Test
+    public void aRootWithBothARootNodeAndItsOwnDpartsIsAmbiguous() {
+        byte[] bytes = withPages(2, "10 0 R")
+                .object(10, "<< /DPartRootNode 11 0 R /DParts [12 0 R] >>")
+                .object(11, "<< /DParts [12 0 R] >>")
+                .object(12, node(1, 2, ""))
+                .build("/Root 1 0 R");
+
+        assertThatThrownBy(() -> tree(bytes))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("both /DPartRootNode and /DParts");
+    }
+
+    @Test
+    public void aTreeThreeDeepReadsAtEachLevelWhateverTheRecordLevel() {
+        byte[] bytes = withPages(2, "10 0 R")
+                .object(10, "<< /DPartRootNode 11 0 R /RecordLevel 2 >>")
+                .object(11, "<< /DParts [[12 0 R]] >>")
+                .object(12, "<< /DParts [[13 0 R 14 0 R]] >>")
+                .object(13, node(1, 1, "/DParts [15 0 R]"))
+                .object(14, node(2, 2, "/DParts [16 0 R]"))
+                .object(15, node(1, 1, ""))
+                .object(16, node(2, 2, ""))
+                .build("/Root 1 0 R");
+        DPartTree tree = tree(bytes);
+
+        assertThat(tree.recordLevel()).hasValue(2);
+        assertThat(tree.atLevel(1)).extracting(DPart::startPage, DPart::endPage)
+                .containsExactly(tuple(1, 2));
+        assertThat(tree.atLevel(2)).extracting(DPart::startPage, DPart::endPage)
+                .containsExactly(tuple(1, 1), tuple(2, 2));
+        assertThat(tree.atLevel(3)).extracting(DPart::startPage, DPart::endPage)
+                .containsExactly(tuple(1, 1), tuple(2, 2));
+    }
+
     private static DPartTree tree(byte[] bytes) {
         return DPartTree.read(new PdfDocumentReader(bytes)).orElseThrow();
     }

@@ -13,6 +13,9 @@ import org.slf4j.LoggerFactory;
  * times bigger than it went in (a test with one embedded font made 885 KB into 32 MB). The total
  * is a job property, {@code documentBytes}, and a very large ratio is logged, so it's noticed
  * before the disk fills.
+ *
+ * <p>This is a diagnostic: it never fails a job that split correctly. If a size can't be read (a
+ * document deleted since it was written, say), the property is left out and a warning is logged.
  */
 final class SplitOutput {
 
@@ -26,20 +29,30 @@ final class SplitOutput {
     private SplitOutput() {
     }
 
-    /** Sets {@code documentBytes} to the total size of the job's documents, and warns if large. */
-    static void record(Job job, String step) throws IOException {
+    /**
+     * Sets {@code documentBytes} to the total size of the job's documents, and warns if large.
+     * Returns whether the property was set.
+     */
+    static boolean record(Job job, String step) {
         long total = 0;
-        for (Document document : job.documents()) {
-            total += Files.size(document.file());
+        long input;
+        try {
+            for (Document document : job.documents()) {
+                total += Files.size(document.file());
+            }
+            input = Files.size(job.inputFile());
+        } catch (IOException e) {
+            log.warn("{}: can't total the size of the documents {} wrote: {}", job.id(), step, e);
+            return false;
         }
         job.properties().put("documentBytes", String.valueOf(total));
-        long input = Files.size(job.inputFile());
         if (isLarge(input, total)) {
             log.warn("{}: {} wrote {} MB of documents from a {} MB file ({}x). Each document"
                     + " carries its own copy of the fonts and images its pages use.", job.id(),
                     step, HeapLimit.megabytes(total), HeapLimit.megabytes(input),
                     total / Math.max(1, input));
         }
+        return true;
     }
 
     /** Whether {@code output} bytes from {@code input} bytes is large enough to warn about. */

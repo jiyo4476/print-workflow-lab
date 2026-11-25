@@ -49,10 +49,16 @@ That's a compact, convincing demo of how the formats compare.
 - **FR-5** A missing required DPM key marks `indexError`, which PRD-02 routes to exceptions.
 - **FR-6** A file with no DPart tree fails, suggesting the region-based `SplitPdf`.
 - **FR-7** A page that no document at the chosen level covers fails the job, so it can't be
-  dropped from the output unnoticed.
+  dropped from the output unnoticed. A file with cover or separator pages outside its records sets
+  `uncoveredPages: ignore` to leave them out on purpose.
 - **FR-8** An encrypted file (empty user password) or one the project's reader can't read is
-  opened by PDFBox and read from a clean copy; a file that needs a password fails with a message
-  that says so.
+  opened by PDFBox and read from a clean copy, deleted when the step ends; a file that needs a
+  password, or that PDFBox can't open either, fails with a message that says why.
+- **FR-9** An output document carries nothing that points back into the source file. A PDF/VT page
+  has a `/DPart` entry, which leads to the whole tree and every other document's index values, so
+  the copied pages must not keep it (nor `/B`, `/PieceInfo` or link annotations).
+- **FR-10** A `/RecordLevel` that isn't a whole number of 1 or more fails the job, naming the
+  file as the source; the log says which level a split used and why.
 
 **Non-functional**
 - **NFR-1** Reading the tree doesn't parse page content streams.
@@ -70,13 +76,17 @@ That's a compact, convincing demo of how the formats compare.
     version of `generate --dpart` wrote);
   - a branch node may leave out `/Start` and `/End`, and then covers what its children cover (a
     leaf needs both).
-- `generate --dpart` writes the PDF 2.0 shape (root, root node, `[[...]]`, `/Parent`,
-  `/RecordLevel 1`, `/NodeNameList [/root /record]`). Conformance to PDF/VT is still a non-goal.
+- `generate --dpart` writes a tree of the PDF 2.0 form (root, root node, `[[...]]`, `/Parent`,
+  `/RecordLevel 1`, `/NodeNameList [/root /record]`) and a `/DPart` entry on every page, as PDF/VT
+  does. Conformance to PDF/VT (output intents, XMP) is still a non-goal.
 - Splitting writes output pages via PDFBox (writing PDFs is out of scope for the reader).
+  `importPage` copies a page's dictionary as it is, so the steps remove the entries that point
+  back into the source (FR-9) with a shared helper, `PdfPages`; `SplitPdf` uses it too.
 - The project's own reader is strict, so a file it can't read, or an encrypted one, is saved
-  clean by PDFBox first and read from that copy (FR-8). Memory is about 15 to 20 times the file
-  size, because both readers hold the file; each output document also carries its own copy of the
-  fonts and images its pages use.
+  clean by PDFBox first and read from that copy (FR-8). Memory is about 10 to 16 times the file
+  size (a 5.8 MB file split in 72 MB of heap but not 56 MB; a 23 MB file in 384 MB but not
+  256 MB), because both readers hold the file; each output document also carries its own copy of
+  the fonts and images its pages use.
 
 ## Acceptance criteria
 
@@ -87,7 +97,9 @@ That's a compact, convincing demo of how the formats compare.
 | AC-3 | Missing DPM key → `indexError` → exceptions | `SplitPdfByDPartStepTest.missingRequiredDpmKeyMarksIndexError`, `DPartWorkflowTest.missingRequiredDpmKeyMarksIndexErrorAndRoutesToExceptions` |
 | AC-4 | DPart, region and AFP splits produce identical documents, properties and zip order | `IndexParityTest` |
 | AC-5 | The PDF 2.0 shape reads; branch ranges derive from children; hostile trees fail cleanly | `DPartReaderTest.*`, `DPartWriterTest.writesThePdf20Shape` |
-| AC-6 | Encrypted and damaged files split; a password-protected one fails clearly | `SplitPdfByDPartStepTest.fileEncryptedWithAnEmptyUserPasswordIsDecryptedByPdfBox`, `fileWithItsCrossReferenceDataCutOffIsRepairedByPdfBox`, `fileThatNeedsAPasswordFailsWithAClearMessage` |
+| AC-6 | Encrypted and damaged files split; a password-protected or unreadable one fails clearly; no decrypted copy is left | `SplitPdfByDPartStepTest.fileEncryptedWithAnEmptyUserPasswordIsDecryptedByPdfBox`, `fileWithItsCrossReferenceDataCutOffIsRepairedByPdfBox`, `fileThatNeedsAPasswordFailsWithAClearMessage`, `aFileNeitherReaderCanOpenFailsNamingBothProblems`, `theDecryptedCopyIsDeletedWhenTheSplitWorks` and `...WhenTheSplitFails` |
+| AC-7 | Output documents hold no `/DPart`, tree or other document's pages | `SplitPdfByDPartStepTest.outputDocumentsDoNotCarryTheDocumentPartTree`, `SplitPdfStepTest.outputDocumentsDoNotCarryTheDocumentPartTree`, `linkAnnotationsDoNotDragOtherPagesIntoTheOutput` |
+| AC-8 | `/RecordLevel` and `level` choose the documents; bad values fail clearly; uncovered pages fail unless ignored | `SplitPdfByDPartStepTest.recordLevelPicksTheRecordsOfAThreeLevelTree`, `aBadRecordLevelFailsAndNamesTheFile`, `aCoverPageOutsideEveryDocumentFailsUnlessLeftOutOnPurpose`, `DPartReaderTest.aBadRecordLevelFails` |
 
 ## Test plan
 
@@ -108,6 +120,13 @@ Q-03 is decided (the AFP writer was built), so `IndexParityTest` compares all th
 
 - The DPart structure follows secondary sources (see Design notes). A file from a real PDF/VT
   tool may differ in ways this reader doesn't expect; the first one to try is the test.
+- **`/RecordLevel` counts the root node as level 0** (so 1 is its children) in this reader and the
+  generator. If a real file counts it as level 1, a wrong default silently picks the level above
+  the records whenever every level covers the pages. The log says which level was used; for a
+  file from another tool, set `level` explicitly and check the documents it makes.
+- Only the page entries listed in FR-9 are removed from copied pages. Other entries that point
+  back into the source file would be copied with the page; the list should grow if a real file
+  shows one.
 
 ## Definition of done
 
