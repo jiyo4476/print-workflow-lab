@@ -204,6 +204,16 @@ public final class SplitPdfByDPartStep implements Step {
                 throw new IllegalStateException("The DPart reader found " + parsed.pageCount()
                         + " pages, but PDFBox found " + sourcePages.size());
             }
+            // The page tree's own count, which PDFBox's repair keeps as it was read. If it
+            // disagrees with the pages that can be reached, pages are missing (or listed twice),
+            // and the DPart ranges, which count pages, may not mean what the file's writer meant.
+            if (source.getNumberOfPages() != sourcePages.size()) {
+                throw new IllegalStateException("The file's page tree says it has "
+                        + source.getNumberOfPages() + " pages, but " + sourcePages.size()
+                        + " can be read" + (repairedBecause == null ? "" : " (after PDFBox"
+                        + " repaired it; this project's reader had said: " + repairedBecause + ")")
+                        + ", so the file is damaged and its DPart ranges can't be trusted.");
+            }
             for (DPart part : parts) {
                 Map<String, String> props = new LinkedHashMap<>();
                 properties.forEach((key, name) -> {

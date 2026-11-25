@@ -24,7 +24,11 @@ import java.util.Set;
  *
  * <p>Depth 1 is the children of the root node, which is what {@code /RecordLevel 1} means in a
  * root node with one level of records below it (this reader takes the root node as level 0). A
- * node's {@code Start} and {@code End} reference the first and last page of its pages, inclusive.
+ * node's {@code Start} and {@code End} reference the first and last page of its pages, inclusive;
+ * {@code End} is left out for a node of one page, so a leaf with only {@code Start} is that page.
+ * Counting the root node as level 0 is what vendor documentation says (Callas pdfToolbox: "since
+ * the root is zero"; PDFlib's examples name the levels {@code root} and {@code recipient} with
+ * {@code recordlevel=1}); the text of ISO 32000-2 itself wasn't available to check.
  *
  * <p>What this reader accepts beyond that, so files from different writers read the same way:
  * <ul>
@@ -33,7 +37,7 @@ import java.util.Set;
  *   <li>a root dictionary that carries {@code /DParts} itself, with no {@code /DPartRootNode}
  *       (what earlier versions of {@code generate --dpart} wrote);</li>
  *   <li>a branch node with no {@code /Start} or {@code /End}: its range is taken from its
- *       descendants. A leaf must have both.</li>
+ *       descendants. A leaf must have {@code /Start}; without {@code /End} it is one page.</li>
  * </ul>
  *
  * <p>The reader checks the structure it reads: references that aren't pages, a range that ends
@@ -242,11 +246,9 @@ public final class DPartTree {
                 if (start.isEmpty()) {
                     throw new IllegalStateException("A DPart has no /Start page" + empty);
                 }
-                if (end.isEmpty()) {
-                    throw new IllegalStateException("A DPart has no /End page" + empty);
-                }
                 first = start.getAsInt();
-                last = end.getAsInt();
+                // /End is only there when a node covers more than one page.
+                last = end.orElse(first);
             } else {
                 first = start.orElse(descendants.stream().mapToInt(DPart::startPage).min()
                         .orElseThrow());

@@ -74,8 +74,9 @@ That's a compact, convincing demo of how the formats compare.
   - `/DParts` may be a flat array of nodes, or the array-of-arrays form;
   - the root dictionary may carry `/DParts` itself with no `/DPartRootNode` (what the first
     version of `generate --dpart` wrote);
-  - a branch node may leave out `/Start` and `/End`, and then covers what its children cover (a
-    leaf needs both).
+  - a branch node may leave out `/Start` and `/End`, and then covers what its children cover; a
+    leaf needs `/Start`, and without `/End` it is that one page (vendor documentation: `/End` is
+    there "if a DPart node refers to not just one page but to a range of pages").
 - `generate --dpart` writes a tree of the PDF 2.0 form (root, root node, `[[...]]`, `/Parent`,
   `/RecordLevel 1`, `/NodeNameList [/root /record]`) and a `/DPart` entry on every page, as PDF/VT
   does. Conformance to PDF/VT (output intents, XMP) is still a non-goal.
@@ -121,9 +122,17 @@ Q-03 is decided (the AFP writer was built), so `IndexParityTest` compares all th
 - The DPart structure follows secondary sources (see Design notes). A file from a real PDF/VT
   tool may differ in ways this reader doesn't expect; the first one to try is the test.
 - **`/RecordLevel` counts the root node as level 0** (so 1 is its children) in this reader and the
-  generator. If a real file counts it as level 1, a wrong default silently picks the level above
-  the records whenever every level covers the pages. The log says which level was used; for a
-  file from another tool, set `level` explicitly and check the documents it makes.
+  generator. Vendor sources agree: Callas pdfToolbox says "since the root is zero ... the first
+  level of the DPart hierarchy refers to the records", its sample has `/NodeNameList [/Root
+  /Record /Page]` with `/RecordLevel 1`, and PDFlib's examples use `nodenamelist={root recipient}`
+  with `recordlevel=1`. The ISO text itself (Table 408) could not be read, so if a real file
+  counts from 1, a wrong default silently picks the level above the records whenever every level
+  covers the pages. The log says which level was used; for a file from another tool, set
+  `level` explicitly and check the documents it makes.
+- **Page-count damage.** After a repair, the page tree's own `/Count` must match the pages that
+  can be read, and this project's reader and PDFBox must agree on the number; either mismatch
+  fails the job. A node pointing at a page that no longer exists fails as "not a page". A file
+  that lost pages no node refers to is not noticed, because nothing says they were there.
 - Only the page entries listed in FR-9 are removed from copied pages. Other entries that point
   back into the source file would be copied with the page; the list should grow if a real file
   shows one.

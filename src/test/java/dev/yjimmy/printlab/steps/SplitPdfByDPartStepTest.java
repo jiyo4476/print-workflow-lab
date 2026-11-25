@@ -388,6 +388,54 @@ public class SplitPdfByDPartStepTest {
                 .hasMessageContaining("had to be repaired by PDFBox");
     }
 
+    // Damage that changes the pages: it must not turn into documents of the wrong pages.
+
+    private static final String PAGE = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>";
+
+    @Test
+    public void aPageTreeWhoseCountDisagreesWithItsPagesFails() throws Exception {
+        Path input = write(new PdfBytes("1.7")
+                .object(1, "<< /Type /Catalog /Pages 2 0 R /DPartRoot 10 0 R >>")
+                .object(2, "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 5 >>")
+                .object(3, PAGE)
+                .object(4, PAGE)
+                .object(10, "<< /DParts [11 0 R] >>")
+                .object(11, "<< /Start 3 0 R /End 4 0 R >>")
+                .build("/Root 1 0 R"));
+
+        assertThatThrownBy(() -> run(input, params(null, null)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("page tree says it has 5 pages, but 2 can be read")
+                .hasMessageContaining("can't be trusted");
+    }
+
+    @Test
+    public void aRepairedFileThatLostAPageObjectFailsInsteadOfSplittingTheWrongPages()
+            throws Exception {
+        // Three one-page documents in an uncompressed file, with the trailer cut off (so the
+        // project's reader gives up and PDFBox repairs it) and the second page's object spoiled
+        // (so the repair can't find it).
+        byte[] bytes = new PdfBytes("1.7")
+                .object(1, "<< /Type /Catalog /Pages 2 0 R /DPartRoot 10 0 R >>")
+                .object(2, "<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R] /Count 3 >>")
+                .object(3, PAGE)
+                .object(4, PAGE)
+                .object(5, PAGE)
+                .object(10, "<< /DParts [11 0 R 12 0 R 13 0 R] >>")
+                .object(11, "<< /Start 3 0 R >>")
+                .object(12, "<< /Start 4 0 R >>")
+                .object(13, "<< /Start 5 0 R >>")
+                .build("/Root 1 0 R");
+        String text = new String(bytes, StandardCharsets.ISO_8859_1);
+        text = text.replace("4 0 obj\n" + PAGE, "4 0 obj\n<< /Type /Spoiled >>");
+        text = text.substring(0, text.lastIndexOf("xref"));
+        Path input = write(text.getBytes(StandardCharsets.ISO_8859_1));
+
+        assertThatThrownBy(() -> run(input, params(null, null)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("The DPart reader found 3 pages, but PDFBox found 2");
+    }
+
     // Pages must not carry the tree (or other pages) into the output.
 
     @Test
