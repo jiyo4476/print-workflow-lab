@@ -638,19 +638,28 @@ production print.
 - `PreflightPdf` step with configurable checks:
   - PDF version at or below a maximum
   - not encrypted
-  - every font embedded (`FontFile`/`FontFile2`/`FontFile3` in the font descriptor);
-    `allowStandard14: true|false`
+  - every font embedded (`FontFile`/`FontFile2`/`FontFile3` in the font descriptor), for fonts
+    in page resources and in every Form XObject the page draws (nested, with cycle protection);
+    `allowStandard14: true|false` (default `false`)
   - page size in an allowed list (e.g. Letter ± 1 pt), no unexpected `/Rotate`
 - Results stored as document properties `preflight=pass|fail` and `preflightIssues`; PR 2 rules
   route failures to `exceptions`, or `failJob: true` stops the job.
-- Generator options to produce failing files: A4 pages, encryption, and an embedded font (bundle
-  an openly licensed font such as Liberation Sans) to contrast with non-embedded Helvetica.
+- Generator options to produce failing files: A4 pages, encryption, and a non-embedded font
+  inside a Form XObject.
+- Generator uses only embedded Liberation Sans (SIL Open Font License, checked before committing)
+  for its text. It never uses Helvetica or another Standard 14 font, which avoids the commercial
+  font license. The strict default therefore passes the sample workflow.
+- Risk: switching the generator font changes what PR 9's extractor reads; PR 9's Standard 14 and
+  golden tests need checking in the same change.
 
 **Tests**
 - Unit — `PreflightPdfStepTest`, one pass and one fail case per check:
   - `encryptedFileFails` (PDFBox `StandardProtectionPolicy`)
   - `a4PageFailsLetterOnlyCheck`
   - `nonEmbeddedFontFails`, `embeddedFontPasses`
+  - `nonEmbeddedFontInFormXObjectFails`, `embeddedFontInFormXObjectPasses`
+  - `fontInNestedFormXObjectIsChecked`, `formXObjectCycleDoesNotLoop`,
+    `formNestingLimitFailsWithPlainMessage`
   - `standard14AllowedWhenConfigured`
   - `versionAboveMaximumFails`
   - `issuesListNamesPageAndFont` (useful messages for operators)
