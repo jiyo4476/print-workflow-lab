@@ -83,6 +83,20 @@ report's line total rounded *down* to two decimals, in its own commit.
   each document under them, and their TLEs are inherited as properties (the document's win).
   Both split steps set
   `pageCount` and `format` (`pdf`/`afp`).
+  `SplitPdfByDPartStep` is the third splitter: it reads the PDF 2.0 document-part tree
+  (`pdf/DPartTree`: the catalog's `/DPartRoot`, `/DPartRootNode`, `/DParts` flat or as an array
+  of arrays, nodes whose `/Start` and `/End` give a document's pages and whose `/DPM` holds its
+  index values; a branch's range comes from its children) instead of page text. It maps `DPM`
+  keys to properties through its `properties` param, uses `level` or else the file's
+  `/RecordLevel` (which must be a whole number of 1 or more, with the root node as level 0), and
+  fails the job if a page is in no document (so it can't be dropped silently) unless
+  `uncoveredPages: ignore`. The tree is read with the project's own strict reader; if that fails
+  or the file is encrypted, PDFBox saves a clean copy (`normalized.pdf` in the work folder,
+  deleted when the step ends) that is read instead. Both PDF splitters copy pages with
+  `PdfPages.importPage`, which removes `/DPart`, `/B`, `/PieceInfo` and link annotations: PDFBox's
+  `importPage` keeps every key, and a PDF/VT page's `/DPart` leads to the whole tree, so without
+  this each output would carry every other document's index values. `generate --dpart` writes
+  the tree (and `/DPart` on every page); `workflows/statements-dpart.yaml` uses it.
   Per-document index problems (`requiredProperties`, repeated TLEs, `MapProperties` rename
   conflicts) are appended to the `indexError` property through `IndexErrors`, never thrown, so
   routing sends them to `exceptions`; structural problems in the file fail the job.

@@ -6,6 +6,7 @@ import dev.yjimmy.printlab.steps.RunExternalProgramStep;
 import dev.yjimmy.printlab.steps.SetJobPropsFromTextFileStep;
 import dev.yjimmy.printlab.steps.SortDocumentsStep;
 import dev.yjimmy.printlab.steps.SplitAfpStep;
+import dev.yjimmy.printlab.steps.SplitPdfByDPartStep;
 import dev.yjimmy.printlab.steps.SplitPdfStep;
 import dev.yjimmy.printlab.steps.WriteOutputStep;
 import java.util.HashMap;
@@ -21,6 +22,7 @@ public final class StepRegistry {
         StepRegistry registry = new StepRegistry();
         registry.register("SetJobPropsFromTextFile", SetJobPropsFromTextFileStep::new);
         registry.register("SplitPdf", SplitPdfStep::new);
+        registry.register("SplitPdfByDPart", SplitPdfByDPartStep::new);
         registry.register("SplitAfp", SplitAfpStep::new);
         registry.register("MapProperties", MapPropertiesStep::new);
         registry.register("SortDocuments", SortDocumentsStep::new);
