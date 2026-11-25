@@ -464,20 +464,29 @@ conformant file: it has no output intents or XMP metadata). `dump-pdf` shows the
 
 ### Memory and large files
 
-The PDF splitters (`SplitPdf` and `SplitPdfByDPart`) keep the file's page structure in memory, so
-the Java heap they need grows with the file. Measured on generated, text-heavy statement runs,
-both needed about 10 to 16 times the file's size:
+The PDF splitters (`SplitPdf` and `SplitPdfByDPart`) turn every object of a PDF that they reach
+into Java objects, so the heap they need follows the file's **object count**, not its size on
+disk. Measured with `SplitPdfByDPart` on files of different shapes (the smallest heap that worked;
+the next step down failed):
 
-| Run | File | Split in | Not in |
-|---|---|---|---|
-| 5,000 statements | 5.8 MB | 72 MB of heap | 56 MB |
-| 20,000 statements | 23 MB | 384 MB | 256 MB |
+| File | Size | Pages | Objects | Smallest heap that worked |
+|---|---|---|---|---|
+| 5,000 statements | 5.8 MB | 10,072 | 50,498 | about 58 MB |
+| 20,000 statements | 23 MB | 40,059 | 201,045 | about 270 MB |
+| 200,000 blank pages | 2 MB | 200,000 | 201,409 | about 336 MB |
+| 400,000 blank pages | 4 MB | 400,000 | 402,409 | about 670 MB |
+| 100,000 pages with a drawing | 12 MB | 100,000 | 301,208 | about 304 MB |
+| 5 incompressible 4 MB images | 19 MB | 5 | 42 | 32 MB or less |
 
-So plan on **64 MB + 16 times the file** (a 100 MB file: about 1.7 GB), and treat anything past a
-few hundred MB as a file to split upstream or to send as AFP. This is for files like those: a 100
-MB PDF that was one large image split in 64 MB, because PDFBox reads stream data as it needs it, so
-the figure is advice and not a limit. AFP is different: it's read one field at a time, and a 59 MB
-file of 20,000 statements split in 128 MB.
+That is 0.7 to 1.6 KB of heap per object, and it scaled linearly when the blank-pages file was
+doubled (the 400,000-page file was not used to fit the formula). Size on disk is no guide (the 2 MB
+file needed ten times the heap of the 19 MB one), and neither is the page count (1.6 to 7 KB per
+page). The step reads the object count from the file's last trailer without loading it, and
+recommends **64 MB + 1.8 KB per object + the file's size**: a 200,000-object file about 450 MB, a
+million objects about 1.9 GB. If it can't find the count it falls back to 64 MB + 16 times the file.
+Treat a file past a few hundred MB, or a few million objects, as one to split upstream or to send
+as AFP. AFP is different: it's read one field at a time, and a 59 MB file of 20,000 statements
+split in 128 MB.
 
 What the steps do about it:
 
@@ -489,7 +498,10 @@ What the steps do about it:
   working with the next file. Documents already written stay in the job's work folder. Other
   kinds of out-of-memory (no native threads, direct buffers, metaspace) aren't about the file and
   still escape as before. A heap far too small can spend minutes in garbage collection before the
-  failure comes: the 5.8 MB file in 62 MB took about 100 seconds.
+  failure comes: the 5.8 MB file in 62 MB took about 100 seconds. After such a failure the next job
+  in the same JVM behaved exactly as it does in a fresh one at every heap tried (13 to 30 MB, both
+  steps, the next job a 3-statement file). A failure during a PDFBox class's static initialisation
+  would leave that class unusable until restart; that wasn't seen and can't be ruled out.
 - The figures assume the JVM is otherwise idle. They're compared with the heap *limit*, not what
   is free, so under Tomcat, where the dashboard shares the heap, a file that passes the check can
   still not fit.

@@ -4,10 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.Assert.assertThrows;
 
+import dev.yjimmy.printlab.testsupport.PdfBytes;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.Rule;
 import org.junit.Test;
@@ -24,27 +27,98 @@ public class HeapLimitTest {
     // The recommendation.
 
     @Test
-    public void theRecommendationGrowsWithTheFile() {
-        assertThat(HeapLimit.recommendedHeap(0)).isEqualTo(64 * MB);
-        assertThat(HeapLimit.recommendedHeap(10 * MB)).isEqualTo(64 * MB + 160 * MB);
+    public void theRecommendationGrowsWithTheObjectsAndTheFile() {
+        assertThat(HeapLimit.recommendedHeap(0, OptionalLong.of(0))).isEqualTo(64 * MB);
+        assertThat(HeapLimit.recommendedHeap(10 * MB, OptionalLong.of(100_000)))
+                .isEqualTo(64 * MB + 100_000 * 1843L + 10 * MB);
     }
 
     @Test
-    public void theRecommendationIsAboveTheHeapsThatWorkedInTheMeasuredRuns() {
-        // Measured: a 5.8 MB file split in 72 MB of heap but not 56; a 23 MB file in 384 MB but
-        // not 256.
-        assertThat(HeapLimit.recommendedHeap((long) (5.8 * MB))).isGreaterThan(72 * MB);
-        assertThat(HeapLimit.recommendedHeap(23 * MB)).isGreaterThan(384 * MB);
+    public void withoutAnObjectCountItFallsBackToSixteenTimesTheFile() {
+        assertThat(HeapLimit.recommendedHeap(10 * MB, OptionalLong.empty()))
+                .isEqualTo(64 * MB + 160 * MB);
+    }
+
+    /**
+     * The files the formula was fitted to: size in bytes, objects, and the smallest heap in MB
+     * that split them (the heap just below it failed). If a change to the formula, or to the
+     * steps, drops the recommendation below one of them, the formula needs measuring again.
+     */
+    private static final long[][] MEASURED = {
+        // bytes,        objects, smallest working heap (MB)
+        {5_800_000L,      50_498, 58},    // 5,000 statements
+        {23_250_000L,    201_045, 270},   // 20,000 statements
+        {2_035_000L,     201_409, 336},   // 200,000 blank pages
+        {12_569_000L,    301_208, 304},   // 100,000 pages with a drawing
+        {19_563_000L,         42, 32},    // 5 incompressible images
+        {4_073_000L,     402_409, 670},   // 400,000 blank pages (not used to fit the formula)
+    };
+
+    @Test
+    public void theRecommendationStaysAboveTheNeedAsFilesGrowVeryLarge() {
+        // The base stops mattering at millions of objects; the per-object term must carry it. The
+        // worst measured file needed about 1.64 KB per object once the 24 MB base is taken off.
+        long objects = 5_000_000;
+        long needed = 24 * MB + (long) (1.64 * 1024 * objects);
+
+        assertThat(HeapLimit.recommendedHeap(40 * MB, OptionalLong.of(objects)))
+                .isGreaterThan(needed);
     }
 
     @Test
-    public void aWarningIsGivenOnlyBelowTheRecommendation() throws IOException {
-        Path file = fileOfSize(5 * MB);
-        long recommended = HeapLimit.recommendedHeap(5 * MB);
+    public void theRecommendationIsAboveTheSmallestHeapThatWorkedForEveryMeasuredFile() {
+        for (long[] file : MEASURED) {
+            long recommended = HeapLimit.recommendedHeap(file[0], OptionalLong.of(file[1]));
+
+            assertThat(recommended).as("file of %d objects", file[1]).isGreaterThan(file[2] * MB);
+            // And not wildly above it: more than 3x would warn about files that are fine.
+            assertThat(recommended).as("file of %d objects", file[1]).isLessThan(3 * file[2] * MB
+                    + 64 * MB);
+        }
+    }
+
+    @Test
+    public void theOldSizeBasedRuleWouldHaveBeenWrongForTwoOfTheMeasuredFiles() {
+        // Why the object count is used: 16 times the size, plus 64 MB, misses the 2 MB file of
+        // blank pages by three times and overshoots the image file by more than ten.
+        long blank = 64 * MB + 16 * MEASURED[2][0];
+        long image = 64 * MB + 16 * MEASURED[4][0];
+
+        assertThat(blank).isLessThan(MEASURED[2][2] * MB);
+        assertThat(image).isGreaterThan(10 * MEASURED[4][2] * MB);
+    }
+
+    @Test
+    public void aWarningIsGivenOnlyBelowTheRecommendation() throws Exception {
+        Path file = write(classicPdf());
+        long recommended = HeapLimit.recommendedHeap(file);
+        assertThat(PdfSize.objects(file)).as("the file has a countable trailer").isPresent();
 
         assertThat(HeapLimit.warnIfSmall(file, "SplitPdf", recommended - 1)).isTrue();
         assertThat(HeapLimit.warnIfSmall(file, "SplitPdf", recommended)).isFalse();
         assertThat(HeapLimit.warnIfSmall(file, "SplitPdf", recommended + 1)).isFalse();
+    }
+
+    @Test
+    public void aFileWithNoCountableTrailerStillGetsAWarningFromItsSize() throws Exception {
+        Path file = fileOfSize(5 * MB);
+        long recommended = HeapLimit.recommendedHeap(file);
+
+        assertThat(recommended).isEqualTo(64 * MB + 80 * MB);
+        assertThat(HeapLimit.warnIfSmall(file, "SplitPdf", recommended - 1)).isTrue();
+        assertThat(HeapLimit.warnIfSmall(file, "SplitPdf", recommended)).isFalse();
+    }
+
+    private Path write(byte[] bytes) throws IOException {
+        return Files.write(folder.newFile().toPath(), bytes);
+    }
+
+    private static byte[] classicPdf() {
+        return new PdfBytes("1.7")
+                .object(1, "<< /Type /Catalog /Pages 2 0 R >>")
+                .object(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+                .object(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>")
+                .build("/Root 1 0 R");
     }
 
     @Test

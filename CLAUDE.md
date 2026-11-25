@@ -91,7 +91,10 @@ report's line total rounded *down* to two decimals, in its own commit.
   this each output would carry every other document's index values. `generate --dpart` writes
   the tree (and `/DPart` on every page); `workflows/statements-dpart.yaml` uses it.
   Both PDF splitters run their work through `HeapLimit.run`: it warns when the JVM's heap limit
-  is below 64 MB + 16x the file (advice, never a refusal: a one-image PDF splits in far less),
+  is below 64 MB + 1.8 KB per object (`PdfSize` reads `/Size` from the last trailer) + the file's
+  size, falling back to 16x the file if there is no count (advice, never a refusal: the heap
+  follows the object count, so a 19 MB file of five images splits in 32 MB and a 2 MB file of
+  200,000 blank pages needs 336),
   and turns an `OutOfMemoryError` for "Java heap space" or "GC overhead limit exceeded" into a
   failed job (the engine leaves other Errors to escape, and so does `HeapLimit`, for any other
   kind). `SplitOutput.record` then sets the `documentBytes` job property and warns when the output

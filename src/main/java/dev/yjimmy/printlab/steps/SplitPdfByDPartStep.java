@@ -72,8 +72,8 @@ import org.slf4j.LoggerFactory;
  * unencrypted.
  *
  * <p><b>Memory:</b> the file is read into memory by this project's reader and again by PDFBox, so
- * the heap needed is a good many times the file's size (about 10 to 16 times in the runs measured;
- * see {@link HeapLimit}). The two readers don't hold it at once: this project's is finished with
+ * the heap needed follows the file's object count, about 0.7 to 1.6 KB per object in the files
+ * measured (see {@link HeapLimit}). The two readers don't hold it at once: this project's is finished with
  * before PDFBox loads the pages to copy, and for a repaired or decrypted file PDFBox's first copy
  * is closed before the clean one is read. The step warns when the JVM's heap is below the
  * recommendation, and running out of Java heap space part way through fails the job with the heap
