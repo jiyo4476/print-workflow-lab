@@ -230,20 +230,27 @@ public class DPartReaderTest {
     }
 
     @Test
-    public void leafMustHaveStartAndEnd() {
+    public void aLeafNeedsStart() {
         byte[] noStart = withPages(2, "10 0 R")
                 .object(10, "<< /DParts [11 0 R] >>")
                 .object(11, "<< /End 4 0 R >>")
                 .build("/Root 1 0 R");
-        byte[] noEnd = withPages(2, "10 0 R")
-                .object(10, "<< /DParts [11 0 R] >>")
-                .object(11, "<< /Start 3 0 R >>")
-                .build("/Root 1 0 R");
 
         assertThatThrownBy(() -> tree(noStart)).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("has no /Start");
-        assertThatThrownBy(() -> tree(noEnd)).isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("has no /End");
+    }
+
+    @Test
+    public void aLeafWithoutEndIsOnePage() {
+        // /End is only written for a node that covers more than one page.
+        byte[] bytes = withPages(3, "10 0 R")
+                .object(10, "<< /DParts [11 0 R 12 0 R] >>")
+                .object(11, "<< /Start 3 0 R >>")
+                .object(12, "<< /Start 4 0 R /End 5 0 R >>")
+                .build("/Root 1 0 R");
+
+        assertThat(tree(bytes).atLevel(1)).extracting(DPart::startPage, DPart::endPage)
+                .containsExactly(tuple(1, 1), tuple(2, 3));
     }
 
     @Test

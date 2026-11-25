@@ -434,9 +434,11 @@ conformant file: it has no output intents or XMP metadata). `dump-pdf` shows the
 - `level` picks which depth of the tree holds the documents (1 is the root node's children). If
   it's left out, the file's `/RecordLevel` is used, or 1 if it has none; the job log says which
   level was used and why. A `/RecordLevel` that isn't a whole number of 1 or more fails the job.
-  Whether a real file counts its root node as level 0 (as this reader does) or 1 isn't something
-  I could check against the standard, so for a file from another tool, set `level` and look at the
-  documents it makes.
+  The root node counts as level 0, so a `/RecordLevel` of 1 is its children. That is what vendor
+  documentation says (Callas pdfToolbox: "since the root is zero"; PDFlib's examples name the
+  levels `root` and `recipient` with `recordlevel=1`), but the text of ISO 32000-2 itself wasn't
+  available to check, so for a file from another tool, set `level` and look at the documents it
+  makes.
 - `properties` maps DPM keys to document property names (`AccountNumber: accountNumber`), so
   routing and output are the same as for the other splitters. `requiredProperties` marks a
   document with `indexError` when one is missing or blank, and the route step sends it to
