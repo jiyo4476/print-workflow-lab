@@ -14,6 +14,11 @@ import dev.yjimmy.printlab.pdf.PdfReference;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.cos.COSArray;
+import org.apache.pdfbox.cos.COSDictionary;
+import org.apache.pdfbox.cos.COSName;
+import org.apache.pdfbox.pdmodel.PDDocument;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -102,6 +107,38 @@ public class DPartWriterTest {
             assertThat(node.get("Parent")).isEqualTo(rootNodeRef);
         }
         assertThat(tree(out).recordLevel()).hasValue(1);
+    }
+
+    @Test
+    public void pdfBoxReadsTheSameTreeAndEveryPagePointsBackAtItsNode() throws Exception {
+        List<Statement> statements = new StatementDataGenerator(11).generate(6, 0);
+        Path out = write(statements);
+        COSName dpart = COSName.getPDFName("DPart");
+        COSName parent = COSName.getPDFName("Parent");
+
+        try (PDDocument document = Loader.loadPDF(out.toFile())) {
+            COSDictionary root = document.getDocumentCatalog().getCOSObject()
+                    .getCOSDictionary(COSName.getPDFName("DPartRoot"));
+            COSDictionary rootNode = root.getCOSDictionary(COSName.getPDFName("DPartRootNode"));
+            assertThat(rootNode.getCOSDictionary(parent)).as("root node /Parent").isSameAs(root);
+            COSArray siblings = (COSArray) ((COSArray) rootNode
+                    .getDictionaryObject(COSName.getPDFName("DParts"))).getObject(0);
+            assertThat(siblings.size()).isEqualTo(statements.size());
+
+            int pageIndex = 0;
+            for (int i = 0; i < statements.size(); i++) {
+                COSDictionary node = (COSDictionary) siblings.getObject(i);
+                assertThat(node.getCOSDictionary(parent)).as("node /Parent").isSameAs(rootNode);
+                assertThat(node.getCOSDictionary(COSName.getPDFName("Start")))
+                        .as("statement " + i + " /Start")
+                        .isSameAs(document.getPage(pageIndex).getCOSObject());
+                for (int p = 0; p < statements.get(i).pageCount(); p++) {
+                    assertThat(document.getPage(pageIndex++).getCOSObject()
+                            .getCOSDictionary(dpart)).as("page /DPart").isSameAs(node);
+                }
+            }
+            assertThat(pageIndex).isEqualTo(document.getNumberOfPages());
+        }
     }
 
     @Test

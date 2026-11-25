@@ -425,24 +425,41 @@ into memory beside PDFBox's copy.
 PDF/VT file can carry the answer itself: a `/DPartRoot` in the catalog points at a tree of
 *document parts*, where each part names its first and last page (`/Start`, `/End`) and holds
 index values in a `/DPM` dictionary (`AccountNumber`, `Name`, `Zip`). It is the PDF counterpart
-of AFP page groups and TLEs. `generate --dpart` writes one, and `dump-pdf` shows it in the catalog.
+of AFP page groups and TLEs. `generate --dpart` writes a tree of that form (not a PDF/VT
+conformant file: it has no output intents or XMP metadata). `dump-pdf` shows the catalog's
+`/DPartRoot` reference; `dump-pdf <file> <objectNumber>` shows each node.
 
 `workflows/statements-dpart.yaml` uses `SplitPdfByDPart`:
 
 - `level` picks which depth of the tree holds the documents (1 is the root node's children). If
-  it's left out, the file's `/RecordLevel` is used, or 1 if it has none.
+  it's left out, the file's `/RecordLevel` is used, or 1 if it has none; the job log says which
+  level was used and why. A `/RecordLevel` that isn't a whole number of 1 or more fails the job.
+  Whether a real file counts its root node as level 0 (as this reader does) or 1 isn't something
+  I could check against the standard, so for a file from another tool, set `level` and look at the
+  documents it makes.
 - `properties` maps DPM keys to document property names (`AccountNumber: accountNumber`), so
   routing and output are the same as for the other splitters. `requiredProperties` marks a
   document with `indexError` when one is missing or blank, and the route step sends it to
   `exceptions`.
 - A branch node may leave out `/Start` and `/End`; its pages are then the ones its children
   cover. Both `/DParts [a b]` and the PDF 2.0 form `/DParts [[a b]]` are read.
-- A file with no tree fails the job and the message suggests `SplitPdf`. So does a page that no
-  document at the chosen level covers, and so do overlapping page ranges.
+- A file with no tree fails the job and the message suggests `SplitPdf`. So do overlapping page
+  ranges, and so does a page that no document at the chosen level covers. A cover or separator
+  page outside the records is left out on purpose with `uncoveredPages: ignore` (the number left
+  out is the `uncoveredPages` job property).
 - An encrypted file (empty user password) or one with a damaged cross-reference table is first
-  opened and saved clean by PDFBox, which is more forgiving than this project's own reader.
+  opened and saved clean by PDFBox, which is more forgiving than this project's own reader. The
+  clean copy is deleted when the step ends; PDFBox also drops any permission restrictions the
+  owner set. A file that needs a password, or that PDFBox can't open either, fails with both
+  reasons in the message.
+- **Output documents carry no back-pointers.** A PDF/VT page has a `/DPart` entry pointing at its
+  node, and through it at the whole tree. Copied as it is, every customer's PDF would hold every
+  other customer's name, account number and zip. The split steps remove `/DPart`, `/B` and
+  `/PieceInfo` from the copied pages and drop link annotations (their destinations reach other
+  pages), for `SplitPdf` as well.
 - The file is held in memory twice (this project's reader and PDFBox), so the heap needed is
-  roughly 15 to 20 times the file size: a 23 MB run of 20,000 statements needed about 400 MB.
+  roughly 10 to 16 times the file size: a 5.8 MB run of 5,000 statements split in 72 MB of heap
+  but not 56 MB, and a 23 MB run of 20,000 statements in 384 MB but not 256 MB.
 
 ### Splitting AFP
 

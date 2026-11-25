@@ -118,7 +118,9 @@ public final class StatementPdfGenerator {
 
     /**
      * Adds the {@code /DPartRoot}: {@code /DParts} holds one node per statement, with {@code /Start}
-     * and {@code /End} pointing at its first and last page objects and a {@code /DPM} dictionary.
+     * and {@code /End} pointing at its first and last page objects and a {@code /DPM} dictionary,
+     * and every page of the statement gets a {@code /DPart} entry pointing back at its node. The
+     * tree has the PDF 2.0 form but the file isn't PDF/VT conformant (no output intents or XMP).
      */
     private static void addDPartTree(PDDocument doc, List<Statement> statements,
             List<List<PDPage>> pagesByStatement) {
@@ -144,7 +146,13 @@ public final class StatementPdfGenerator {
             node.setItem(COSName.getPDFName("Start"), pages.get(0).getCOSObject());
             node.setItem(COSName.getPDFName("End"), pages.get(pages.size() - 1).getCOSObject());
             node.setItem(COSName.getPDFName("DPM"), dpm);
-            siblings.add(new COSObject(node));
+            COSObject nodeRef = new COSObject(node);
+            siblings.add(nodeRef);
+            // As PDF/VT does, every page points back at its node (through which the whole tree can
+            // be reached), so a splitter that copies pages as they are copies the tree with them.
+            for (PDPage page : pages) {
+                page.getCOSObject().setItem(COSName.getPDFName("DPart"), nodeRef);
+            }
         }
         // The PDF 2.0 form: /DParts is an array of arrays; here, one array holding every statement.
         COSArray groups = new COSArray();

@@ -56,7 +56,7 @@ public final class DPartTree {
      * @param depth 1 for the children of the root node
      * @param startPage the first page of the node, 1-based
      * @param endPage the last page of the node, inclusive
-     * @param hasChildren whether the node has a {@code DParts} array
+     * @param hasChildren whether the node has children (an empty {@code DParts} array has none)
      * @param dpm the node's {@code DPM} entries (strings, numbers and names, as text, by key)
      */
     public record DPart(int depth, int startPage, int endPage, boolean hasChildren,
@@ -141,15 +141,26 @@ public final class DPartTree {
         PdfDictionary top = root;
         PdfObject rootNode = root.get("DPartRootNode");
         if (rootNode != null) {
+            if (root.get("DParts") != null) {
+                throw new IllegalStateException("/DPartRoot has both /DPartRootNode and /DParts,"
+                        + " so it isn't clear which holds the parts");
+            }
             markSeen(rootNode, seen, "DPartRootNode");
             if (!(pdf.resolve(rootNode) instanceof PdfDictionary node)) {
                 throw new IllegalStateException("/DPartRootNode must be a dictionary");
             }
             top = node;
         }
+        Integer recordLevel = null;
         PdfObject level = root.get("RecordLevel");
-        Integer recordLevel = level != null && pdf.resolve(level) instanceof PdfNumber n
-                && n.isInt() ? n.intValue() : null;
+        if (level != null) {
+            PdfObject resolved = pdf.resolve(level);
+            if (!(resolved instanceof PdfNumber n) || !n.isInt() || n.intValue() < 1) {
+                throw new IllegalStateException("The file's /RecordLevel must be a whole number"
+                        + " of 1 or more, not " + resolved);
+            }
+            recordLevel = n.intValue();
+        }
         List<DPart> nodes = new ArrayList<>();
         new Walk(pdf, pageNumbers, seen, nodes).children(top, 1);
         return Optional.of(new DPartTree(nodes, recordLevel));
@@ -222,15 +233,17 @@ public final class DPartTree {
             out.add(null); // keeps file order: the node goes before its descendants
             children(node, depth + 1);
             List<DPart> descendants = out.subList(slot + 1, out.size());
-            boolean hasChildren = node.get("DParts") != null;
+            // An empty /DParts leaves no children: the node is a leaf, and needs its own range.
+            boolean hasChildren = !descendants.isEmpty();
+            String empty = node.get("DParts") != null ? " (its /DParts is empty)" : "";
             int first;
             int last;
             if (descendants.isEmpty()) {
                 if (start.isEmpty()) {
-                    throw new IllegalStateException("A DPart has no /Start page");
+                    throw new IllegalStateException("A DPart has no /Start page" + empty);
                 }
                 if (end.isEmpty()) {
-                    throw new IllegalStateException("A DPart has no /End page");
+                    throw new IllegalStateException("A DPart has no /End page" + empty);
                 }
                 first = start.getAsInt();
                 last = end.getAsInt();
