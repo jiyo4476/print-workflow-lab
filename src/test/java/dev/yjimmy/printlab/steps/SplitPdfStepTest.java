@@ -89,6 +89,22 @@ public class SplitPdfStepTest {
         assertThat(job.documents()).isEmpty();
     }
 
+    @Test
+    public void aPasswordProtectedPdfFailsWithAPlainMessage() throws Exception {
+        Path tmp = folder.getRoot().toPath();
+        Path input = tmp.resolve("encrypted.pdf");
+        StatementPdfGenerator.write(new StatementDataGenerator(42).generate(2, 0), input, false,
+                new StatementPdfGenerator.Defects(false, true, false));
+        Job job = TestJobs.newJob(tmp, input);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> byAccountNumber().execute(job));
+
+        assertThat(e.getMessage()).isEqualTo("The input file is encrypted, so it cannot be printed"
+                + " as supplied: it needs a password to open, so SplitPdf can't split it");
+        assertThat(job.documents()).isEmpty();
+    }
+
     // Pages must not carry the rest of the source file into the output.
 
     private static SplitPdfStep byAccountNumber() {

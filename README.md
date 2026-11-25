@@ -474,7 +474,7 @@ failures to `exceptions`.
 | Check | Passes when | Param (default) |
 |---|---|---|
 | Version | The header version, or the catalog's `/Version`, is at most `maxVersion` | `maxVersion` (`"1.7"`) |
-| Encryption | The trailer has no `/Encrypt`. An encrypted file reports only this, since its objects can't be read without the key | none |
+| Encryption | The trailer has no `/Encrypt`. An encrypted file reports only this, since its objects can't be read without the key. In the sample workflow a file that needs a password fails the job at `SplitPdf` with the same words, because it can't be split | none |
 | Fonts | Every font has `FontFile`, `FontFile2` or `FontFile3`, in page resources and in every Form XObject the page draws, nested to any depth | `allowStandard14` (`false`) |
 | Page size | Each MediaBox is within `tolerance` points per side of an allowed size | `pageSizes` (`[letter]`; `letter` and `a4`), `tolerance` (`1`) |
 | Rotation | `/Rotate` is 0. A value that isn't a multiple of 90 always fails | `allowRotate` (`false`) |

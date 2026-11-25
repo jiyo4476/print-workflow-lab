@@ -2,6 +2,7 @@ package dev.yjimmy.printlab.steps;
 
 import dev.yjimmy.printlab.pdf.PdfDocumentReader;
 import dev.yjimmy.printlab.pdf.PdfPage;
+import dev.yjimmy.printlab.pdf.PreflightChecker;
 import dev.yjimmy.printlab.pdf.RegionTextExtractor;
 import dev.yjimmy.printlab.pdf.TextPositionExtractor;
 import dev.yjimmy.printlab.workflow.Document;
@@ -10,6 +11,7 @@ import dev.yjimmy.printlab.workflow.Step;
 import dev.yjimmy.printlab.workflow.rules.Condition;
 import dev.yjimmy.printlab.workflow.rules.RuleParser;
 import java.awt.geom.Rectangle2D;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -20,6 +22,7 @@ import java.util.function.LongSupplier;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
 import org.apache.pdfbox.text.PDFTextStripperByArea;
 
 /**
@@ -108,11 +111,25 @@ public final class SplitPdfStep implements Step {
         SplitOutput.record(job, "SplitPdf");
     }
 
+    /**
+     * Opens the input. A file that needs a password fails here, before any later step (such as
+     * preflight) could see it, so the job's error says plainly why instead of PDFBox's "the
+     * password is incorrect", which reads as if someone had typed a wrong one.
+     */
+    private static PDDocument open(Path input) throws IOException {
+        try {
+            return Loader.loadPDF(input.toFile());
+        } catch (InvalidPasswordException e) {
+            throw new IllegalStateException("The input " + PreflightChecker.ENCRYPTED
+                    + ": it needs a password to open, so SplitPdf can't split it", e);
+        }
+    }
+
     private void split(Job job) throws Exception {
         Path docsDir = job.workDir().resolve("documents");
         Files.createDirectories(docsDir);
 
-        try (PDDocument source = Loader.loadPDF(job.inputFile().toFile())) {
+        try (PDDocument source = open(job.inputFile())) {
             int totalPages = source.getNumberOfPages();
             if (totalPages == 0) {
                 throw new IllegalStateException("The PDF has no pages, so there are no documents"

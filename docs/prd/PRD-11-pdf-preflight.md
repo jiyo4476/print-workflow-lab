@@ -52,7 +52,11 @@ is structured.
   `/Version` entry if present (the later one wins, as in the PDF spec). A version above the
   configured `maxVersion` fails. Default `maxVersion: 1.7`.
 - **FR-2** Encryption check. A trailer `/Encrypt` entry fails with a message that says the file is
-  password-protected and cannot be printed as supplied.
+  password-protected and cannot be printed as supplied. In a workflow that splits first, a file
+  that needs a password to open never reaches preflight: `SplitPdf` fails the job with the same
+  words ("The input file is encrypted, so it cannot be printed as supplied: ..."), so the
+  operator's `error.txt` gives the reason instead of PDFBox's "the password is incorrect". A file
+  with only an owner password opens and splits, and its split documents are not encrypted.
 - **FR-3** Font check. Every font reachable from a page must have a font descriptor that contains
   `/FontFile`, `/FontFile2` or `/FontFile3`. Fonts are collected from:
   - the page's `/Resources /Font` dictionary, and

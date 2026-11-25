@@ -16,6 +16,9 @@ public final class PreflightChecker {
     /** Forms nested deeper than this are reported rather than walked, so bad input can't recurse without limit. */
     public static final int MAX_FORM_DEPTH = 16;
 
+    /** The issue for an encrypted file; the split steps use the same words when they can't open one. */
+    public static final String ENCRYPTED = "file is encrypted, so it cannot be printed as supplied";
+
     /** Standard 14 font names: a PDF viewer supplies these, so they are not embedded in the file. */
     private static final Set<String> STANDARD_14 = Set.of(
             "Courier", "Courier-Bold", "Courier-BoldOblique", "Courier-Oblique",
@@ -87,7 +90,7 @@ public final class PreflightChecker {
         if (pdf.isEncrypted()) {
             // The objects of an encrypted file can't be read without its key, so nothing else
             // can be checked, and the encryption is the one issue to report.
-            issues.add("file is encrypted, so it cannot be printed as supplied");
+            issues.add(ENCRYPTED);
             return issues;
         }
         PdfVersion version = pdf.version();

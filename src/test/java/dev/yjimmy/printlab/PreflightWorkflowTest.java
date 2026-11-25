@@ -49,4 +49,28 @@ public class PreflightWorkflowTest {
         assertTrue(csv.get(0), csv.get(0).contains("preflight"));
         assertTrue(csv.get(0), csv.get(0).contains("preflightIssues"));
     }
+
+    /**
+     * An encrypted input can't be split, so preflight never sees it: the job fails at the split
+     * with the same plain words preflight uses, and its error.txt says so for the operator.
+     */
+    @Test
+    public void encryptedInputFailsTheJobWithAPlainReason() throws Exception {
+        Path tmp = folder.getRoot().toPath();
+        Path input = tmp.resolve("run.pdf");
+        new StatementPdfGenerator(42).generate(2, 0, false,
+                new StatementPdfGenerator.Defects(false, true, false), input);
+        Path errorDir = tmp.resolve("error");
+
+        Job job = TestJobs.newJob(tmp, input);
+        new WorkflowEngine(TestWorkflows.load("statements-preflight", tmp.resolve("output")),
+                StepRegistry.withBuiltIns(), errorDir, TickingClock.oneSecondTicks())
+                .run(job);
+
+        assertEquals(JobState.ERROR, job.state());
+        String error = Files.readString(errorDir.resolve(job.id()).resolve("error.txt"));
+        assertTrue(error, error.contains("Step:   split-and-index"));
+        assertTrue(error, error.contains("file is encrypted, so it cannot be printed as supplied"));
+        assertTrue(error, !error.contains("password is incorrect"));
+    }
 }
