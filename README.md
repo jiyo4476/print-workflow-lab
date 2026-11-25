@@ -461,9 +461,68 @@ conformant file: it has no output intents or XMP metadata). `dump-pdf` shows the
   other customer's name, account number and zip. The split steps remove `/DPart`, `/B` and
   `/PieceInfo` from the copied pages and drop link annotations (their destinations reach other
   pages), for `SplitPdf` as well.
-- The file is held in memory twice (this project's reader and PDFBox), so the heap needed is
-  roughly 10 to 16 times the file size: a 5.8 MB run of 5,000 statements split in 72 MB of heap
-  but not 56 MB, and a 23 MB run of 20,000 statements in 384 MB but not 256 MB.
+- The file is held in memory twice (this project's reader and PDFBox); see "Memory and large
+  files" below for how much heap that takes.
+
+### Memory and large files
+
+The PDF splitters (`SplitPdf` and `SplitPdfByDPart`) turn every object of a PDF that they reach
+into Java objects, so the heap they need follows the file's **object count**, not its size on
+disk. Measured with `SplitPdfByDPart` on files of different shapes (the smallest heap that worked;
+the next step down failed):
+
+| File | Size | Pages | Objects | Smallest heap that worked |
+|---|---|---|---|---|
+| 5,000 statements | 5.8 MB | 10,072 | 50,498 | about 58 MB |
+| 20,000 statements | 23 MB | 40,059 | 201,045 | about 270 MB |
+| 200,000 blank pages | 2 MB | 200,000 | 201,409 | about 336 MB |
+| 400,000 blank pages | 4 MB | 400,000 | 402,409 | about 670 MB |
+| 100,000 pages with a drawing | 12 MB | 100,000 | 301,208 | about 304 MB |
+| 5 incompressible 4 MB images | 19 MB | 5 | 42 | 32 MB or less |
+
+That is 0.7 to 1.6 KB of heap per object, and it scaled linearly when the blank-pages file was
+doubled (the 400,000-page file was not used to fit the formula). Size on disk is no guide (the 2 MB
+file needed ten times the heap of the 19 MB one), and neither is the page count (1.6 to 7 KB per
+page). The step reads the object count from the file's last trailer without loading it, and
+recommends **64 MB + 1.8 KB per object + the file's size**: a 200,000-object file about 450 MB, a
+million objects about 1.9 GB. If it can't find the count it falls back to 64 MB + 16 times the file.
+Treat a file past a few hundred MB, or a few million objects, as one to split upstream or to send
+as AFP. AFP is different: it's read one field at a time, and a 59 MB file of 20,000 statements
+split in 128 MB.
+
+What the steps do about it:
+
+- Before splitting, the step compares the JVM's heap limit (`-Xmx`) with that recommendation and
+  logs a warning, with the `-Xmx` to use, if it's lower. It doesn't refuse the file, because only
+  the split itself knows whether it fits.
+- If the JVM runs out of Java heap space (or hits the garbage collector's overhead limit) during
+  the split, the job fails into the error folder with the same advice, and the hot folder keeps
+  working with the next file. Documents already written stay in the job's work folder. Other
+  kinds of out-of-memory (no native threads, direct buffers, metaspace) aren't about the file and
+  still escape as before. A heap far too small can spend minutes in garbage collection before the
+  failure comes: the 5.8 MB file in 62 MB took about 100 seconds. After such a failure the next job
+  in the same JVM behaved exactly as it does in a fresh one at every heap tried (13 to 30 MB, both
+  steps, the next job a 3-statement file). A failure during a PDFBox class's static initialisation
+  would leave that class unusable until restart; that wasn't seen and can't be ruled out.
+- The figures assume the JVM is otherwise idle. They're compared with the heap *limit*, not what
+  is free, so under Tomcat, where the dashboard shares the heap, a file that passes the check can
+  still not fit.
+- Every output document carries its own copy of the fonts and images its pages use, so a run that
+  shares a large font comes out many times bigger than it went in (one embedded font turned 885 KB
+  into 32 MB). The total is the `documentBytes` job property, and a log warning appears when the
+  output is over 50 MB and more than 10 times the input. It's left out, with a warning, if a
+  document's size can't be read.
+
+Setting the heap depends on how it runs:
+
+```bash
+MAVEN_OPTS=-Xmx2g ./mvnw -q exec:java            # the devices run inside Maven's JVM
+./mvnw package cargo:run -Dcargo.jvmargs=-Xmx2g  # Tomcat is started by cargo (with -Xms128m, so
+                                                 # the -Xmx must be at least 128m)
+JAVA_TOOL_OPTIONS=-Xmx2g java ...                # any other JVM; in a container, a JVM's default
+                                                 # is a quarter of the memory limit, so also
+                                                 # consider -XX:MaxRAMPercentage=75
+```
 
 ### Splitting AFP
 
