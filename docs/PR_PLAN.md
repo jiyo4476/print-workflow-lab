@@ -649,6 +649,26 @@ production print.
   OFL, license checked before commit). The switch changes what PR 9's extractor reads, so PR 9's
   Standard 14 and golden tests would need updating in the same change. Until then the sample
   workflow uses `allowStandard14: true`.
+- Encrypted input: in a workflow that splits first, a file that needs a password never reaches
+  preflight. `SplitPdf` fails the job with the same plain words preflight uses ("file is
+  encrypted, so it cannot be printed as supplied"), not PDFBox's "the password is incorrect".
+
+**Decided in this PR**
+- A file with only an owner password (no password needed to open it) splits normally. Its split
+  documents come out unencrypted, so preflight passes them. This is intended (PRD-11 FR-2).
+- `SplitPdfByDPart` keeps its own wording for a password-protected input ("needs a password to
+  open"). It was left as it is.
+
+**Follow-ups**
+- Liberation Sans switch (above). The font files (`LiberationSans-Regular.ttf`,
+  `LiberationSans-Bold.ttf`, OFL 1.1 license text) were downloaded from the official 2.1.5
+  release into `src/test/resources/fonts/`, but are not committed. They go in with the switch.
+- Group repeated per-page issues: an A4 statement lists the same page-size issue once per page.
+  Report it once with a page range (for example `pages 1–3: page size … not allowed (letter)`).
+- Reason for every exception: documents routed to `exceptions` for a bad address show
+  `preflight=pass` and no reason, which confuses operators now that preflight failures share the
+  queue. The routing step should record why each document was routed (for example an
+  `exceptionReason` property in `documents.csv`).
 
 **Tests**
 - Unit — `PreflightPdfStepTest`, one pass and one fail case per check:
