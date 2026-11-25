@@ -39,9 +39,11 @@ import java.util.Map;
  * </pre>
  *
  * <p>{@code framing} says what sits between the fields in the file (see {@link AfpFraming}):
- * nothing ({@code strict}, the default), carriage returns, line feeds or zero bytes
- * ({@code padded}), record descriptor words ({@code rdw}) or those inside blocks ({@code bdw}),
- * or {@code auto} to work it out from the start of the file. Everything written is {@code strict}.
+ * nothing ({@code strict}, the default), carriage returns and line feeds with zero bytes only at
+ * the end ({@code padded}), record descriptor words ({@code rdw}) or those inside blocks
+ * ({@code bdw}), or {@code auto} to work it out from the start of the file. Each form still checks
+ * every field, but {@code padded} and {@code auto} are looser than {@code strict} about what sits
+ * between fields (see {@link AfpFraming}). Everything written is {@code strict}.
  *
  * <p>Each document is written as a standalone AFP file: every field before the first page group
  * (the BDT, and any inline resource group, BRG ... ERG), then the fields between the previous
@@ -69,9 +71,9 @@ import java.util.Map;
  * page groups (an empty trailer, say) is skipped.
  *
  * <p>The job fails, with the byte offset, for: bytes that aren't AFP, a Begin closed by the
- * wrong End or never closed, a page outside any page group, a TLE that can't be decoded, and a
- * field after a document's end that doesn't begin another one. It also fails when the whole file
- * has no page groups.
+ * wrong End or never closed, a page outside any page group, a TLE that can't be decoded, and,
+ * once a document has ended (whether or not it had page groups), any field that doesn't begin
+ * another document, a page group included. It also fails when the whole file has no page groups.
  *
  * <p>The file is read once, one field at a time, and each document is written as its group is
  * read; only the fields before the first group are kept in memory.
@@ -164,6 +166,14 @@ public final class SplitAfpStep implements Step {
                     documentEnded = true;
                 }
             }
+            // True from a document's end until the next one begins. With page groups seen, that is
+            // once everything around them (usually just the BDT) is closed; with none, once an EDT
+            // closed everything.
+            boolean ended = seenGroup ? documentDepth > 0 && open.isEmpty() : documentEnded;
+            if (ended && field.type() == FieldType.BNG) {
+                throw new IllegalStateException(at(field, "starts a page group after its document"
+                        + " ended; another document must begin first (a BDT, say)"));
+            }
             if (group != null) {
                 group.add(field);
             } else if (field.type() == FieldType.BNG) {
@@ -171,7 +181,7 @@ public final class SplitAfpStep implements Step {
             } else if (field.type() == FieldType.BPG) {
                 throw new IllegalStateException(at(field, "is outside any named page group;"
                         + " SplitAfp needs every page in a page group (BNG ... ENG)"));
-            } else if (field.isBegin() && (seenGroup ? open.size() < documentDepth : documentEnded)) {
+            } else if (field.isBegin() && ended) {
                 // The previous document has ended (one with page groups, or an empty one) and
                 // another begins: its own preamble, medium map and depth. Page counts and
                 // sequence numbers carry on.
@@ -181,11 +191,17 @@ public final class SplitAfpStep implements Step {
                 seenGroup = false;
                 documentEnded = false;
                 preamble.add(field);
+            } else if (ended && !field.isEnd()) {
+                // Whether or not the document had page groups: a document is followed by another
+                // document, not by loose fields.
+                throw new IllegalStateException(at(field, "comes after the end of the"
+                        + " document and doesn't begin another (a BDT, say)"));
             } else if (!seenGroup) {
                 preamble.add(field);
             } else if (open.size() < documentDepth && !field.isEnd()) {
-                throw new IllegalStateException(at(field, "comes after the end of the"
-                        + " document and doesn't begin another (a BDT, say)"));
+                throw new IllegalStateException(at(field, "is outside the Begin ... End that"
+                        + " holds the page groups before it; SplitAfp expects every page group of"
+                        + " a document at the same depth"));
             } else if (open.size() >= documentDepth) {
                 // Something between groups that applies to what follows (an IMM, a NOP, a
                 // balanced Begin ... End). The Ends that close the document (open.size() now

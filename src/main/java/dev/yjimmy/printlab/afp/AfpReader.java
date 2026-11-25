@@ -58,6 +58,8 @@ public final class AfpReader implements Iterator<StructuredField>, Closeable {
     /** File offset where the current block ends (BDW framing). */
     private long blockEnd;
     private long position;
+    /** How many fields have been returned; zero padding only follows a field. */
+    private long fieldsRead;
     private StructuredField next;
     private boolean done;
 
@@ -89,6 +91,9 @@ public final class AfpReader implements Iterator<StructuredField>, Closeable {
         if (next == null && !done) {
             try {
                 next = readField();
+                if (next != null) {
+                    fieldsRead++;
+                }
             } catch (RuntimeException e) {
                 done = true;
                 throw e;
@@ -123,7 +128,10 @@ public final class AfpReader implements Iterator<StructuredField>, Closeable {
                 do {
                     at = position;
                     first = read();
-                } while (first == 0x0D || first == 0x0A || first == 0x00);
+                } while (first == 0x0D || first == 0x0A);
+                if (first == 0x00) {
+                    return endPadding(at);
+                }
                 return field(first, at);
             }
             case RDW, BDW -> {
@@ -136,12 +144,56 @@ public final class AfpReader implements Iterator<StructuredField>, Closeable {
         }
     }
 
-    /** What {@link AfpFraming#AUTO} means for this file, from its first bytes. */
+    /**
+     * Zero bytes where a field should start. They're padding only at the very end of the file;
+     * anywhere else they're what a field with too short a length leaves behind, so they fail.
+     */
+    private StructuredField endPadding(long start) {
+        int next;
+        do {
+            next = read();
+        } while (next == 0x00);
+        if (next >= 0) {
+            throw new AfpFormatException(start, String.format("expected 0x5A before a structured"
+                    + " field but found 0x00. Zero bytes are only skipped as padding at the end of"
+                    + " the file, and 0x%02X follows them here, so a field's length may be too"
+                    + " short.", next));
+        }
+        if (fieldsRead == 0) {
+            throw new AfpFormatException(start, "the file holds nothing but zero bytes, which are"
+                    + " only skipped as padding after the last field");
+        }
+        done = true;
+        return null;
+    }
+
+    /**
+     * What {@link AfpFraming#AUTO} means for this file, from its first bytes: {@code PADDED} if it
+     * starts like a field and has line endings before it or right after the first field,
+     * {@code STRICT} if it starts like a field and has none, {@code BDW} or {@code RDW} if it starts
+     * with a descriptor word and then the {@code 0x5A} of a field; otherwise it fails.
+     */
     private AfpFraming detect() {
-        byte[] head = peek(SNIFF_LENGTH);
-        if (head.length == 0 || unsigned(head, 0, 1) == INTRODUCER) {
-            // Nothing between the fields, or something that PADDED skips: PADDED checks each field.
-            return head.length == 0 ? AfpFraming.STRICT : AfpFraming.PADDED;
+        byte[] head = peek(MAX_LENGTH + 2);
+        if (head.length == 0) {
+            return AfpFraming.STRICT;
+        }
+        int lineEndings = 0;
+        while (lineEndings < head.length
+                && (head[lineEndings] == 0x0D || head[lineEndings] == 0x0A)) {
+            lineEndings++;
+        }
+        // A field starts 0x5A, length, then 0xD3, the first byte of every field's type. An RDW or
+        // BDW file can start with 0x5A too (a length of 0x5A00 and up), but its fourth byte is 0.
+        if (lineEndings < head.length && unsigned(head, lineEndings, 1) == INTRODUCER
+                && (head.length < lineEndings + 4 || unsigned(head, lineEndings + 3, 1) == 0xD3)) {
+            if (lineEndings > 0) {
+                return AfpFraming.PADDED;
+            }
+            int after = 1 + (head.length >= 3 ? unsigned(head, 1, 2) : 0);
+            boolean lineEndingAfterFirstField = after < head.length
+                    && (head[after] == 0x0D || head[after] == 0x0A);
+            return lineEndingAfterFirstField ? AfpFraming.PADDED : AfpFraming.STRICT;
         }
         if (isDescriptor(head, 0) && isDescriptor(head, DESCRIPTOR_LENGTH) && head.length > 8
                 && unsigned(head, 8, 1) == INTRODUCER) {
@@ -150,9 +202,16 @@ public final class AfpReader implements Iterator<StructuredField>, Closeable {
         if (isDescriptor(head, 0) && head.length > 4 && unsigned(head, 4, 1) == INTRODUCER) {
             return AfpFraming.RDW;
         }
-        throw new AfpFormatException(0, "can't tell how this file is framed: it doesn't start with"
-                + " 0x5A, a record descriptor word or a block descriptor word. "
-                + AfpSniffer.hint(head));
+        byte[] start = Arrays.copyOf(head, Math.min(head.length, SNIFF_LENGTH));
+        if (isDescriptor(head, 0)) {
+            throw new AfpFormatException(0, "can't tell how this file is framed: it starts like a"
+                    + " record or block descriptor word (a length, then two zero bytes), but what"
+                    + " follows is neither the 0x5A of a field (RDW) nor a second descriptor word"
+                    + " and a 0x5A (BDW).");
+        }
+        throw new AfpFormatException(0, "can't tell how this file is framed: it doesn't start with a"
+                + " structured field (0x5A), a record descriptor word or a block descriptor word. "
+                + AfpSniffer.hint(start, false));
     }
 
     private static boolean isDescriptor(byte[] bytes, int at) {
@@ -249,6 +308,12 @@ public final class AfpReader implements Iterator<StructuredField>, Closeable {
             throw new AfpFormatException(start, "truncated " + what + ": the file ends "
                     + word.length + " byte(s) into its " + DESCRIPTOR_LENGTH);
         }
+        if (word[2] >= 1 && word[2] <= 3 && word[3] == 0) {
+            // A spanned record (VBS) is cut into segments, each led by a segment descriptor word:
+            // a length, then a segment code of 1 (first), 2 (last) or 3 (middle), then 0.
+            throw new AfpFormatException(start, what + " looks like the segment descriptor word of"
+                    + " a spanned (VBS) record, which this reader doesn't support");
+        }
         if (word[2] != 0 || word[3] != 0) {
             throw new AfpFormatException(start, what + " should end in two zero bytes, but found 0x"
                     + String.format("%02X%02X", word[2], word[3]) + ". Is the file really framed"
@@ -308,8 +373,11 @@ public final class AfpReader implements Iterator<StructuredField>, Closeable {
         if (inRecord) {
             return found + ", at the start of a record's field";
         }
-        String advice = " If the file has record headers (RDW or BDW) or line endings between"
-                + " fields, set the framing: padded, rdw, bdw or auto.";
+        // Only a file read as strict can be advised to try another framing; one that was asked to
+        // be read as padded, rdw, bdw or auto already has.
+        boolean advise = framing == AfpFraming.STRICT && requested != AfpFraming.AUTO;
+        String advice = advise ? " If the file has record headers (RDW or BDW) or line endings"
+                + " between fields, set the framing: padded, rdw, bdw or auto." : "";
         if (start != 0) {
             return found + "." + advice;
         }
@@ -317,7 +385,7 @@ public final class AfpReader implements Iterator<StructuredField>, Closeable {
         head[0] = (byte) first;
         byte[] more = readExact(SNIFF_LENGTH - 1);
         System.arraycopy(more, 0, head, 1, more.length);
-        String hint = AfpSniffer.hint(Arrays.copyOf(head, 1 + more.length));
+        String hint = AfpSniffer.hint(Arrays.copyOf(head, 1 + more.length), advise);
         return found + "." + (hint.isEmpty() ? "" : " " + hint) + advice;
     }
 

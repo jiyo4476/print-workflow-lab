@@ -65,7 +65,7 @@ public class AfpFramingTest {
     // Padded.
 
     @Test
-    public void paddedSkipsLineEndingsAndZeroBytesBetweenFieldsAndAtTheEnd() {
+    public void paddedSkipsLineEndingsBetweenFieldsAndZeroBytesAtTheEnd() {
         byte[] framed = AfpFramer.frame(strict(), AfpFraming.PADDED);
 
         assertThat(framed[17]).isEqualTo((byte) 0x0D);
@@ -316,6 +316,177 @@ public class AfpFramingTest {
 
         assertThat(problems).isGreaterThan(0);
         assertThat(out.toString()).contains("!!").contains("expected 0x5A");
+    }
+
+    // Awkward cases found in review.
+
+    @Test
+    public void autoReadsAnRdwFileWhoseFirstRecordLengthStartsWith5A() {
+        // A first record of 0x5A10 bytes makes the file start 5A 10 00 00: the introducer's value.
+        byte[] strict = AfpBytes.create().field(FieldType.NOP, new byte[0x5A10 - (4 + 1 + 8)])
+                .begin(FieldType.BDT, "RUN").end(FieldType.EDT).bytes();
+        byte[] framed = AfpFramer.frame(strict, AfpFraming.RDW);
+
+        assertThat(framed[0]).isEqualTo((byte) 0x5A);
+        List<FieldType> expected = List.of(FieldType.NOP, FieldType.BDT, FieldType.EDT);
+        assertThat(types(read(framed, AfpFraming.RDW))).isEqualTo(expected);
+        assertThat(types(read(framed, AfpFraming.AUTO))).isEqualTo(expected);
+    }
+
+    @Test
+    public void autoReadsABdwFileWhoseFirstBlockLengthStartsWith5A() {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "RUN");
+        for (int i = 0; i < 1500; i++) {
+            afp.begin(FieldType.BNG, "G" + i).end(FieldType.ENG);
+        }
+        byte[] strict = afp.end(FieldType.EDT).bytes();
+        // 1,104 records of 21 bytes and the 4-byte word make a first block of 23,188 = 0x5A94.
+        byte[] framed = AfpFramer.frame(strict, AfpFraming.BDW, 23_200);
+
+        assertThat(framed[0]).isEqualTo((byte) 0x5A);
+        int expected = read(strict, AfpFraming.STRICT).size();
+        assertThat(read(framed, AfpFraming.BDW)).hasSize(expected);
+        assertThat(read(framed, AfpFraming.AUTO)).hasSize(expected);
+    }
+
+    @Test
+    public void autoKeepsAStrictFileStrict() {
+        // Two zero bytes between fields: strict rejects them, and so must auto.
+        byte[] bytes = AfpBytes.create().begin(FieldType.BDT, "RUN").raw(0x00, 0x00)
+                .begin(FieldType.BNG, "G1").end(FieldType.ENG).end(FieldType.EDT).bytes();
+
+        AfpFormatException strict = failure(bytes, AfpFraming.STRICT);
+        AfpFormatException auto = failure(bytes, AfpFraming.AUTO);
+
+        assertEquals("same offset", strict.offset(), auto.offset());
+        assertThat(auto.getMessage()).contains("found 0x00").doesNotContain("set the framing");
+    }
+
+    @Test
+    public void autoReadsAPaddedFileThatStartsWithLineEndings() {
+        byte[] framed = AfpBytes.concat(AfpBytes.bytes(0x0D, 0x0A),
+                AfpFramer.frame(strict(), AfpFraming.PADDED));
+
+        assertThat(types(read(framed, AfpFraming.AUTO))).isEqualTo(TYPES);
+        assertThat(types(read(framed, AfpFraming.PADDED))).isEqualTo(TYPES);
+        assertEquals("the first field's offset", 2, read(framed, AfpFraming.PADDED).get(0).offset());
+    }
+
+    @Test
+    public void paddedFailsOnZeroBytesThatAreNotAtTheEnd() {
+        // A NOP whose length leaves two zero bytes of its data outside it, then a line ending and
+        // a BDT. Skipping the zeros would hide the length that is too short.
+        byte[] bdt = AfpBytes.create().begin(FieldType.BDT, "RUN").bytes();
+        byte[] bytes = AfpBytes.concat(
+                AfpBytes.bytes(0x5A, 0x00, 0x09, 0xD3, 0xEE, 0xEE, 0x00, 0x00, 0x00, 0x41),
+                AfpBytes.bytes(0x00, 0x00, 0x0D, 0x0A), bdt);
+
+        AfpFormatException padded = failure(bytes, AfpFraming.PADDED);
+
+        assertEquals("offset of the zero bytes", 10, padded.offset());
+        assertThat(padded.getMessage()).contains("only skipped as padding at the end of the file")
+                .contains("0x0D follows");
+        assertThrows(AfpFormatException.class, () -> read(bytes, AfpFraming.STRICT));
+    }
+
+    @Test
+    public void paddedAcceptsZeroBytesAfterTheLastFieldAndNowhereElse() {
+        byte[] framed = AfpFramer.frame(strict(), AfpFraming.PADDED);
+
+        assertThat(framed[framed.length - 1]).isEqualTo((byte) 0x00);
+        assertThat(types(read(framed, AfpFraming.PADDED))).isEqualTo(TYPES);
+    }
+
+    @Test
+    public void aFileOfNothingButZeroBytesFailsUnderPadded() {
+        AfpFormatException e = failure(new byte[64], AfpFraming.PADDED);
+
+        assertThat(e.getMessage()).contains("nothing but zero bytes");
+    }
+
+    @Test
+    public void aFileOfNothingButLineEndingsHasNoFields() {
+        assertThat(read(new byte[] {0x0D, 0x0A, 0x0D, 0x0A}, AfpFraming.PADDED)).isEmpty();
+    }
+
+    @Test
+    public void aSpannedRecordIsNamedAsOne() {
+        // A segment descriptor word of a VBS file: a length, segment code 1 (first), then 0.
+        AfpFormatException e = failure(AfpBytes.bytes(0x00, 0x20, 0x01, 0x00, 0x5A, 0x00, 0x1B),
+                AfpFraming.RDW);
+
+        assertThat(e.getMessage()).contains("spanned (VBS)").contains("doesn't support");
+    }
+
+    @Test
+    public void bdwOffsetsAreFileOffsets() {
+        byte[] framed = AfpFramer.frame(strict(), AfpFraming.BDW);
+
+        List<StructuredField> fields = read(framed, AfpFraming.BDW);
+
+        long expected = 8; // the block descriptor word, then the first record descriptor word
+        for (StructuredField field : fields) {
+            assertEquals(field.typeName() + " offset", expected, field.offset());
+            expected += (1 + field.length()) + 4;
+        }
+        assertEquals("the whole file was read", framed.length + 4, expected);
+    }
+
+    @Test
+    public void bdwBlockLongerThanItsRecordsFails() {
+        byte[] field = AfpBytes.create().begin(FieldType.BDT, "RUN").bytes();
+        // The block says 100 bytes; its one 21-byte record is followed by 75 bytes of zeros.
+        byte[] bytes = AfpBytes.concat(AfpBytes.bytes(0x00, 100, 0x00, 0x00),
+                AfpBytes.bytes(0x00, 4 + field.length, 0x00, 0x00), field, new byte[75]);
+
+        AfpFormatException e = failure(bytes, AfpFraming.BDW);
+
+        assertEquals("offset of the slack", 25, e.offset());
+        assertThat(e.getMessage()).contains("record length 0 is too short");
+    }
+
+    @Test
+    public void bdwFileCutShortInsideARecordDescriptorWordOrARecordFails() {
+        byte[] field = AfpBytes.create().begin(FieldType.BDT, "RUN").bytes();
+        byte[] head = AfpBytes.concat(AfpBytes.bytes(0x00, 100, 0x00, 0x00),
+                AfpBytes.bytes(0x00, 4 + field.length, 0x00, 0x00), field);
+
+        AfpFormatException word = failure(AfpBytes.concat(head, AfpBytes.bytes(0x00, 0x15)),
+                AfpFraming.BDW);
+        AfpFormatException record = failure(AfpBytes.concat(head,
+                AfpBytes.bytes(0x00, 21, 0x00, 0x00, 0x5A, 0x00)), AfpFraming.BDW);
+
+        assertThat(word.getMessage()).contains("truncated record descriptor word");
+        assertThat(record.getMessage()).contains("truncated record");
+    }
+
+    @Test
+    public void nothingMoreIsReadAfterAnError() {
+        AfpReader reader = new AfpReader(new ByteArrayInputStream(
+                AfpBytes.bytes(0x00, 0x08, 0x00, 0x00)), AfpFraming.RDW);
+
+        assertThrows(AfpFormatException.class, reader::hasNext);
+
+        assertThat(reader.hasNext()).isFalse();
+    }
+
+    @Test
+    public void adviceToSetTheFramingIsOnlyGivenToAFileReadAsStrict() {
+        byte[] afp = AfpBytes.create().end(FieldType.EPG).raw(0x40).bytes();
+
+        assertThat(failure(afp, AfpFraming.STRICT).getMessage()).contains("set the framing");
+        assertThat(failure(afp, AfpFraming.PADDED).getMessage()).doesNotContain("set the framing");
+        assertThat(failure(afp, AfpFraming.AUTO).getMessage()).doesNotContain("set the framing");
+    }
+
+    @Test
+    public void aFileThatStartsLikeADescriptorWordButFollowsNeitherFramingSaysSo() {
+        // A length of 21 and two zero bytes, but then neither 0x5A nor another descriptor word.
+        AfpFormatException e = failure(AfpBytes.bytes(0x00, 0x15, 0x00, 0x00, 0x41, 0x41, 0x41),
+                AfpFraming.AUTO);
+
+        assertThat(e.getMessage()).contains("starts like a record or block descriptor word")
+                .contains("neither the 0x5A").doesNotContain("may be RDW or BDW framed");
     }
 
     @Test

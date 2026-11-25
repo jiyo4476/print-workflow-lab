@@ -27,6 +27,19 @@ public final class AfpFramer {
      * up to a multiple of 16.
      */
     public static byte[] frame(byte[] strict, AfpFraming framing) {
+        return frame(strict, framing, MAX_BLOCK);
+    }
+
+    /**
+     * As {@link #frame(byte[], AfpFraming)}, with BDW blocks of at most {@code maxBlock} bytes
+     * (up to 65,535, which the reader accepts, though z/OS stops at 32,760). Different block
+     * sizes give different first block lengths, which {@link AfpFraming#AUTO} has to tell apart
+     * from other forms.
+     */
+    public static byte[] frame(byte[] strict, AfpFraming framing, int maxBlock) {
+        if (maxBlock < 64 || maxBlock > 65_535) {
+            throw new IllegalArgumentException("maxBlock must be from 64 to 65535, not " + maxBlock);
+        }
         List<byte[]> records = records(strict);
         ByteArrayOutputStream out = new ByteArrayOutputStream(strict.length + records.size() * 8);
         switch (framing) {
@@ -48,7 +61,7 @@ public final class AfpFramer {
                 List<byte[]> block = new ArrayList<>();
                 int size = DESCRIPTOR;
                 for (byte[] record : records) {
-                    if (size + DESCRIPTOR + record.length > MAX_BLOCK && !block.isEmpty()) {
+                    if (size + DESCRIPTOR + record.length > maxBlock && !block.isEmpty()) {
                         writeBlock(out, block, size);
                         block.clear();
                         size = DESCRIPTOR;

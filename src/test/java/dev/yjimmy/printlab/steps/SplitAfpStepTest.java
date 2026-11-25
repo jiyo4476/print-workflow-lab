@@ -359,6 +359,86 @@ public class SplitAfpStepTest {
         assertThat(e.getMessage()).contains("no named page groups");
     }
 
+    @Test
+    public void aPageGroupAfterTheDocumentEndedFailsEvenWithoutAnotherBdt() throws Exception {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "RUN");
+        group(afp, "G1", 1, "accountNumber", "111");
+        afp.end(FieldType.EDT);
+        group(afp, "G2", 1, "accountNumber", "222");
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> split(afp, Map.of()));
+
+        assertThat(e.getMessage()).contains("BNG at offset")
+                .contains("starts a page group after its document ended");
+    }
+
+    @Test
+    public void aPageGroupAfterAnEmptyDocumentFailsAndDoesNotLeakItsWrapper() throws Exception {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "EMPTY").end(FieldType.EDT);
+        group(afp, "G1", 1, "accountNumber", "111");
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> split(afp, Map.of()));
+
+        assertThat(e.getMessage()).contains("starts a page group after its document ended");
+    }
+
+    @Test
+    public void aLooseFieldAfterAnyDocumentEndsFailsWhetherOrNotItHadPageGroups() throws Exception {
+        AfpBytes withGroups = AfpBytes.create().begin(FieldType.BDT, "RUN");
+        group(withGroups, "G1", 1, "accountNumber", "111");
+        withGroups.end(FieldType.EDT).field(FieldType.NOP, AfpBytes.name8("LOOSE"))
+                .begin(FieldType.BDT, "NEXT");
+        group(withGroups, "G2", 1, "accountNumber", "222");
+        withGroups.end(FieldType.EDT);
+        AfpBytes empty = AfpBytes.create().begin(FieldType.BDT, "EMPTY").end(FieldType.EDT)
+                .field(FieldType.NOP, AfpBytes.name8("LOOSE")).begin(FieldType.BDT, "NEXT");
+        group(empty, "G2", 1, "accountNumber", "222");
+        empty.end(FieldType.EDT);
+
+        for (AfpBytes afp : List.of(withGroups, empty)) {
+            IllegalStateException e = assertThrows(IllegalStateException.class,
+                    () -> split(afp, Map.of()));
+
+            assertThat(e.getMessage()).contains("NOP at offset")
+                    .contains("after the end of the document and doesn't begin another");
+        }
+    }
+
+    @Test
+    public void everyDocumentInAFileMayWrapItsGroupsInOneBeginAndEnd() throws Exception {
+        AfpBytes afp = AfpBytes.create();
+        for (String name : List.of("FIRST", "SECOND")) {
+            afp.begin(FieldType.BDT, name).begin(FieldType.BRG, "WRAP");
+            group(afp, "G" + name.charAt(0), 1, "accountNumber", name);
+            afp.end(FieldType.ERG).end(FieldType.EDT);
+        }
+
+        Job job = split(afp, Map.of());
+
+        assertThat(job.documents()).extracting(d -> d.property("accountNumber"))
+                .containsExactly("FIRST", "SECOND");
+        assertThat(types(job.documents().get(1).file())).containsExactly(FieldType.BDT,
+                FieldType.BRG, FieldType.BNG, FieldType.TLE, FieldType.BPG, FieldType.EPG,
+                FieldType.ENG, FieldType.ERG, FieldType.EDT);
+    }
+
+    @Test
+    public void aSecondWrapperInsideTheSameDocumentIsNotTakenForANewDocument() throws Exception {
+        AfpBytes afp = AfpBytes.create().begin(FieldType.BDT, "RUN").begin(FieldType.BRG, "W1");
+        group(afp, "G1", 1, "accountNumber", "111");
+        afp.end(FieldType.ERG).begin(FieldType.BRG, "W2");
+        group(afp, "G2", 1, "accountNumber", "222");
+        afp.end(FieldType.ERG).end(FieldType.EDT);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> split(afp, Map.of()));
+
+        assertThat(e.getMessage()).contains("BRG at offset")
+                .contains("every page group of a document at the same depth");
+    }
+
     // Framing.
 
     @Test

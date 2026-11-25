@@ -13,9 +13,12 @@ public enum AfpFraming {
     STRICT,
 
     /**
-     * As {@link #STRICT}, but carriage returns, line feeds and zero bytes between fields (and
-     * after the last one) are skipped: files that went through a text transfer, or were padded to
-     * a block size.
+     * As {@link #STRICT}, but carriage returns and line feeds are skipped before each field (so
+     * between fields, and before the first), and zero bytes are skipped at the very end of the
+     * file: files that went through a text transfer, or were padded to a block size. Zero bytes
+     * anywhere else are not skipped, because a field whose length is too short leaves them behind;
+     * a file that is nothing but zeros has no fields and fails like any other file with none.
+     * This is looser than {@link #STRICT} only in those bytes: each field is still checked.
      */
     PADDED,
 
@@ -34,8 +37,12 @@ public enum AfpFraming {
     BDW,
 
     /**
-     * Picks {@link #PADDED}, {@link #RDW} or {@link #BDW} from the first bytes of the file, and
-     * fails with a description of the file if none fits.
+     * Picks a framing from the first bytes of the file. A file that starts like a field (0x5A, a
+     * length, then 0xD3) is {@link #PADDED} if line endings come before it or right after its first
+     * field, and {@link #STRICT} otherwise, so a strict file is still read strictly; one that starts
+     * with a record or block descriptor word and then a 0x5A is {@link #RDW} or {@link #BDW}. Any
+     * other file fails with a description of what it looks like. A file padded with zero bytes but
+     * no line endings needs {@code padded} to be asked for.
      */
     AUTO;
 

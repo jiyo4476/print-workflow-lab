@@ -20,6 +20,12 @@ public class AfpSnifferTest {
     }
 
     @Test
+    public void aPdfIsSentOnlyToStepsThatExistOnThisBranch() {
+        // SplitPdfByDPart lives on another branch; the hint must not name a step that isn't here.
+        assertThat(AfpSniffer.hint(ascii("%PDF-1.7\n"))).doesNotContain("DPart");
+    }
+
+    @Test
     public void recognisesPostScript() {
         assertThat(AfpSniffer.hint(ascii("%!PS-Adobe-3.0\n"))).contains("PostScript");
     }
@@ -33,13 +39,48 @@ public class AfpSnifferTest {
     public void recognisesFieldsWithNoIntroducer() {
         // A length of 16, then the D3 that starts every structured field's type.
         assertThat(AfpSniffer.hint(new byte[] {0x00, 0x10, (byte) 0xD3, (byte) 0xA8, (byte) 0xA8}))
-                .contains("no 0x5A before them");
+                .contains("no 0x5A before it");
+    }
+
+    @Test
+    public void ebcdicTextWithAnLThirdIsNotTakenForFields() {
+        // 0xD3 is EBCDIC "L". The first two letters make a length too big for a field anyway, and
+        // the text is checked first.
+        byte[] text = "ALL OF THE ABOVE IS DATA".getBytes(Charset.forName("IBM037"));
+
+        assertThat(AfpSniffer.hint(text)).contains("EBCDIC text").doesNotContain("0x5A");
+    }
+
+    @Test
+    public void textStartingWithASpaceAndLookingLikeAPlausibleLengthIsStillText() {
+        // 0x40 0xC1 is a length of 16,577 and the third byte is 0xD3: field-shaped, but text.
+        byte[] text = " AL ACCOUNT STATEMENT FOR THE MONTH".getBytes(Charset.forName("IBM037"));
+
+        assertThat(AfpSniffer.hint(text)).contains("EBCDIC text").doesNotContain("0x5A");
+    }
+
+    @Test
+    public void aFieldNeedsAPlausibleLengthAndTypeToBeRecognised() {
+        byte[] tooLong = {(byte) 0xFF, (byte) 0xFF, (byte) 0xD3, (byte) 0xA8, (byte) 0xA8};
+        byte[] tooShort = {0x00, 0x04, (byte) 0xD3, (byte) 0xA8, (byte) 0xA8};
+        byte[] noClass = {0x00, 0x10, (byte) 0xD3, 0x20, 0x20};
+        byte[] noRoom = {0x00, 0x10, (byte) 0xD3, (byte) 0xA8};
+
+        for (byte[] bytes : new byte[][] {tooLong, tooShort, noClass, noRoom}) {
+            assertThat(AfpSniffer.hint(bytes)).doesNotContain("no 0x5A");
+        }
     }
 
     @Test
     public void recognisesADescriptorWord() {
         assertThat(AfpSniffer.hint(new byte[] {0x00, 0x15, 0x00, 0x00, 0x7F, 0x7F}))
                 .contains("RDW or BDW framed");
+    }
+
+    @Test
+    public void theDescriptorWordHintCanBeLeftOutForACallerThatTriedThem() {
+        assertThat(AfpSniffer.hint(new byte[] {0x00, 0x15, 0x00, 0x00, 0x7F, 0x7F}, false))
+                .isEmpty();
     }
 
     @Test
