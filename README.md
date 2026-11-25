@@ -28,7 +28,8 @@ A billing system writes one big PDF containing hundreds of customer statements. 
    `output/<jobId>/<queue>/`, plus one `documents.csv` index for the whole job.
 
 `job.json` shows which phase the job is in as it goes. The same run works from AFP with
-`workflows/statements-afp.yaml`.
+`workflows/statements-afp.yaml`, and from a PDF that carries a DPart tree with
+`workflows/statements-dpart.yaml`.
 
 ## Concept map
 
@@ -66,6 +67,7 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw verify                                     # build + tests
 ./mvnw -q exec:java -Dexec.args="generate 200 run.pdf"   # make a fake 200-statement print run
 ./mvnw -q exec:java -Dexec.args="generate 50 bad.pdf 5"  # ...50 statements, 5 with bad addresses
+./mvnw -q exec:java -Dexec.args="generate 200 run.pdf 0 42 --dpart"  # ...with a DPart tree (seed 42)
 ./mvnw -q exec:java -Dexec.args="generate-afp 200 run.afp"  # the same kind of run as AFP
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 run.afp 5 42"  # 5 bad addresses, seed 42
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 legacy.afp --tle-names legacy"  # ACCT_NO, ...
@@ -417,6 +419,31 @@ the page number ("unsupported font ...") instead of indexing the page with wrong
 `ToUnicode` maps aren't read. Use `pdfbox` for those files. `builtin` also reads the whole file
 into memory beside PDFBox's copy.
 
+### Splitting a PDF on its document parts
+
+`SplitPdf` has to guess where a statement starts from where text sits on the page. A PDF 2.0 or
+PDF/VT file can carry the answer itself: a `/DPartRoot` in the catalog points at a tree of
+*document parts*, where each part names its first and last page (`/Start`, `/End`) and holds
+index values in a `/DPM` dictionary (`AccountNumber`, `Name`, `Zip`). It is the PDF counterpart
+of AFP page groups and TLEs. `generate --dpart` writes one, and `dump-pdf` shows it in the catalog.
+
+`workflows/statements-dpart.yaml` uses `SplitPdfByDPart`:
+
+- `level` picks which depth of the tree holds the documents (1 is the root node's children). If
+  it's left out, the file's `/RecordLevel` is used, or 1 if it has none.
+- `properties` maps DPM keys to document property names (`AccountNumber: accountNumber`), so
+  routing and output are the same as for the other splitters. `requiredProperties` marks a
+  document with `indexError` when one is missing or blank, and the route step sends it to
+  `exceptions`.
+- A branch node may leave out `/Start` and `/End`; its pages are then the ones its children
+  cover. Both `/DParts [a b]` and the PDF 2.0 form `/DParts [[a b]]` are read.
+- A file with no tree fails the job and the message suggests `SplitPdf`. So does a page that no
+  document at the chosen level covers, and so do overlapping page ranges.
+- An encrypted file (empty user password) or one with a damaged cross-reference table is first
+  opened and saved clean by PDFBox, which is more forgiving than this project's own reader.
+- The file is held in memory twice (this project's reader and PDFBox), so the heap needed is
+  roughly 15 to 20 times the file size: a 23 MB run of 20,000 statements needed about 400 MB.
+
 ### Splitting AFP
 
 `workflows/statements-afp.yaml` is the statement workflow for AFP input. Its `SplitAfp` step
@@ -512,8 +539,8 @@ src/main/webapp/
   js/                      Marionette app: health.js, app.js, main.js
 src/test/js/               dashboard tests (Mocha + jsdom)
 config/input-devices.yaml  the input devices `run` starts
-workflows/                 sample workflows: statements.yaml (PDF), statements-afp.yaml,
-                           statements-afp-legacy.yaml
+workflows/                 sample workflows: statements.yaml (PDF), statements-dpart.yaml (PDF
+                           with a DPart tree), statements-afp.yaml, statements-afp-legacy.yaml
 ```
 
 ## Roadmap

@@ -42,20 +42,41 @@ That's a compact, convincing demo of how the formats compare.
   non-overlapping ranges.
 - **FR-2** Each statement's DPart has `/DPM` entries `AccountNumber`, `Name`, `Zip`.
 - **FR-3** `SplitPdfByDPart` splits at a configured record level (e.g. level 2 for batch →
-  statement); DPM entries become document properties (names normalized to the same keys as
-  other splitters, e.g. `accountNumber`).
+  statement), or at the file's `/RecordLevel` when none is configured; DPM entries become
+  document properties (names normalized to the same keys as other splitters, e.g.
+  `accountNumber`).
 - **FR-4** Overlapping page ranges fail the job with a clear message.
 - **FR-5** A missing required DPM key marks `indexError`, which PRD-02 routes to exceptions.
 - **FR-6** A file with no DPart tree fails, suggesting the region-based `SplitPdf`.
+- **FR-7** A page that no document at the chosen level covers fails the job, so it can't be
+  dropped from the output unnoticed.
+- **FR-8** An encrypted file (empty user password) or one the project's reader can't read is
+  opened by PDFBox and read from a clean copy; a file that needs a password fails with a message
+  that says so.
 
 **Non-functional**
 - **NFR-1** Reading the tree doesn't parse page content streams.
 
 ## Design notes
 
-- Follows the PDF/VT (ISO 16612-2) document-part structure: `/DPartRoot` → `/DParts` arrays of
-  nodes, with `/Start` / `/End` page references on leaf nodes.
+- The structure is the PDF 2.0 document-part hierarchy (ISO 32000-2, 14.12), which PDF/VT
+  (ISO 16612-2) uses: the catalog's `/DPartRoot` has a `/DPartRootNode`, whose `/DParts` is an
+  array of arrays of child nodes; nodes have `/Parent`, and a node's `/Start` and `/End` reference
+  its first and last page. `/RecordLevel` says which depth holds the print records.
+  The details come from vendor documentation and Apache FOP's writer, not the paywalled standard,
+  so this reader is lenient about them:
+  - `/DParts` may be a flat array of nodes, or the array-of-arrays form;
+  - the root dictionary may carry `/DParts` itself with no `/DPartRootNode` (what the first
+    version of `generate --dpart` wrote);
+  - a branch node may leave out `/Start` and `/End`, and then covers what its children cover (a
+    leaf needs both).
+- `generate --dpart` writes the PDF 2.0 shape (root, root node, `[[...]]`, `/Parent`,
+  `/RecordLevel 1`, `/NodeNameList [/root /record]`). Conformance to PDF/VT is still a non-goal.
 - Splitting writes output pages via PDFBox (writing PDFs is out of scope for the reader).
+- The project's own reader is strict, so a file it can't read, or an encrypted one, is saved
+  clean by PDFBox first and read from that copy (FR-8). Memory is about 15 to 20 times the file
+  size, because both readers hold the file; each output document also carries its own copy of the
+  fonts and images its pages use.
 
 ## Acceptance criteria
 
@@ -63,22 +84,30 @@ That's a compact, convincing demo of how the formats compare.
 |---|---|---|
 | AC-1 | Generated DPart trees cover every page once, in order | `DPartWriterTest.*` |
 | AC-2 | Flat and two-level trees read at the configured level; overlaps fail | `DPartReaderTest.readsFlatTree`, `readsTwoLevelTreeAtConfiguredRecordLevel`, `overlappingRangesFail` |
-| AC-3 | Missing DPM key → `indexError` → exceptions | `missingRequiredDpmKeyMarksIndexError` |
+| AC-3 | Missing DPM key → `indexError` → exceptions | `SplitPdfByDPartStepTest.missingRequiredDpmKeyMarksIndexError`, `DPartWorkflowTest.missingRequiredDpmKeyMarksIndexErrorAndRoutesToExceptions` |
 | AC-4 | DPart, region and AFP splits produce identical documents, properties and zip order | `IndexParityTest` |
+| AC-5 | The PDF 2.0 shape reads; branch ranges derive from children; hostile trees fail cleanly | `DPartReaderTest.*`, `DPartWriterTest.writesThePdf20Shape` |
+| AC-6 | Encrypted and damaged files split; a password-protected one fails clearly | `SplitPdfByDPartStepTest.fileEncryptedWithAnEmptyUserPasswordIsDecryptedByPdfBox`, `fileWithItsCrossReferenceDataCutOffIsRepairedByPdfBox`, `fileThatNeedsAPasswordFailsWithAClearMessage` |
 
 ## Test plan
 
-- Unit — `DPartWriterTest`: `everyPageCoveredExactlyOnce`, `rangesAreOrderedAndStartBeforeEnd`
+- Unit — `DPartWriterTest`: `everyPageCoveredExactlyOnce`, `rangesAreOrderedAndStartBeforeEnd`,
+  `dpmEntriesMatchTheStatements`, `writesThePdf20Shape`
 - Unit — `DPartReaderTest`: `readsFlatTree`, `readsTwoLevelTreeAtConfiguredRecordLevel`,
-  `overlappingRangesFail`, `missingRequiredDpmKeyMarksIndexError`
-- Workflow — `IndexParityTest` (three-way parity for one seed)
+  `overlappingRangesFail`, the PDF 2.0 shape and derived ranges, hostile and malformed trees, and
+  `readsTheTreeWithoutDecodingAnyPageContent` (NFR-1)
+- Unit — `SplitPdfByDPartStepTest`: config checks, levels and `/RecordLevel`, multi-page ranges,
+  page order, `missingRequiredDpmKeyMarksIndexError`, encrypted and damaged files
+- Workflow — `DPartWorkflowTest` (index errors reach `exceptions`) and `IndexParityTest`
+  (three-way parity for one seed, including each output document's pages and text)
 
 ## Risks and open questions
 
-This PR depends on PRD-04's decision, tracked as Q-03 in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md).
+This PR depended on PRD-04's decision, tracked as Q-03 in [`docs/OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md).
+Q-03 is decided (the AFP writer was built), so `IndexParityTest` compares all three splits.
 
-- If PRD-04 (AFP writer) was skipped, `IndexParityTest` compares DPart with region only, and the
-  PR says so.
+- The DPart structure follows secondary sources (see Design notes). A file from a real PDF/VT
+  tool may differ in ways this reader doesn't expect; the first one to try is the test.
 
 ## Definition of done
 

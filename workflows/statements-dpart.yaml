@@ -23,7 +23,7 @@ phases:
     - name: split-and-index
       type: SplitPdfByDPart
       params:
-        level: 1
+        level: 1                      # omit to use the file's /RecordLevel (1 if it has none)
         properties:
           AccountNumber: accountNumber
           Name: name

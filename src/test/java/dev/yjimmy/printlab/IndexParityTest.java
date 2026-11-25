@@ -8,12 +8,17 @@ import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
 import dev.yjimmy.printlab.testsupport.TestJobs;
 import dev.yjimmy.printlab.testsupport.TestWorkflows;
 import dev.yjimmy.printlab.testsupport.TickingClock;
+import dev.yjimmy.printlab.workflow.Document;
 import dev.yjimmy.printlab.workflow.Job;
 import dev.yjimmy.printlab.workflow.JobState;
 import dev.yjimmy.printlab.workflow.StepRegistry;
 import dev.yjimmy.printlab.workflow.WorkflowEngine;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -52,6 +57,8 @@ public class IndexParityTest {
         assertEquals("region index, in zip order", index(afpJob), index(regions));
         assertEquals("totalPages", regions.properties().get("totalPages"),
                 dpart.properties().get("totalPages"));
+        // The documents themselves: the same pages, in the same order, with the same text.
+        assertEquals("pages of each document", pageSizesAndText(regions), pageSizesAndText(dpart));
         assertThat(dpart.documents()).filteredOn(d -> "exceptions".equals(d.property("queue")))
                 .hasSize(BAD);
     }
@@ -67,6 +74,18 @@ public class IndexParityTest {
                 .run(job);
         assertEquals(job.errorMessage(), JobState.COMPLETE, job.state());
         return job;
+    }
+
+    /** For each document, in order: its page count and the text of its pages. */
+    private static List<String> pageSizesAndText(Job job) throws Exception {
+        List<String> documents = new ArrayList<>();
+        for (Document document : job.documents()) {
+            try (PDDocument pdf = Loader.loadPDF(document.file().toFile())) {
+                documents.add(pdf.getNumberOfPages() + " pages: "
+                        + new PDFTextStripper().getText(pdf).replaceAll("\\s+", " ").strip());
+            }
+        }
+        return documents;
     }
 
     private static List<List<String>> index(Job job) {

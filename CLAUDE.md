@@ -76,11 +76,15 @@ report's line total rounded *down* to two decimals, in its own commit.
   document per top-level BNG/ENG, written as a standalone AFP file (fields before the first
   group + fields between groups + the group + Ends for the Begins still open), with the group's
   own TLEs as properties. Both split steps set `pageCount` and `format` (`pdf`/`afp`).
-  `SplitPdfByDPartStep` is the third splitter: it reads the document-part tree (`pdf/DPartTree`,
-  the `/DPartRoot` catalog entry, whose nodes give each document's first and last page and its
-  `/DPM` entries) instead of page text, maps `DPM` keys to properties through its `properties`
-  param, and fails the job if a page is in no document at its `level` (so it can't be dropped
-  silently). `generate --dpart` writes that tree; `workflows/statements-dpart.yaml` uses it.
+  `SplitPdfByDPartStep` is the third splitter: it reads the PDF 2.0 document-part tree
+  (`pdf/DPartTree`: the catalog's `/DPartRoot`, `/DPartRootNode`, `/DParts` flat or as an array
+  of arrays, nodes whose `/Start` and `/End` give a document's pages and whose `/DPM` holds its
+  index values; a branch's range comes from its children) instead of page text. It maps `DPM`
+  keys to properties through its `properties` param, uses `level` or else the file's
+  `/RecordLevel`, and fails the job if a page is in no document (so it can't be dropped
+  silently). The tree is read with the project's own strict reader; if that fails or the file
+  is encrypted, PDFBox saves a clean copy (`normalized.pdf` in the work folder) that is read
+  instead. `generate --dpart` writes the tree; `workflows/statements-dpart.yaml` uses it.
   Per-document index problems (`requiredProperties`, repeated TLEs, `MapProperties` rename
   conflicts) are appended to the `indexError` property through `IndexErrors`, never thrown, so
   routing sends them to `exceptions`; structural problems in the file fail the job.

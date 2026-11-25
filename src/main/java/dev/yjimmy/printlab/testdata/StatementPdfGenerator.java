@@ -7,7 +7,9 @@ import java.util.ArrayList;
 import java.util.List;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSDictionary;
+import org.apache.pdfbox.cos.COSInteger;
 import org.apache.pdfbox.cos.COSName;
+import org.apache.pdfbox.cos.COSObject;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -120,7 +122,15 @@ public final class StatementPdfGenerator {
      */
     private static void addDPartTree(PDDocument doc, List<Statement> statements,
             List<List<PDPage>> pagesByStatement) {
-        COSArray parts = new COSArray();
+        COSName parentKey = COSName.getPDFName("Parent");
+        // /Parent makes the tree circular, so the root, its node and every statement's node are
+        // indirect objects: a COSObject wrapper is written once and referenced everywhere else.
+        COSDictionary root = new COSDictionary();
+        COSObject rootRef = new COSObject(root);
+        COSDictionary rootNode = new COSDictionary();
+        COSObject rootNodeRef = new COSObject(rootNode);
+
+        COSArray siblings = new COSArray();
         for (int i = 0; i < statements.size(); i++) {
             Statement statement = statements.get(i);
             List<PDPage> pages = pagesByStatement.get(i);
@@ -130,14 +140,27 @@ public final class StatementPdfGenerator {
             dpm.setString("Zip", statement.zip());
             COSDictionary node = new COSDictionary();
             node.setName(COSName.TYPE, "DPart");
+            node.setItem(parentKey, rootNodeRef);
             node.setItem(COSName.getPDFName("Start"), pages.get(0).getCOSObject());
             node.setItem(COSName.getPDFName("End"), pages.get(pages.size() - 1).getCOSObject());
             node.setItem(COSName.getPDFName("DPM"), dpm);
-            parts.add(node);
+            siblings.add(new COSObject(node));
         }
-        COSDictionary root = new COSDictionary();
-        root.setItem(COSName.getPDFName("DParts"), parts);
-        doc.getDocumentCatalog().getCOSObject().setItem(COSName.getPDFName("DPartRoot"), root);
+        // The PDF 2.0 form: /DParts is an array of arrays; here, one array holding every statement.
+        COSArray groups = new COSArray();
+        groups.add(siblings);
+        rootNode.setName(COSName.TYPE, "DPart");
+        rootNode.setItem(parentKey, rootRef);
+        rootNode.setItem(COSName.getPDFName("DParts"), groups);
+
+        COSArray levelNames = new COSArray();
+        levelNames.add(COSName.getPDFName("root"));
+        levelNames.add(COSName.getPDFName("record"));
+        root.setName(COSName.TYPE, "DPartRoot");
+        root.setItem(COSName.getPDFName("DPartRootNode"), rootNodeRef);
+        root.setItem(COSName.getPDFName("RecordLevel"), COSInteger.get(1));
+        root.setItem(COSName.getPDFName("NodeNameList"), levelNames);
+        doc.getDocumentCatalog().getCOSObject().setItem(COSName.getPDFName("DPartRoot"), rootRef);
     }
 
     /** Draws text with its baseline at {@code yFromTop} points below the top of the page. */
