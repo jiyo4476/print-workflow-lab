@@ -43,13 +43,20 @@ public final class AfpDump {
     private static final int NAME_LENGTH = 8;
 
     private final Charset codePage;
+    private final AfpFraming framing;
 
     public AfpDump() {
         this(Ebcdic.IBM037);
     }
 
     public AfpDump(Charset codePage) {
+        this(codePage, AfpFraming.STRICT);
+    }
+
+    /** A dump of a file framed as {@code framing} says (see {@link AfpFraming}). */
+    public AfpDump(Charset codePage, AfpFraming framing) {
         this.codePage = codePage;
+        this.framing = framing;
     }
 
     /** Dumps {@code in} to {@code out} and returns the number of problems found. */
@@ -59,7 +66,7 @@ public final class AfpDump {
         int problems = 0;
         StructuredField segmented = null;
         line(out, "Offset    Length  Field");
-        Iterator<StructuredField> reader = new AfpReader(in);
+        Iterator<StructuredField> reader = new AfpReader(in, framing);
         try {
             while (reader.hasNext()) {
                 StructuredField field = reader.next();

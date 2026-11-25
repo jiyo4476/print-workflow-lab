@@ -68,10 +68,12 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw -q exec:java -Dexec.args="generate-afp 200 run.afp"  # the same kind of run as AFP
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 run.afp 5 42"  # 5 bad addresses, seed 42
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 legacy.afp --tle-names legacy"  # ACCT_NO, ...
+./mvnw -q exec:java -Dexec.args="generate-afp 50 mainframe.afp --framing bdw"  # blocked records, like a mainframe data set
 ./mvnw -q exec:java                               # start the input devices (config/input-devices.yaml)
 ./mvnw -q exec:java -Dexec.args="run --devices my-devices.yaml"  # ...from another devices file
 ./mvnw -q exec:java -Dexec.args="run workflows/statements-afp.yaml *.afp"  # one device on ./hotfolder
 ./mvnw -q exec:java -Dexec.args="dump-afp statement.afp"  # print an AFP file's structure
+./mvnw -q exec:java -Dexec.args="dump-afp mainframe.afp --framing auto"  # ...for a file with record headers
 ./mvnw -q exec:java -Dexec.args="dump-pdf run.pdf"        # print a PDF's version, trailer and pages
 ./mvnw -q exec:java -Dexec.args="dump-pdf run.pdf 12"     # one object (a Contents number from the dump)
 ./mvnw -q exec:java -Dexec.args="dump-pdf --xref edited.pdf"  # each revision, and what it changed
@@ -431,7 +433,28 @@ page:
   blank, gets an `indexError` property (`missing: zip`) instead of failing the job, and the route
   step sends it to `exceptions`. A TLE repeated with a different value is marked the same way.
 - Bytes that aren't AFP, a Begin closed by the wrong End, a page outside any group, or a file
-  with no page groups fail the job, with the byte offset where there is one.
+  with no page groups fail the job, with the byte offset where there is one. When the file isn't
+  AFP at all the message says what it looks like instead (a PDF, PostScript, PCL, text, or
+  structured fields with no `0x5A` before them).
+- A file may hold several documents (`BDT ... EDT`, as when AFP files are joined with `cat`).
+  Each is split on its own, with its own preamble and medium map.
+
+**What sits between the fields.** MO:DCA defines the fields, not the file around them, and the
+tools that write AFP disagree. `framing` on the `SplitAfp` step (and `--framing` on `dump-afp`)
+says which form the file has:
+
+| `framing` | Between fields | Where it comes from |
+|---|---|---|
+| `strict` (default) | nothing: `5A field 5A field ...` | what this project writes, and most AFP files |
+| `padded` | carriage returns, line feeds or zero bytes (also after the last field) | a text-mode transfer, or padding to a block size |
+| `rdw` | a 4-byte record descriptor word: the record's length, then two zero bytes | a variable-length data set copied from a mainframe in binary |
+| `bdw` | that, and each block of records led by a 4-byte block descriptor word | a variable-blocked data set, as it was on the mainframe |
+| `auto` | decided from the first bytes of the file | when you don't know |
+
+`strict` stays the default so that a damaged file is never read as something else; `padded`,
+`rdw` and `bdw` check each field and record as strictly as `strict` does. Records that span
+blocks (`VBS`) aren't supported. `generate-afp --framing padded|rdw|bdw` writes each form for
+trying them out. A file this reader can't place fails with a message that says what to try.
 
 Different applications name the same index values differently. `MapProperties` renames document
 properties after the split, so the routing, sorting and output steps stay the same.

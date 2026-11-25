@@ -22,6 +22,7 @@ Use `./mvnw` (or `mvnw.cmd` on Windows); it downloads Maven on first use.
 ./mvnw -q exec:java -Dexec.args="generate 200 run.pdf"  # fake 200-statement print run
 ./mvnw -q exec:java -Dexec.args="generate 50 bad.pdf 5" # ...with 5 bad addresses
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 run.afp 5 42" # same run as AFP; seed 42
+./mvnw -q exec:java -Dexec.args="generate-afp 50 run.afp --framing bdw"  # blocked records, like a mainframe
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 run.afp --tle-names legacy" # ACCT_NO, ... TLEs
 ./mvnw -q exec:java                             # start the input devices in config/input-devices.yaml
 ./mvnw -q exec:java -Dexec.args="run workflows/statements.yaml"  # one device on ./hotfolder
@@ -75,7 +76,10 @@ report's line total rounded *down* to two decimals, in its own commit.
   (documents are written with PDFBox either way). `SplitAfpStep` is the AFP counterpart: one
   document per top-level BNG/ENG, written as a standalone AFP file (fields before the first
   group + fields between groups + the group + Ends for the Begins still open), with the group's
-  own TLEs as properties. Both split steps set `pageCount` and `format` (`pdf`/`afp`).
+  own TLEs as properties. A file may hold several BDT ... EDT documents: each is split with its
+  own preamble and medium map, and a document with no groups is skipped. Its `framing` param
+  (default `strict`) picks the `AfpFraming` the file is read with. Both split steps set
+  `pageCount` and `format` (`pdf`/`afp`).
   Per-document index problems (`requiredProperties`, repeated TLEs, `MapProperties` rename
   conflicts) are appended to the `indexError` property through `IndexErrors`, never thrown, so
   routing sends them to `exceptions`; structural problems in the file fail the job.
@@ -119,7 +123,14 @@ report's line total rounded *down* to two decimals, in its own commit.
   lists all 98 structured fields from Appendix E; Begin/End is the middle ID byte (`A8`/`A9`).
   `TleDecoder` reads triplets `01` (code page), `02` type `0B` (name) and `36` (value); text is
   EBCDIC via `Ebcdic` (IBM037 default, code page is a parameter).
-  `AfpDump` backs `App dump-afp` and reports structural problems instead of stopping.
+  `AfpFraming` says what sits between fields: `STRICT` (the default, nothing), `PADDED` (CR, LF
+  and NUL skipped), `RDW` (a 4-byte record descriptor word before each field), `BDW` (blocks of
+  RDW records) or `AUTO` (picked from the first bytes). `AfpReader(in, framing)` parses an RDW
+  or BDW record whole, then the field in it, which must fill it; offsets stay file offsets.
+  `AfpSniffer` turns a non-AFP first byte into a hint (PDF, PostScript, PCL, text, descriptor
+  words). `testdata/AfpFramer` writes each form (`generate-afp --framing`), so every framing has
+  test input.
+  `AfpDump` backs `App dump-afp` (`--framing`) and reports structural problems instead of stopping.
   `AfpWriter` and `TleEncoder` are the inverses (lengths computed, reserved bytes `0000`,
   `Ebcdic.encodeStrict` rejects characters the code page lacks).
   `AfpWriter.write(StructuredField)` copies a field read from a file (padding dropped). Build

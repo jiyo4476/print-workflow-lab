@@ -1,5 +1,6 @@
 package dev.yjimmy.printlab.steps;
 
+import dev.yjimmy.printlab.afp.AfpFraming;
 import dev.yjimmy.printlab.afp.AfpReader;
 import dev.yjimmy.printlab.afp.AfpWriter;
 import dev.yjimmy.printlab.afp.Ebcdic;
@@ -34,7 +35,13 @@ import java.util.Map;
  *   params:
  *     requiredProperties: [accountNumber, name, zip]   # optional
  *     codePage: IBM037                                 # optional; TLE text, before any CGCSGID
+ *     framing: strict                                  # optional: strict, padded, rdw, bdw, auto
  * </pre>
+ *
+ * <p>{@code framing} says what sits between the fields in the file (see {@link AfpFraming}):
+ * nothing ({@code strict}, the default), carriage returns, line feeds or zero bytes
+ * ({@code padded}), record descriptor words ({@code rdw}) or those inside blocks ({@code bdw}),
+ * or {@code auto} to work it out from the start of the file. Everything written is {@code strict}.
  *
  * <p>Each document is written as a standalone AFP file: every field before the first page group
  * (the BDT, and any inline resource group, BRG ... ERG), then the fields between the previous
@@ -56,9 +63,15 @@ import java.util.Map;
  * property (absent or blank) is marked with {@code indexError} instead of failing the job, and so
  * is one that repeats a TLE name with another value (the first value is kept).
  *
+ * <p>A file may hold several documents one after another (BDT ... EDT, as when files are joined
+ * with {@code cat}). Each is split on its own: its documents get that document's preamble and
+ * medium map, and sequence numbers and page counts carry on through the file. A document with no
+ * page groups (an empty trailer, say) is skipped.
+ *
  * <p>The job fails, with the byte offset, for: bytes that aren't AFP, a Begin closed by the
- * wrong End or never closed, a page outside any page group, a TLE that can't be decoded, and
- * content after the file's document has ended. It also fails when there are no page groups.
+ * wrong End or never closed, a page outside any page group, a TLE that can't be decoded, and a
+ * field after a document's end that doesn't begin another one. It also fails when the whole file
+ * has no page groups.
  *
  * <p>The file is read once, one field at a time, and each document is written as its group is
  * read; only the fields before the first group are kept in memory.
@@ -67,10 +80,12 @@ public final class SplitAfpStep implements Step {
 
     private final List<String> requiredProperties;
     private final Charset codePage;
+    private final AfpFraming framing;
 
     public SplitAfpStep(Map<String, Object> rawParams) {
         Params params = new Params(rawParams);
         this.requiredProperties = params.optionalStringList("requiredProperties");
+        this.framing = AfpFraming.named(params.string("framing", "strict"));
         String name = params.string("codePage", null);
         try {
             this.codePage = name == null ? Ebcdic.IBM037 : Charset.forName(name);
@@ -83,7 +98,7 @@ public final class SplitAfpStep implements Step {
     public void execute(Job job) throws IOException {
         Path docsDir = Files.createDirectories(job.workDir().resolve("documents"));
         try (InputStream in = Files.newInputStream(job.inputFile());
-                AfpReader reader = new AfpReader(in)) {
+                AfpReader reader = new AfpReader(in, framing)) {
             new Split(job, docsDir).run(reader);
         }
         job.properties().put("documentCount", String.valueOf(job.documents().size()));
@@ -106,6 +121,8 @@ public final class SplitAfpStep implements Step {
          */
         private StructuredField mediumMap;
         private boolean seenGroup;
+        /** A document ended (its EDT) and no other has begun: the next Begin starts a new one. */
+        private boolean documentEnded;
         /** How many Begins were open outside the first group; fewer means the document ended. */
         private int documentDepth;
         private int totalPages;
@@ -132,7 +149,7 @@ public final class SplitAfpStep implements Step {
                         "The %s at offset 0x%08X has no %s before the end of the file",
                         begin.typeName(), begin.offset(), FieldType.nameOf(begin.matchingEndId())));
             }
-            if (!seenGroup) {
+            if (job.documents().isEmpty()) {
                 throw new IllegalStateException("The AFP file has no named page groups"
                         + " (BNG ... ENG), so there are no documents to split out. SplitAfp"
                         + " needs one page group per document.");
@@ -143,6 +160,9 @@ public final class SplitAfpStep implements Step {
         private void accept(StructuredField field) throws IOException {
             if (field.isEnd()) {
                 close(field);
+                if (field.type() == FieldType.EDT && open.isEmpty()) {
+                    documentEnded = true;
+                }
             }
             if (group != null) {
                 group.add(field);
@@ -151,11 +171,21 @@ public final class SplitAfpStep implements Step {
             } else if (field.type() == FieldType.BPG) {
                 throw new IllegalStateException(at(field, "is outside any named page group;"
                         + " SplitAfp needs every page in a page group (BNG ... ENG)"));
+            } else if (field.isBegin() && (seenGroup ? open.size() < documentDepth : documentEnded)) {
+                // The previous document has ended (one with page groups, or an empty one) and
+                // another begins: its own preamble, medium map and depth. Page counts and
+                // sequence numbers carry on.
+                preamble.clear();
+                between.clear();
+                mediumMap = null;
+                seenGroup = false;
+                documentEnded = false;
+                preamble.add(field);
             } else if (!seenGroup) {
                 preamble.add(field);
             } else if (open.size() < documentDepth && !field.isEnd()) {
                 throw new IllegalStateException(at(field, "comes after the end of the"
-                        + " document; SplitAfp handles one document (BDT ... EDT) per file"));
+                        + " document and doesn't begin another (a BDT, say)"));
             } else if (open.size() >= documentDepth) {
                 // Something between groups that applies to what follows (an IMM, a NOP, a
                 // balanced Begin ... End). The Ends that close the document (open.size() now
