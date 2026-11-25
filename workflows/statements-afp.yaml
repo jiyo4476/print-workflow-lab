@@ -25,6 +25,10 @@ phases:
         # A group without one of these (or with it blank) is marked indexError, not failed, so the
         # route step can send it to the exception queue while the rest of the job completes.
         requiredProperties: [accountNumber, name, zip]
+        # What sits between the fields in the file: strict (the default; nothing), padded (CR/LF
+        # or zero bytes), rdw or bdw (record or block descriptor words, as copied from a
+        # mainframe), or auto to work it out. See README "Splitting AFP".
+        # framing: strict
 
     - name: route
       type: RouteDocuments

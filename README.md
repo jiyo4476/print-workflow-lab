@@ -71,10 +71,12 @@ Requires Java 21. The Maven wrapper downloads Maven on first use.
 ./mvnw -q exec:java -Dexec.args="generate-afp 200 run.afp"  # the same kind of run as AFP
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 run.afp 5 42"  # 5 bad addresses, seed 42
 ./mvnw -q exec:java -Dexec.args="generate-afp 50 legacy.afp --tle-names legacy"  # ACCT_NO, ...
+./mvnw -q exec:java -Dexec.args="generate-afp 50 mainframe.afp --framing bdw"  # blocked records, like a mainframe data set
 ./mvnw -q exec:java                               # start the input devices (config/input-devices.yaml)
 ./mvnw -q exec:java -Dexec.args="run --devices my-devices.yaml"  # ...from another devices file
 ./mvnw -q exec:java -Dexec.args="run workflows/statements-afp.yaml *.afp"  # one device on ./hotfolder
 ./mvnw -q exec:java -Dexec.args="dump-afp statement.afp"  # print an AFP file's structure
+./mvnw -q exec:java -Dexec.args="dump-afp mainframe.afp --framing auto"  # ...for a file with record headers
 ./mvnw -q exec:java -Dexec.args="dump-pdf run.pdf"        # print a PDF's version, trailer and pages
 ./mvnw -q exec:java -Dexec.args="dump-pdf run.pdf 12"     # one object (a Contents number from the dump)
 ./mvnw -q exec:java -Dexec.args="dump-pdf --xref edited.pdf"  # each revision, and what it changed
@@ -537,7 +539,38 @@ page:
   blank, gets an `indexError` property (`missing: zip`) instead of failing the job, and the route
   step sends it to `exceptions`. A TLE repeated with a different value is marked the same way.
 - Bytes that aren't AFP, a Begin closed by the wrong End, a page outside any group, or a file
-  with no page groups fail the job, with the byte offset where there is one.
+  with no page groups fail the job, with the byte offset where there is one. When the file isn't
+  AFP at all the message says what it looks like instead (a PDF, PostScript, PCL, text, or
+  structured fields with no `0x5A` before them).
+- A file may hold several documents (`BDT ... EDT`, as when AFP files are joined with `cat`).
+  Each is split on its own, with its own preamble and medium map. A document is followed by
+  another document, not by loose fields or a page group: either fails the job, with or without
+  page groups in the document before it. A document with no page groups is skipped as long as
+  another has some.
+
+**What sits between the fields.** MO:DCA defines the fields, not the file around them, and the
+tools that write AFP disagree. `framing` on the `SplitAfp` step (and `--framing` on `dump-afp`)
+says which form the file has:
+
+| `framing` | Between fields | Where it comes from |
+|---|---|---|
+| `strict` (default) | nothing: `5A field 5A field ...` | what this project writes, and most AFP files |
+| `padded` | carriage returns and line feeds before each field (and before the first); zero bytes after the last field only | a text-mode transfer, or padding to a block size |
+| `rdw` | a 4-byte record descriptor word: the record's length, then two zero bytes | a variable-length data set copied from a mainframe in binary |
+| `bdw` | that, and each block of records led by a 4-byte block descriptor word | a variable-blocked data set, as it was on the mainframe |
+| `auto` | decided from the first bytes of the file (below) | when you don't know |
+
+`strict` stays the default so that a damaged file is never read as something else. Each form
+still checks every field. `padded` is looser than `strict` only in the line endings it skips and
+the zero bytes after the last field; zero bytes anywhere else fail, because a field whose length is
+too short leaves them behind. `rdw` and `bdw` are stricter in places: a record must hold exactly one
+field, and a record must fit its block. `auto` reads a file that starts with a field as `padded` if
+line endings come before it or right after its first field, and as `strict` otherwise (so a strict
+file is still read strictly, and a file padded with zero bytes but no line endings needs `padded`
+asked for); one that starts with a length and two zero bytes, then a `0x5A`, as `rdw` or `bdw`.
+Records that span blocks (`VBS`) aren't supported, and say so. `generate-afp --framing
+padded|rdw|bdw` writes each form for trying them out. A file this reader can't place fails with a
+message that says what it looks like and what to try.
 
 Different applications name the same index values differently. `MapProperties` renames document
 properties after the split, so the routing, sorting and output steps stay the same.
