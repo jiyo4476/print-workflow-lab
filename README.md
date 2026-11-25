@@ -441,6 +441,15 @@ page:
   another document, not by loose fields or a page group: either fails the job, with or without
   page groups in the document before it. A document with no page groups is skipped as long as
   another has some.
+- **Nested groups.** By default a document is a page group outside any other. When the file
+  wraps its statements in a group (a household around its accounts, a mailing around its
+  households), set `groupLevel: 2` (or 3, and so on) to split at that depth instead. The groups
+  above it become wrappers: each document begins with its wrappers' Begin fields and their own
+  TLEs, and ends with the matching Ends. The wrappers' TLEs are inherited as properties, and the
+  document's own TLE wins when both name the same one. So `requiredProperties` can be met by
+  either. Anything else directly in a wrapper is kept for the documents of that wrapper only. A
+  page directly inside a wrapper, or a file not nested as deep as `groupLevel`, fails the job
+  and says that `groupLevel` is why.
 
 **What sits between the fields.** MO:DCA defines the fields, not the file around them, and the
 tools that write AFP disagree. `framing` on the `SplitAfp` step (and `--framing` on `dump-afp`)
