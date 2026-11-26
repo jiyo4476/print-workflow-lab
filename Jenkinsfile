@@ -19,6 +19,22 @@
 //   Node    26.13.1 LTS "Lithium" (Alpine)              runs the dashboard's Mocha tests
 //   Tomcat  10.1.62 on Temurin 21 (Ubuntu noble)        runs the WAR in the deployed container
 
+// Starts the version recorded in .previous-image again, after a failed deploy or smoke test.
+// The Deploy and Smoke test stages both use it, so a failure in either restores the old app.
+def rollbackToPrevious() {
+    sh '''
+        docker rm -f "$APP_NAME" >/dev/null 2>&1 || true
+        previous=$(cat .previous-image 2>/dev/null || true)
+        if [ -n "$previous" ]; then
+            echo "Rolling back to $previous"
+            docker run -d --name "$APP_NAME" --restart unless-stopped \
+                -p "$HOST_PORT:8080" "$previous"
+        else
+            echo "Nothing was running before, so nothing to roll back to"
+        fi
+    '''
+}
+
 pipeline {
     agent any
 
@@ -54,7 +70,9 @@ pipeline {
     options {
         buildDiscarder(logRotator(numToKeepStr: '20'))
         timeout(time: 30, unit: 'MINUTES')
-        disableConcurrentBuilds(abortPrevious: true)
+        // Queue a second build rather than abort the first: aborting mid-deploy could leave
+        // the app stopped with no rollback.
+        disableConcurrentBuilds()
         skipDefaultCheckout(true)
         timestamps()
     }
@@ -104,6 +122,7 @@ pipeline {
                     cp target/print-workflow-lab.war .image/ROOT.war
                     printf '%s\\n' \
                         'FROM tomcat:10.1.62-jdk21-temurin-noble@sha256:1c44b4cf0c530ac7e2e03a1fa0a00289fe90690d4583be3ddeabe13cc5e05196' \
+                        'RUN apt-get update && apt-get install -y --no-install-recommends fontconfig fonts-liberation fonts-dejavu-core && rm -rf /var/lib/apt/lists/*' \
                         'RUN rm -rf /usr/local/tomcat/webapps/*' \
                         'COPY ROOT.war /usr/local/tomcat/webapps/ROOT.war' \
                         'EXPOSE 8080' \
@@ -124,10 +143,20 @@ pipeline {
                     docker inspect -f '{{.Config.Image}}' "$APP_NAME" > .previous-image 2>/dev/null \
                         || : > .previous-image
                     echo "Replacing: $(cat .previous-image || true)"
-                    docker rm -f "$APP_NAME" >/dev/null 2>&1 || true
-                    docker run -d --name "$APP_NAME" --restart unless-stopped \
-                        -p "$HOST_PORT:8080" "$IMAGE_REPO:$BUILD_NUMBER"
                 '''
+                script {
+                    // If the new container can't start, the old one must come back up.
+                    try {
+                        sh '''
+                            docker rm -f "$APP_NAME" >/dev/null 2>&1 || true
+                            docker run -d --name "$APP_NAME" --restart unless-stopped \
+                                -p "$HOST_PORT:8080" "$IMAGE_REPO:$BUILD_NUMBER"
+                        '''
+                    } catch (err) {
+                        rollbackToPrevious()
+                        throw err
+                    }
+                }
             }
         }
 
@@ -151,18 +180,8 @@ pipeline {
             post {
                 failure {
                     // Show why it failed, then put the previous version back.
-                    sh '''
-                        docker logs --tail 100 "$APP_NAME" || true
-                        docker rm -f "$APP_NAME" >/dev/null 2>&1 || true
-                        previous=$(cat .previous-image 2>/dev/null || true)
-                        if [ -n "$previous" ]; then
-                            echo "Rolling back to $previous"
-                            docker run -d --name "$APP_NAME" --restart unless-stopped \
-                                -p "$HOST_PORT:8080" "$previous"
-                        else
-                            echo "Nothing was running before, so nothing to roll back to"
-                        fi
-                    '''
+                    sh 'docker logs --tail 100 "$APP_NAME" || true'
+                    script { rollbackToPrevious() }
                 }
                 success {
                     // Keep the five newest numbered images, and never the one that's running.
