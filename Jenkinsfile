@@ -104,6 +104,7 @@ pipeline {
                     cp target/print-workflow-lab.war .image/ROOT.war
                     printf '%s\\n' \
                         'FROM tomcat:10.1.62-jdk21-temurin-noble@sha256:1c44b4cf0c530ac7e2e03a1fa0a00289fe90690d4583be3ddeabe13cc5e05196' \
+                        'RUN apt-get update && apt-get install -y --no-install-recommends fontconfig fonts-liberation fonts-dejavu-core && rm -rf /var/lib/apt/lists/*' \
                         'RUN rm -rf /usr/local/tomcat/webapps/*' \
                         'COPY ROOT.war /usr/local/tomcat/webapps/ROOT.war' \
                         'EXPOSE 8080' \
