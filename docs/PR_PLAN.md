@@ -695,8 +695,8 @@ production print.
 **Goal:** stamp an inserter-control barcode on every page, the way mail-finishing equipment
 expects.
 
-- Add ZXing. `AddBarcode` step for PDF documents: Data Matrix (or Code 128) at a configured
-  position/size, encoding a template such as
+- Add ZXing. `AddBarcode` step for PDF documents, drawn as vector modules (Q-18): Data Matrix
+  (or Code 128) at a configured position/size in points (Q-21), encoding a template such as
   `${jobId}|${sequence}|${page}|${pageCount}|${accountNumber}`.
 - Optional human-readable text under the barcode.
 
@@ -711,8 +711,10 @@ expects.
   - `everyPageOfEveryDocumentHasABarcode`
   - `barcodeDoesNotOverlapConfiguredRegions` (compare rectangles with the split regions)
   - `existingPageTextIsStillExtractable` (stamping doesn't break `SplitPdf` regions)
-  - `barcodeDrawnAsImageXObjectAtConfiguredPosition` — uses PR 9's content-stream parser to
-    check the `cm`/`Do` operators (skip if PR 9 isn't merged yet)
+  - `barcodeDrawnAsVectorAtConfiguredPosition` — uses PR 9's content-stream parser to
+    check the `re`/`f` operators inside the configured rectangle
+  - `sequenceIsMailingOrderAfterPresort`, `barcodeRunsAfterPresort` — `${sequence}` is
+    1..N in mailing order, and the step runs in the print phase after `presort` (Q-19, Q-20)
   - `preflightStillPassesAfterStamping` (if PR 11 is merged)
 - Manual: print or zoom a page and scan the barcode with a phone app.
 

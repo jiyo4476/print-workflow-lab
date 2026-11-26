@@ -34,6 +34,10 @@ are suggestions, not decisions: the PR that answers the question makes the call.
 | [Q-15](#q-15--manifest-format-and-deploy-trigger) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | Manifest format, and what triggers a deploy? | Kustomize; auto-deploy `main` | **Decided:** Kustomize; deploy green `main` |
 | [Q-16](#q-16--getting-files-into-the-hot-folder-on-k3s) | [PRD-20](prd/PRD-20-k3s-deployment-on-arm.md) | How do files reach the hot folder on the server? | A host folder shared over SMB | **Decided:** SMB share mounted into the pod |
 | [Q-17](#q-17--how-jenkins-reaches-the-local-docker) | [PRD-19](prd/PRD-19-jenkins-ci.md) | How does Jenkins reach its local Docker? | Docker-in-Docker sidecar | **Decided:** Jenkins in Docker with a dind sidecar |
+| [Q-18](#q-18--how-the-barcode-is-drawn) | [PRD-12](prd/PRD-12-barcode-step.md) | How is the barcode drawn: an image or vector modules? | Vector modules | **Decided:** vector modules |
+| [Q-19](#q-19--what-sequence-means) | [PRD-12](prd/PRD-12-barcode-step.md) | What does `${sequence}` mean: split order or mailing order? | Mailing order, renumbered after presort | **Decided:** mailing order |
+| [Q-20](#q-20--where-the-step-sits-in-the-workflow) | [PRD-12](prd/PRD-12-barcode-step.md) | Where does `AddBarcode` sit in the workflow? | Print phase, before `write-output` | **Decided:** print phase, before `write-output` |
+| [Q-21](#q-21--units-for-position-and-size) | [PRD-12](prd/PRD-12-barcode-step.md) | Which units do the barcode position and size use? | Points, from the top-left | **Decided:** points |
 
 ## PRD-02 — Routing rules and exception queue
 
@@ -398,3 +402,69 @@ side, how does the Jenkins container reach a Docker daemon? This is what Testcon
   only the `Jenkinsfile` and `docs/CI.md`, and sets `TESTCONTAINERS_HOST_OVERRIDE=docker` for
   Testcontainers.
 - **Status:** Decided (2026-11-18) · **PR:** plan PR 19
+
+## PRD-12 — Barcode step for inserter control
+
+### Q-18 — How the barcode is drawn
+
+**Question:** FR-5 says the barcode is an image XObject, but the design notes allow vector
+modules. Which one?
+
+| Option | Pros | Cons |
+|---|---|---|
+| **A. Vector: one filled rectangle per module** | Sharp at any print size; no bitmap in the file; the content stream shows each module. | More operators on large symbols; the test checks `re`/`f` instead of `cm`/`Do`. |
+| **B. Image: rendered bitmap as an image XObject** | Simpler to write, and matches FR-5 as first written. | Can blur or alias when printed at small sizes; the test checks `cm`/`Do`. |
+
+**Recommendation:** A.
+
+- **Answer:** A. The barcode is drawn as vector modules (FR-5, AC-4, and the design notes are
+  updated to match).
+- **Status:** Decided (2026-11-25) · **PR:** plan PR 12
+
+### Q-19 — What `${sequence}` means
+
+**Question:** `SortDocuments` reorders a job's documents by zip, but each document keeps the
+`sequence` number it got at split time. So `${sequence}` is split order, not the order the
+inserter sees. What should it be?
+
+| Option | Pros | Cons |
+|---|---|---|
+| **A. Mailing order: renumber 1..N after presort** | The barcode matches the order the inserter receives. | Changes the `sequence` values later steps see, including file names and output order. |
+| **B. Split order: keep the number from split** | No change to existing steps. | The barcode number doesn't match the order the inserter sees. |
+
+**Recommendation:** A.
+
+- **Answer:** A. A renumbering step runs after presort, so `sequence` is 1..N in mailing order
+  (FR-1a, AC-6). The PR checks everything that reads `sequence` afterwards.
+- **Status:** Decided (2026-11-25) · **PR:** plan PR 12
+
+### Q-20 — Where the step sits in the workflow
+
+**Question:** `presort` runs in the `prepare` phase, not `print`. Where should `AddBarcode` go?
+
+| Option | Pros | Cons |
+|---|---|---|
+| **A. Print phase, before `write-output`** | Runs after presort, so the order is final. Sits next to the output step. | Only the print phase is affected; nothing else reads the barcode before it. |
+| **B. Prepare phase, right after `presort`** | Same order guarantee. | Stamps before the print phase, so a print-phase retry would stamp again. |
+
+**Recommendation:** A.
+
+- **Answer:** A. `AddBarcode` is the first step in the `print` phase, before `write-output`
+  (FR-7). The sample workflow is updated to match.
+- **Status:** Decided (2026-11-25) · **PR:** plan PR 12
+
+### Q-21 — Units for position and size
+
+**Question:** Which units should the barcode's position and size use? `SplitPdf` regions in the
+sample workflow are already in points.
+
+| Option | Pros | Cons |
+|---|---|---|
+| **A. Points, from the top-left** | Matches `SplitPdf` regions and PDF's own unit; no conversion. | Less readable for someone setting up a printer. |
+| **B. Inches** | Easier to read in a workflow file. Matches PR 15's reprint mark. | Needs a conversion from points; two units in one workflow. |
+
+**Recommendation:** A.
+
+- **Answer:** A. Points, measured from the top-left of the page (FR-5a).
+- **Status:** Decided (2026-11-25) · **PR:** plan PR 12
+
