@@ -8,6 +8,8 @@ import dev.yjimmy.printlab.testdata.StatementLayout.TextLine;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.TreeSet;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSInteger;
@@ -20,8 +22,7 @@ import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.encryption.AccessPermission;
 import org.apache.pdfbox.pdmodel.encryption.StandardProtectionPolicy;
-import org.apache.pdfbox.pdmodel.font.PDType1Font;
-import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 
 /**
@@ -30,6 +31,10 @@ import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
  * find it. The statements come from {@link StatementDataGenerator}, so
  * {@link StatementAfpGenerator} writes the same ones as AFP for the same seed.
  * {@link StatementLayout} says where each piece of text goes.
+ *
+ * <p>Text is drawn in Liberation Sans, embedded as a subset ({@link LiberationSans}), so a
+ * generated file passes a strict preflight font check and no Standard 14 or commercial font is
+ * used.
  *
  * <p>The file is saved the way PDFBox saves by default, as most current tools do: a
  * cross-reference stream and object streams (PDF 1.5). {@link #document} gives the document
@@ -48,7 +53,8 @@ public final class StatementPdfGenerator {
      * @param a4 pages are A4 instead of Letter (a page size the Letter-only check fails)
      * @param encrypt the file is protected with a user password, so it fails the encryption check
      * @param formFont each page's text is drawn inside a Form XObject that uses a non-embedded
-     *     Helvetica, so the font check must look into forms to find it
+     *     Liberation Sans, so the font check must look into forms to find it. It isn't a
+     *     Standard 14 font, so it fails whether or not those are allowed
      */
     public record Defects(boolean a4, boolean encrypt, boolean formFont) {
 
@@ -134,20 +140,37 @@ public final class StatementPdfGenerator {
     /** As {@link #document(List, boolean)}, with the given deliberate {@code defects}. */
     public static PDDocument document(List<Statement> statements, boolean dpart, Defects defects)
             throws IOException {
-        PDType1Font font = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
-        PDType1Font bold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
         PDRectangle pageSize = defects.a4() ? PDRectangle.A4 : PDRectangle.LETTER;
+        // Lay out every page first, so each font is subset to exactly the characters it draws.
+        List<List<List<TextLine>>> layout = new ArrayList<>();
+        Set<Integer> regularCharacters = new TreeSet<>();
+        Set<Integer> boldCharacters = new TreeSet<>();
+        for (Statement statement : statements) {
+            List<List<TextLine>> pages = new ArrayList<>();
+            for (int p = 1; p <= statement.pageCount(); p++) {
+                List<TextLine> lines = StatementLayout.lines(statement, p);
+                for (TextLine line : lines) {
+                    line.text().codePoints().forEach((line.bold() ? boldCharacters : regularCharacters)::add);
+                }
+                pages.add(lines);
+            }
+            layout.add(pages);
+        }
         PDDocument doc = new PDDocument();
         try {
+            PDFont font = defects.formFont()
+                    ? LiberationSans.notEmbedded(doc, LiberationSans.Face.REGULAR, regularCharacters)
+                    : LiberationSans.embedded(doc, LiberationSans.Face.REGULAR, regularCharacters);
+            PDFont bold = defects.formFont()
+                    ? LiberationSans.notEmbedded(doc, LiberationSans.Face.BOLD, boldCharacters)
+                    : LiberationSans.embedded(doc, LiberationSans.Face.BOLD, boldCharacters);
             List<List<PDPage>> pagesByStatement = new ArrayList<>();
-            for (Statement statement : statements) {
-                int pages = statement.pageCount();
+            for (List<List<TextLine>> statementPages : layout) {
                 List<PDPage> own = new ArrayList<>();
-                for (int p = 1; p <= pages; p++) {
+                for (List<TextLine> lines : statementPages) {
                     PDPage page = new PDPage(pageSize);
                     doc.addPage(page);
                     own.add(page);
-                    List<TextLine> lines = StatementLayout.lines(statement, p);
                     try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
                         if (defects.formFont()) {
                             drawInForm(doc, cs, pageSize, font, bold, lines);
@@ -176,7 +199,7 @@ public final class StatementPdfGenerator {
      * same, but a font check has to walk into the form to see the font.
      */
     private static void drawInForm(PDDocument doc, PDPageContentStream cs, PDRectangle pageSize,
-            PDType1Font font, PDType1Font bold, List<TextLine> lines) throws IOException {
+            PDFont font, PDFont bold, List<TextLine> lines) throws IOException {
         PDFormXObject form = new PDFormXObject(doc);
         form.setBBox(pageSize);
         PDResources resources = new PDResources();
@@ -257,7 +280,7 @@ public final class StatementPdfGenerator {
     }
 
     /** Draws text with its baseline at {@code yFromTop} points below the top of the page. */
-    private static void text(PDPageContentStream cs, PDType1Font font, float size, float x,
+    private static void text(PDPageContentStream cs, PDFont font, float size, float x,
             float yFromTop, String value, float pageHeight) throws IOException {
         cs.beginText();
         cs.setFont(font, size);

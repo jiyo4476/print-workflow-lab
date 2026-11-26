@@ -23,10 +23,12 @@ Small checked-in files that tests read: AFP samples, workflow YAMLs, golden dump
 
 ## `pdf/`
 
-- `two-statements.pdf` (6 KB): two generated statements, six pages, written by
+- `two-statements.pdf` (22 KB): two generated statements, six pages, written by
   `testsupport/ClassicPdf` for seed 7: a classic xref table, Flate content streams, and a fixed
   `/ID`, so `DumpPdfTest.fixtureIsWhatClassicPdfWritesForSeed7` can check it's still what the
-  code writes. Objects are numbered 1-28; only object 0 is free.
+  code writes. Objects are numbered 1-32; only object 0 is free. Most of the size is the two
+  embedded Liberation Sans subsets (about 8 KB each), which the generator needs so its files
+  pass a strict preflight font check (PRD-11 FR-8).
   Regenerate with `ClassicPdf 7 2 src/test/resources/fixtures/pdf/two-statements.pdf` (run its
   `main` on the test classpath), then the golden dumps with `App dump-pdf`, and check the
   differences by hand.

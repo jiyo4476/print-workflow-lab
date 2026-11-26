@@ -224,7 +224,12 @@ report's line total rounded *down* to two decimals, in its own commit.
   seed gives the same statements in both formats (`AfpStatementWorkflowTest` checks that the PDF
   and AFP workflows give the same index). `StatementAfpGenerator.TleNames` picks the TLE names
   (`PROPERTY_NAMES` or `LEGACY`). Its draw order is fixed: changing it changes
-  every seeded run. The package is excluded from the coverage gate.
+  every seeded run. The package is excluded from the coverage gate. `StatementPdfGenerator`
+  draws in Liberation Sans (`testdata/LiberationSans`; SIL OFL 1.1, unmodified files and license
+  in `src/main/resources/fonts/`), embedded per document as a subset simple TrueType font with
+  `/WinAnsiEncoding`, the only kind `pdf/SimpleFont` reads; never switch it to Type0 or to a
+  Standard 14 font. Changing the font or its subsetting changes `fixtures/pdf/two-statements.pdf`
+  and its golden dumps (`DumpPdfTest.fixtureIsWhatClassicPdfWritesForSeed7`).
 - **Dashboard** (`src/main/webapp/`): plain browser scripts with no JS build. `index.html` loads
   the libraries from WebJars (`/webjars/<name>/<version>/...`) as globals, in a fixed order, then
   `js/*.js` (an IIFE namespace `PrintLab`; `main.js` starts the app). The tests in

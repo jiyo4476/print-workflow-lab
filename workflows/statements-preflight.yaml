@@ -29,10 +29,9 @@ phases:
       type: PreflightPdf
       params:
         maxVersion: "1.7"
-        # The statement generator draws in Helvetica, a Standard 14 font that is not embedded.
-        # Allowing Standard 14 here keeps this sample passing. Once the generator embeds its own
-        # font (PRD-11 FR-8), set this to false (the default) so the check is strict.
-        allowStandard14: true
+        # Strict font check (the default): every font must be embedded. The statement generator
+        # embeds Liberation Sans, so its files pass. Set allowStandard14: true only for customer
+        # files that rely on a viewer's Standard 14 fonts (Helvetica, Times, Courier, ...).
         pageSizes: [letter]
         failJob: false
 

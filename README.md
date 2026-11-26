@@ -308,13 +308,13 @@ a stream of drawing operators, usually Flate-compressed.
 
 ```
 PDF       1.4
-Trailer   <</Root 1 0 R /ID [<99170FBB...> <99170FBB...>] /Size 29>>
-Objects   28 in use, 1 free; xref at offset 0x000011C4 (4548)
+Trailer   <</Root 1 0 R /ID [<99170FBB...> <99170FBB...>] /Size 33>>
+Objects   32 in use, 1 free; xref at offset 0x0000534C (21324)
 Catalog   1 0 R  <</Type /Catalog /Version /1.4 /Pages 2 0 R>>
 Pages     6
 Page 1    3 0 R
   MediaBox  [0.0 0.0 612.0 792.0]
-  Fonts     /F1 Helvetica-Bold, /F2 Helvetica
+  Fonts     /F1 ZCFSMG+LiberationSans-Bold, /F2 TKBCEC+LiberationSans
   Contents  10 0 R  /FlateDecode, 474 bytes, 1817 decoded
 ```
 
@@ -354,7 +354,7 @@ the graphics state), `BT`/`ET` (a text object) and marked content, each with wha
 Page 1 of 6  3 0 R
   Contents  10 0 R  /FlateDecode, 474 bytes, 1817 decoded
 BT                                      % begin text
-  /F1 14 Tf                             % font and size: Helvetica-Bold
+  /F1 14 Tf                             % font and size: ZCFSMG+LiberationSans-Bold
   72 752 Td                             % next line, offset by tx ty
   (Front Range Credit Union) Tj         % show text
 ET                                      % end text
@@ -483,13 +483,33 @@ failures to `exceptions`.
   document lists at most 20 issues, then says how many more there are.
 - A Standard 14 font (Helvetica, Times, Courier, Symbol, ZapfDingbats, and their variants) is not
   embedded in the file, and passes only when `allowStandard14: true`. A subset name such as
-  `ABCDEF+Arial` is checked as `Arial`.
+  `ABCDEF+Arial` is checked as `Arial`. The sample workflow keeps the strict default: the
+  generator embeds its own font (see Fonts below), so its files pass.
 - A file that can't be read at all is a `fail` with `could not check this file: it is not a
   readable PDF`; the technical reason (byte offset, object number) goes to the log. With
   `failJob: true`, the first failing document fails the job instead, and the message names it.
 - Documents without `format: pdf` (AFP) are left alone.
 - Not checked: fonts in annotation appearance streams, colour, image resolution, transparency, and
   PDF/X or PDF/A conformance. The check reads dictionaries only and never decodes a stream.
+
+### Fonts
+
+The statement generator draws its text in **Liberation Sans** 2.1.5 (Regular and Bold), from the
+official Liberation Fonts release, under the SIL Open Font License 1.1. The unmodified font files
+and the license text are in `src/main/resources/fonts/`. No Standard 14 or commercial font is
+drawn or embedded.
+
+- Each generated PDF embeds a subset of each face holding only the characters it draws (about
+  8 KB per face), named with a subset tag such as `TKBCEC+LiberationSans`. The subset is made in
+  memory when the file is written, so no modified font file is ever stored.
+- The font is embedded as a simple TrueType font with `/WinAnsiEncoding` and `/Widths`, which the
+  `pdf/` text extractor reads (it doesn't read CID-keyed Type0 fonts).
+- Liberation Sans has the same widths as Arial, and so as Helvetica, which the generator used
+  before: every glyph is where it was, and the region coordinates in the sample workflows still
+  hold.
+- `generate --form-xobject-font` draws the text in a Form XObject with Liberation Sans **not**
+  embedded, so preflight reports `font LiberationSans not embedded` whether or not Standard 14
+  fonts are allowed.
 
 ### Memory and large files
 
