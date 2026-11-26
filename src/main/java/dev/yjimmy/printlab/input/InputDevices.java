@@ -1,6 +1,8 @@
 package dev.yjimmy.printlab.input;
 
+import dev.yjimmy.printlab.workflow.FileJobStore;
 import dev.yjimmy.printlab.workflow.Job;
+import dev.yjimmy.printlab.workflow.JobStore;
 import dev.yjimmy.printlab.workflow.StepRegistry;
 import dev.yjimmy.printlab.workflow.WorkflowDefinition;
 import dev.yjimmy.printlab.workflow.WorkflowEngine;
@@ -51,17 +53,36 @@ public final class InputDevices implements AutoCloseable {
     private volatile Consumer<InputDevice> onWatcherFailed = device -> { };
 
     /**
+     * Saves each job as {@code work/<jobId>/job.json}.
+     *
      * @param onJobDone called on the job thread after each job finishes, complete or not
      */
     public InputDevices(List<InputDevice> devices, WorkflowLoader loader, StepRegistry registry,
             Path workRoot, Path errorDir, Clock clock, Consumer<Job> onJobDone)
             throws IOException {
-        this(devices, loader, registry, workRoot, errorDir, clock, onJobDone,
+        this(devices, loader, registry, workRoot, errorDir, clock, onJobDone, new FileJobStore());
+    }
+
+    /**
+     * @param store where every job is saved after each step (see {@link JobStore})
+     * @param onJobDone called on the job thread after each job finishes, complete or not
+     */
+    public InputDevices(List<InputDevice> devices, WorkflowLoader loader, StepRegistry registry,
+            Path workRoot, Path errorDir, Clock clock, Consumer<Job> onJobDone, JobStore store)
+            throws IOException {
+        this(devices, loader, registry, workRoot, errorDir, clock, onJobDone, store,
                 HotFolderWatcher.STABLE_CHECK, HotFolderWatcher.RESCAN_INTERVAL);
     }
 
     InputDevices(List<InputDevice> devices, WorkflowLoader loader, StepRegistry registry,
             Path workRoot, Path errorDir, Clock clock, Consumer<Job> onJobDone,
+            Duration stableCheck, Duration rescanInterval) throws IOException {
+        this(devices, loader, registry, workRoot, errorDir, clock, onJobDone, new FileJobStore(),
+                stableCheck, rescanInterval);
+    }
+
+    InputDevices(List<InputDevice> devices, WorkflowLoader loader, StepRegistry registry,
+            Path workRoot, Path errorDir, Clock clock, Consumer<Job> onJobDone, JobStore store,
             Duration stableCheck, Duration rescanInterval) throws IOException {
         if (devices.isEmpty()) {
             throw new IllegalArgumentException("There are no input devices to run");
@@ -71,7 +92,7 @@ public final class InputDevices implements AutoCloseable {
             WorkflowEngine engine;
             try {
                 engine = new WorkflowEngine(loader.load(device.workflow()), registry, errorDir,
-                        clock);
+                        clock, store);
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException(where(device) + e.getMessage(), e);
             } catch (IOException e) {

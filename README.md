@@ -208,7 +208,7 @@ ticket with `presort=false` (or `no` / `off`, in any case) skips the presort ste
 | `output/<jobId>/documents.csv` | One row per document with its properties, including `queue`; `file` is the path below `output/<jobId>/`. `position`, `sequence`, `file` and `inputSequence` are reserved (`inputSequence`, the document's position in the input before presort, is the last column): a property with one of those names fails the job |
 | `error/<jobId>/` | Only for failed jobs: the input file and `error.txt` |
 
-`job.json` is rewritten after every step, so it always shows how far a job has got: its id,
+`job.json` is rewritten after every step (unless `PRINTLAB_DB_URL` is set, see below), so it always shows how far a job has got: its id,
 state, phase, current step, error message (if it failed), job properties, document count, and
 each step's phase, start and finish time and outcome (`COMPLETED`, `FAILED`, or `SKIPPED` when the step's
 `when:` was false). It's written to a temp file and then moved into place, so it's
@@ -233,6 +233,36 @@ interrupted, so its input can be dropped in the hot folder again.
 
 Each failed job gets its own folder, so two failed files with the same name never overwrite each
 other. If the input can't be moved, `error.txt` adds a `Note:` line saying where it was left.
+
+### Saving jobs to PostgreSQL
+
+By default each job's state is kept in `job.json`. Set `PRINTLAB_DB_URL` and every job is saved
+to PostgreSQL after each step instead, and the schema is migrated automatically on start-up
+(Flyway, `src/main/resources/db/migration`):
+
+| Setting | Meaning |
+|---|---|
+| `PRINTLAB_DB_URL` | JDBC URL, e.g. `jdbc:postgresql://localhost:5432/pwl`. Unset means `job.json` only |
+| `PRINTLAB_DB_USER` | Database user (empty by default) |
+| `PRINTLAB_DB_PASSWORD` | Database password (empty by default). Keep it out of the repository |
+
+To start a local PostgreSQL for it (Compose arrives in PRD-18):
+
+```powershell
+docker run -d --name pwl-postgres -e POSTGRES_PASSWORD=pwl -e POSTGRES_DB=pwl -p 127.0.0.1:5432:5432 postgres:17-alpine
+```
+
+```powershell
+$env:PRINTLAB_DB_URL = "jdbc:postgresql://localhost:5432/pwl"
+$env:PRINTLAB_DB_USER = "postgres"
+$env:PRINTLAB_DB_PASSWORD = "pwl"
+./mvnw -q exec:java
+```
+
+The repository tests run on H2 (PostgreSQL mode) by default. To run them on a real PostgreSQL
+instead, set `PRINTLAB_TEST_POSTGRES_URL`, `PRINTLAB_TEST_POSTGRES_USER` and
+`PRINTLAB_TEST_POSTGRES_PASSWORD`; each test then gets its own schema, dropped when the test run
+ends.
 
 ### Routing rules
 
@@ -731,13 +761,14 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
   - [x] Object reader, cross-reference table, page tree and `dump-pdf`
   - [x] Cross-reference streams, object streams, incremental updates
   - [x] Content streams and text positions (`dump-content`, `dump-text`, `extractor: builtin`)
-  - [ ] PDF/VT document parts (DPart) indexing
+  - [x] PDF/VT document parts (DPart) indexing
   - [x] Preflight step
 - [x] Routing rules: send documents to an exception queue (e.g. invalid zip), flag large
       documents for a different envelope
 - [x] Barcode step (ZXing) for inserter control
 - [x] Tomcat WAR, `/api/health`, Marionette 4 dashboard shell
-- [ ] Persist jobs and documents (PostgreSQL), REST API (servlets on Tomcat)
+- [x] Persist jobs and documents (PostgreSQL)
+- [ ] REST API (servlets on Tomcat)
 - [x] Job tickets: `SetJobPropsFromTextFile` sets job properties from `<input>.jobprops`
 - [x] Workflow phases (receive, prepare, assemble, print, insert, complete), as in
       ProcessDirector

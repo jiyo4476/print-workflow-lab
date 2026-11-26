@@ -11,9 +11,13 @@ import dev.yjimmy.printlab.pdf.PdfDump;
 import dev.yjimmy.printlab.pdf.PdfFormatException;
 import dev.yjimmy.printlab.pdf.UnsupportedContentException;
 import dev.yjimmy.printlab.pdf.UnsupportedFilterException;
+import dev.yjimmy.printlab.store.Database;
+import dev.yjimmy.printlab.store.JdbcJobStore;
 import dev.yjimmy.printlab.testdata.AfpFramer;
 import dev.yjimmy.printlab.testdata.StatementAfpGenerator;
 import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
+import dev.yjimmy.printlab.workflow.FileJobStore;
+import dev.yjimmy.printlab.workflow.JobStore;
 import dev.yjimmy.printlab.workflow.StepRegistry;
 import dev.yjimmy.printlab.workflow.WorkflowDefinition;
 import java.io.IOException;
@@ -21,6 +25,7 @@ import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -299,11 +304,18 @@ public final class App {
                 args.length > 2 ? args[2] : "*.pdf", Path.of(args[1])));
     }
 
+    /**
+     * Jobs are saved to PostgreSQL when {@code PRINTLAB_DB_URL} is set (with
+     * {@code PRINTLAB_DB_USER} and {@code PRINTLAB_DB_PASSWORD}), and to each job's
+     * {@code job.json} otherwise.
+     */
     private static void run(List<InputDevice> devices) throws Exception {
+        // Millisecond ticks: Windows clocks report 100 ns digits nobody needs to read.
+        Clock clock = Clock.tickMillis(ZoneOffset.UTC);
+        JobStore store = jobStore(clock);
         InputDevices running = new InputDevices(devices, WorkflowDefinition::load,
                 StepRegistry.withBuiltIns(), Path.of("work"), Path.of("error"),
-                // Millisecond ticks: Windows clocks report 100 ns digits nobody needs to read.
-                Clock.tickMillis(ZoneOffset.UTC), job -> { });
+                clock, job -> { }, store);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
                 running.close();
@@ -318,6 +330,19 @@ public final class App {
         }
         // The devices run on their own threads; keep the program alive until it's stopped.
         Thread.currentThread().join();
+    }
+
+    /** The job store the settings choose: the database if {@code PRINTLAB_DB_URL} is set. */
+    static JobStore jobStore(Clock clock) throws SQLException {
+        String url = System.getenv("PRINTLAB_DB_URL");
+        if (url == null || url.isBlank()) {
+            return new FileJobStore();
+        }
+        Database db = Database.open(url,
+                System.getenv().getOrDefault("PRINTLAB_DB_USER", ""),
+                System.getenv().getOrDefault("PRINTLAB_DB_PASSWORD", ""));
+        System.out.println("Saving jobs to " + db.url());
+        return new JdbcJobStore(db, clock);
     }
 
     private static void usage() {

@@ -20,6 +20,9 @@
     <junit.version>4.13.2</junit.version>
     <assertj.version>3.26.3</assertj.version>
     <jacoco.version>0.8.12</jacoco.version>
+    <flyway.version>10.21.0</flyway.version>
+    <postgresql.version>42.7.4</postgresql.version>
+    <h2.version>2.2.224</h2.version>
     <!-- Build fails if line coverage drops below this. Raise it deliberately, never lower it to
          get a PR through. See "Coverage" in docs/PR_PLAN.md. -->
     <coverage.line.minimum>0.75</coverage.line.minimum>
@@ -67,6 +70,31 @@
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-simple</artifactId>
       <version>2.0.16</version>
+    </dependency>
+
+    <!-- Persistence (PRD-13): Flyway runs the schema migrations; PostgreSQL is the database the
+         app runs against. flyway-database-postgresql is needed for Flyway 10+ with PostgreSQL. -->
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+      <version>${flyway.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+      <version>${flyway.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <version>${postgresql.version}</version>
+    </dependency>
+    <!-- Tests run the repositories on H2 in PostgreSQL mode, with a fresh database per test. -->
+    <dependency>
+      <groupId>com.h2database</groupId>
+      <artifactId>h2</artifactId>
+      <version>${h2.version}</version>
+      <scope>test</scope>
     </dependency>
 
     <!-- Provided by Tomcat at runtime. -->

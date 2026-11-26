@@ -22,9 +22,10 @@ import org.slf4j.LoggerFactory;
  * <p>A step with a {@code when:} condition runs only if the condition holds for the job's
  * properties at that point; otherwise it's recorded as {@code SKIPPED}.
  *
- * <p>Every step is timed and recorded on the job, and {@code work/<jobId>/job.json} is rewritten
- * after each one. When a step throws, the job goes to ERROR, later steps don't run, and the input
- * file moves to the {@link ErrorFolder} with an {@code error.txt}.
+ * <p>Every step is timed and recorded on the job, and the job is saved through its
+ * {@link JobStore} after each one (by default, {@code work/<jobId>/job.json}). When a step throws,
+ * the job goes to ERROR, later steps don't run, and the input file moves to the
+ * {@link ErrorFolder} with an {@code error.txt}.
  *
  * <p>An interrupted thread (a shutdown, say) fails the job the same way, saying it was
  * interrupted, and {@link #run} returns with the thread's interrupt flag still set.
@@ -37,20 +38,31 @@ public final class WorkflowEngine {
     private final List<NamedStep> steps = new ArrayList<>();
     private final ErrorFolder errorFolder;
     private final Clock clock;
-    private final JobSummaryWriter summaries = new JobSummaryWriter();
+    private final JobStore store;
 
     /** @param when the step's condition, or {@code null} to always run */
     private record NamedStep(String name, Phase phase, Step step, Condition when) {}
 
     /**
+     * Saves each job's state as {@code work/<jobId>/job.json}.
+     *
      * @param errorDir root of the error folder; each failed job gets {@code <errorDir>/<jobId>/}
      * @param clock source of every step's start and finish time
      */
     public WorkflowEngine(
             WorkflowDefinition definition, StepRegistry registry, Path errorDir, Clock clock) {
+        this(definition, registry, errorDir, clock, new FileJobStore());
+    }
+
+    /**
+     * @param store where each job is saved after every step (see {@link JobStore})
+     */
+    public WorkflowEngine(WorkflowDefinition definition, StepRegistry registry, Path errorDir,
+            Clock clock, JobStore store) {
         this.definition = definition;
         this.errorFolder = new ErrorFolder(errorDir);
         this.clock = clock;
+        this.store = store;
         // Build every step up front so a bad workflow file fails at startup, not mid-job.
         for (WorkflowDefinition.StepDefinition def : definition.steps()) {
             steps.add(new NamedStep(def.name(), def.phase(), registry.create(def), when(def)));
@@ -90,7 +102,7 @@ public final class WorkflowEngine {
                 job.addStepRecord(
                         new StepRecord(s.name(), s.phase(), startedAt, clock.instant(),
                                 StepOutcome.SKIPPED));
-                writeSummary(job);
+                saveJob(job);
                 continue;
             }
             try {
@@ -120,11 +132,11 @@ public final class WorkflowEngine {
             }
             job.addStepRecord(new StepRecord(
                     s.name(), s.phase(), startedAt, clock.instant(), StepOutcome.COMPLETED));
-            writeSummary(job);
+            saveJob(job);
         }
         // A finished job is in the complete phase, whether or not that phase has steps.
         job.moveTo(JobState.COMPLETE, Phase.COMPLETE, null);
-        writeSummary(job);
+        saveJob(job);
         log.info("{} complete: {} documents", job, job.documents().size());
     }
 
@@ -135,7 +147,7 @@ public final class WorkflowEngine {
                 new StepRecord(s.name(), s.phase(), startedAt, failedAt, StepOutcome.FAILED));
         log.error("{} failed in phase '{}', step '{}': {}",
                 job.id(), s.phase().yamlName(), s.name(), message, e);
-        writeSummary(job);
+        saveJob(job);
         try {
             Path dir = errorFolder.receive(job, s.name(), message, failedAt);
             log.info("{} moved to {}", job.id(), dir);
@@ -152,14 +164,14 @@ public final class WorkflowEngine {
     }
 
     /**
-     * The summary is a diagnostic record, not part of the job's output, so failing to write it is
+     * The saved state is a record of the job, not part of its output, so failing to save it is
      * logged rather than failing the job.
      */
-    private void writeSummary(Job job) {
+    private void saveJob(Job job) {
         try {
-            summaries.write(job);
+            store.save(job);
         } catch (IOException e) {
-            log.warn("{} could not write {}: {}", job.id(), JobSummaryWriter.FILE_NAME, e.toString());
+            log.warn("{} could not be saved: {}", job.id(), e.toString());
         }
     }
 }
