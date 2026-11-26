@@ -36,24 +36,16 @@ public class PreflightDefectsTest {
     }
 
     @Test
-    public void noDefectsPassesOnceStandard14IsAllowed() throws Exception {
-        Document d = preflight(Defects.NONE, Map.of("allowStandard14", true));
-        assertThat(d.property("preflight")).isEqualTo("pass");
-    }
-
-    @Test
-    public void helveticaIsNotEmbeddedSoTheStrictDefaultFails() throws Exception {
+    public void noDefectsPassesTheStrictDefault() throws Exception {
+        // The generator embeds Liberation Sans, so no Standard 14 allowance is needed.
         Document d = preflight(Defects.NONE, Map.of());
-        assertThat(d.property("preflight")).isEqualTo("fail");
-        // Both the regular and the bold Helvetica are used on every page, and neither is embedded.
-        assertThat(d.property("preflightIssues"))
-                .contains("page 1: font Helvetica not embedded")
-                .contains("page 1: font Helvetica-Bold not embedded");
+        assertThat(d.property("preflight")).isEqualTo("pass");
+        assertThat(d.property("preflightIssues")).isEmpty();
     }
 
     @Test
     public void a4PagesFailTheLetterCheck() throws Exception {
-        Document d = preflight(new Defects(true, false, false), Map.of("allowStandard14", true));
+        Document d = preflight(new Defects(true, false, false), Map.of());
         assertThat(d.property("preflight")).isEqualTo("fail");
         // PDFBox's A4 box is 595.3 x 841.9 pt, within tolerance of A4 but not of Letter.
         assertThat(d.property("preflightIssues"))
@@ -62,14 +54,13 @@ public class PreflightDefectsTest {
 
     @Test
     public void a4PagesPassWhenA4IsAllowed() throws Exception {
-        Document d = preflight(new Defects(true, false, false),
-                Map.of("allowStandard14", true, "pageSizes", List.of("a4")));
+        Document d = preflight(new Defects(true, false, false), Map.of("pageSizes", List.of("a4")));
         assertThat(d.property("preflight")).isEqualTo("pass");
     }
 
     @Test
     public void encryptedFileFails() throws Exception {
-        Document d = preflight(new Defects(false, true, false), Map.of("allowStandard14", true));
+        Document d = preflight(new Defects(false, true, false), Map.of());
         assertThat(d.property("preflight")).isEqualTo("fail");
         assertThat(d.property("preflightIssues"))
                 .isEqualTo("file is encrypted, so it cannot be printed as supplied");
@@ -77,14 +68,18 @@ public class PreflightDefectsTest {
 
     @Test
     public void textInAFormXObjectIsCheckedThroughTheForm() throws Exception {
-        Document d = preflight(new Defects(false, false, true), Map.of("allowStandard14", false));
+        Document d = preflight(new Defects(false, false, true), Map.of());
         assertThat(d.property("preflight")).isEqualTo("fail");
-        assertThat(d.property("preflightIssues")).contains("page 1: font Helvetica not embedded");
+        // The page itself has no fonts: both are only in the form's resources.
+        assertThat(d.property("preflightIssues"))
+                .contains("page 1: font LiberationSans not embedded")
+                .contains("page 1: font LiberationSans-Bold not embedded");
     }
 
     @Test
-    public void formFontDefectPassesOnlyWhenStandard14IsAllowed() throws Exception {
+    public void formFontDefectFailsEvenWhenStandard14IsAllowed() throws Exception {
+        // Liberation Sans isn't a Standard 14 font, so the allowance doesn't excuse it.
         Document d = preflight(new Defects(false, false, true), Map.of("allowStandard14", true));
-        assertThat(d.property("preflight")).isEqualTo("pass");
+        assertThat(d.property("preflight")).isEqualTo("fail");
     }
 }

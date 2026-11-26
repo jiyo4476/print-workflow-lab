@@ -645,10 +645,7 @@ production print.
 - Results stored as document properties `preflight=pass|fail` and `preflightIssues`; PR 2 rules
   route failures to `exceptions`, or `failJob: true` stops the job.
 - Generator options for failing files (`--page-size a4`, `--encrypt`, `--form-xobject-font`) are
-  in this PR. Deferred to a follow-up: switching the generator to embedded Liberation Sans (SIL
-  OFL, license checked before commit). The switch changes what PR 9's extractor reads, so PR 9's
-  Standard 14 and golden tests would need updating in the same change. Until then the sample
-  workflow uses `allowStandard14: true`.
+  in this PR. The switch to embedded Liberation Sans is its own follow-up (below).
 - Encrypted input: in a workflow that splits first, a file that needs a password never reaches
   preflight. `SplitPdf` fails the job with the same plain words preflight uses ("file is
   encrypted, so it cannot be printed as supplied"), not PDFBox's "the password is incorrect".
@@ -660,9 +657,14 @@ production print.
   open"). It was left as it is.
 
 **Follow-ups**
-- Liberation Sans switch (above). The font files (`LiberationSans-Regular.ttf`,
-  `LiberationSans-Bold.ttf`, OFL 1.1 license text) were downloaded from the official 2.1.5
-  release into `src/test/resources/fonts/`, but are not committed. They go in with the switch.
+- **Liberation Sans switch** (branch `feature/11b-liberation-sans`, stacked on PR 36). The
+  generator embeds Liberation Sans 2.1.5 (SIL OFL 1.1; unmodified release files and license in
+  `src/main/resources/fonts/`) as a per-document subset, a simple TrueType font with
+  `/WinAnsiEncoding` that PR 9's extractor reads. The sample workflow is back to the strict
+  default. PR 9's fixture `two-statements.pdf` and its golden dumps were regenerated and checked
+  by hand: glyph positions and widths are unchanged, only font names and objects differ.
+  `--form-xobject-font` now uses a non-embedded Liberation Sans, so it fails even with
+  `allowStandard14: true`.
 - Group repeated per-page issues: an A4 statement lists the same page-size issue once per page.
   Report it once with a page range (for example `pages 1–3: page size … not allowed (letter)`).
 - Reason for every exception: documents routed to `exceptions` for a bad address show

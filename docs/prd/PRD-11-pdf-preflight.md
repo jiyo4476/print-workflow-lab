@@ -86,10 +86,12 @@ is structured.
   routed by PRD-02 rules (the sample routes them to `exceptions`).
 - **FR-8** Generator options for test files: `--page-size a4`, `--encrypt` (user password, using
   PDFBox `StandardProtectionPolicy`), and `--form-xobject-font` (draws each page's text inside a
-  Form XObject with a non-embedded font, for AC-4). Without these flags the output is unchanged.
-  In this PR the generator still draws non-embedded Helvetica. Switching it to embedded
-  Liberation Sans (SIL Open Font License), so that no Standard 14 or commercial font is drawn,
-  is deferred (see "Deferred from this PR").
+  Form XObject with a non-embedded Liberation Sans, for AC-4). All text the generator draws
+  otherwise uses embedded Liberation Sans 2.1.5 (SIL Open Font License 1.1): a per-document
+  subset, embedded as a simple TrueType font with `/WinAnsiEncoding` so the PRD-09 extractor can
+  read it. The generator never uses Helvetica or any other Standard 14 font, so no commercial font
+  is drawn or embedded, and its files pass the strict font check. (Done in the follow-up to
+  PR 36, branch `feature/11b-liberation-sans`.)
 
 **Non-functional**
 
@@ -112,15 +114,22 @@ is structured.
   page is not assumed to be embedded just because the parent's dictionary lists it.
 - Standard 14 detection uses the `BaseFont` name, not the absence of a descriptor alone. A
   non-embedded font with a non-standard name (for example `Arial`) is always a failure.
-- The sample workflow sets `allowStandard14: true` for now, because the generator still draws
-  Helvetica. Once the generator embeds Liberation Sans (deferred below), the sample moves to the
-  strict default. `allowStandard14: true` stays available for customer files that use Standard 14
-  fonts, and a test covers it.
-- Liberation Sans is metric-compatible with Arial, which matches Helvetica's widths. Text positions
-  from the PRD-09 extractor should therefore not move. The embedded font is a different font
-  program, though, so PRD-09's Standard 14 tests and golden files need checking after the change.
-- Font license: check the license of Liberation Sans (SIL Open Font License at time of writing)
-  before adding it to `src/test/resources`, and include the license text beside it.
+- The sample workflow uses the strict default (`allowStandard14` unset), since the generator
+  embeds Liberation Sans. `allowStandard14: true` stays available for customer files that use
+  Standard 14 fonts, and a test covers it.
+- Liberation Sans is metric-compatible with Arial, which matches Helvetica's widths, so text
+  positions from the PRD-09 extractor did not move: after the switch the golden `dump-text`
+  output (every glyph's x, y and width) and page 1's content stream are byte-for-byte the same.
+  Only the font names and the added font objects changed in the `dump-pdf` and `dump-content`
+  goldens.
+- Font license: Liberation Sans 2.1.5 is under the SIL Open Font License 1.1 (checked in the
+  release's `LICENSE`). The unmodified release files and the license text are in
+  `src/main/resources/fonts/` (main, not test resources, because the `generate` CLI uses them).
+  Subsets are made in memory and only embedded in generated PDFs, so no Modified Version of the
+  font is stored, and the Reserved Font Name is not an issue.
+- Subsets keep only the TrueType tables ISO 32000-1 9.9 requires (with hinting) plus `cmap`,
+  `post`, `name` and `OS/2`. The layout tables (`GPOS`, `GSUB`, `kern`) are about 85 KB per face
+  and a PDF never reads them, so they are dropped: each face is about 8 KB per file.
 - Routing: preflight sets properties only. It does not decide routing itself, so PRD-02 remains the
   single place where failures are routed.
 
@@ -160,11 +169,9 @@ is structured.
 
 ## Risks and open questions
 
-- Switching the generator from Helvetica to embedded Liberation Sans changes the font the PRD-09
-  extractor reads. Its Standard 14 and golden-file tests need updating in the same PR, or in
-  PRD-09's follow-up, and that work should be checked before merging.
-- Liberation Sans license terms must be checked before the font file is committed (deferred
-  with FR-8).
+- Generated files are larger: two subset fonts add about 17 KB to each file, and to each
+  document split from it (a 10-statement run went from 12 KB to 29 KB). The checked-in
+  `two-statements.pdf` fixture went from 5 KB to 22 KB.
 - Form XObject walking adds the most code in this PR. Cycles and deep nesting are covered by the
   visited set and depth cap above, and by their tests.
 - Annotation appearance streams are still unchecked, so a document with a non-embedded font only in
@@ -172,11 +179,11 @@ is structured.
 
 ## Deferred from this PR
 
-- **The Liberation Sans switch.** The generator's failing-file options are in this PR (`generate
-  --page-size a4`, `--encrypt`, `--form-xobject-font`; `PreflightDefectsTest`). The generator still
-  draws Helvetica, though. Switching it to embedded Liberation Sans needs the font downloaded and
-  its license checked, and it moves PR 9's golden files. Until then the sample workflow sets
-  `allowStandard14: true`.
+- **The Liberation Sans switch.** Done in the follow-up branch `feature/11b-liberation-sans`:
+  the generator embeds Liberation Sans, PR 9's fixture and golden dumps were regenerated and
+  checked by hand, and the sample workflow is back to the strict default.
+- Grouping a repeated per-page issue into one line with a page range, and recording a reason for
+  every document routed to `exceptions`, are tracked in `docs/PR_PLAN.md` (PR 11 follow-ups).
 
 ## Definition of done
 
