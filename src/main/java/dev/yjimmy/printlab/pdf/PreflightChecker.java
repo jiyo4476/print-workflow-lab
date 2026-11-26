@@ -45,10 +45,10 @@ public final class PreflightChecker {
             return label;
         }
 
-        /** The size with this name; the names are the ones workflow YAML uses. */
+        /** The size with this name, in any case ({@code A4} or {@code a4}), as workflow YAML gives it. */
         public static PageSize named(String name) {
             for (PageSize size : values()) {
-                if (size.label.equals(name)) {
+                if (size.label.equalsIgnoreCase(name)) {
                     return size;
                 }
             }
@@ -132,9 +132,10 @@ public final class PreflightChecker {
         }
         double width = Math.abs(c[2] - c[0]);
         double height = Math.abs(c[3] - c[1]);
+        // Either orientation: a landscape Letter page (792 x 612) still prints on Letter paper.
         for (PageSize size : settings.pageSizes()) {
-            if (Math.abs(width - size.width) <= settings.tolerance()
-                    && Math.abs(height - size.height) <= settings.tolerance()) {
+            if (fits(width, height, size.width, size.height)
+                    || fits(width, height, size.height, size.width)) {
                 return;
             }
         }
@@ -144,16 +145,23 @@ public final class PreflightChecker {
         issues.add(where + String.format(Locale.ROOT, "page size %.1f x %.1f pt is not allowed (%s)", width, height, allowed));
     }
 
+    private boolean fits(double width, double height, double expectedWidth, double expectedHeight) {
+        return Math.abs(width - expectedWidth) <= settings.tolerance()
+                && Math.abs(height - expectedHeight) <= settings.tolerance();
+    }
+
     private void checkRotation(PdfDocumentReader pdf, PdfPage page, String where, List<String> issues) {
         PdfObject value = page.dictionary().get("Rotate");
         if (value == null || !(pdf.resolve(value) instanceof PdfNumber rotate)) {
             return;
         }
-        int degrees = rotate.intValue();
+        // doubleValue, not intValue: a /Rotate of 90.5 is invalid, and must not be read as 90.
+        double degrees = rotate.doubleValue();
+        String shown = degrees == Math.rint(degrees) ? String.valueOf((long) degrees) : String.valueOf(degrees);
         if (degrees % 90 != 0) {
-            issues.add(where + "/Rotate " + degrees + " is not a multiple of 90");
-        } else if (Math.floorMod(degrees, 360) != 0 && !settings.allowRotate()) {
-            issues.add(where + "page is rotated " + degrees + " degrees");
+            issues.add(where + "/Rotate " + shown + " is not a multiple of 90");
+        } else if (degrees % 360 != 0 && !settings.allowRotate()) {
+            issues.add(where + "page is rotated " + shown + " degrees");
         }
     }
 

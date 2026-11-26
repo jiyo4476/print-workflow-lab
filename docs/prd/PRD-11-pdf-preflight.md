@@ -25,8 +25,9 @@ is structured.
 - **Operator** opens the exceptions queue and sees a document with `preflight=fail` and
   `preflightIssues="page 3: font Arial not embedded"`. They can tell the customer exactly what to
   fix.
-- **Developer** runs the sample workflow and sees one passing and one failing document, with the
-  reasons in `documents.csv`.
+- **Developer** runs the sample workflow on a generated run, where every statement passes, and
+  on one generated with a defect flag (for example `generate 4 a4.pdf --page-size a4`), where
+  every statement fails, with the reasons in `documents.csv`.
 
 ## Goals
 
@@ -70,8 +71,12 @@ is structured.
 - **FR-4** Page size check. Each page's effective MediaBox (width and height, in points) must
   match one of the configured `pageSizes` within `tolerance` points (default 1). The default
   `pageSizes` is `[letter]` (612 × 792 pt). A4 (595 × 842 pt) is available as a named size.
-- **FR-5** Rotation check. A non-zero `/Rotate` on any page fails unless `allowRotate: true`.
-  Only multiples of 90 are valid values; any other value fails.
+  Either orientation matches: a landscape Letter page (792 × 612 pt) passes a Letter check.
+  Size names are case-insensitive (`A4` or `a4`).
+- **FR-5** Rotation check. A `/Rotate` that turns the page (90, 180 or 270 degrees, or any
+  equivalent such as −90) fails unless `allowRotate: true`; 0 and full turns (360, −360) pass.
+  Only multiples of 90 are valid values; any other value, including a fraction such as 90.5,
+  fails.
 - **FR-6** Results. Every checked document gets `preflight=pass` or `preflight=fail`.
   `preflightIssues` lists every issue found, joined by `"; "` (a single CSV cell), each with the
   page number and, where relevant, the font name. After 20 issues the rest are counted ("and N

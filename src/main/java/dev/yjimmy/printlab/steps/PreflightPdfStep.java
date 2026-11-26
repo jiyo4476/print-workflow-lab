@@ -1,6 +1,7 @@
 package dev.yjimmy.printlab.steps;
 
 import dev.yjimmy.printlab.pdf.PdfDocumentReader;
+import dev.yjimmy.printlab.pdf.PdfFormatException;
 import dev.yjimmy.printlab.pdf.PdfVersion;
 import dev.yjimmy.printlab.pdf.PreflightChecker;
 import dev.yjimmy.printlab.pdf.PreflightChecker.PageSize;
@@ -90,12 +91,14 @@ public final class PreflightPdfStep implements Step {
         }
     }
 
-    /** The issue for a file the check failed on; never ends in "null" when there's no message. */
+    /**
+     * The issue for a file the check failed on, in operator's words (PRD-11 NFR-1). The reader's
+     * own message (byte offsets, object numbers) and any internal error go to the log only.
+     */
     static String unreadable(Exception e) {
-        String reason = e.getMessage();
-        return reason == null || reason.isBlank()
-                ? "could not check this file"
-                : "could not check this file: " + reason;
+        return e instanceof PdfFormatException || e instanceof IOException
+                ? "could not check this file: it is not a readable PDF"
+                : "could not check this file";
     }
 
     private static String summary(List<String> issues) {

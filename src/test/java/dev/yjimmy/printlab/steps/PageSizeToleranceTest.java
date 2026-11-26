@@ -46,6 +46,21 @@ public class PageSizeToleranceTest {
     }
 
     @Test
+    public void exactlyOnePointOffLetterPassesWithDefaultTolerance() throws Exception {
+        assertThat(preflightOfLetterWidth("[0 0 613 792]", Map.of())).isEqualTo("pass");
+    }
+
+    @Test
+    public void landscapeLetterPasses() throws Exception {
+        assertThat(preflightOfLetterWidth("[0 0 792 612]", Map.of())).isEqualTo("pass");
+    }
+
+    @Test
+    public void landscapeA4StillFailsALetterOnlyCheck() throws Exception {
+        assertThat(preflightOfLetterWidth("[0 0 842 595]", Map.of())).isEqualTo("fail");
+    }
+
+    @Test
     public void onePointOneOffLetterFailsWithDefaultTolerance() throws Exception {
         assertThat(preflightOfLetterWidth("[0 0 613.1 792]", Map.of())).isEqualTo("fail");
     }

@@ -3,6 +3,7 @@ package dev.yjimmy.printlab.steps;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertThrows;
 
+import dev.yjimmy.printlab.pdf.PdfFormatException;
 import dev.yjimmy.printlab.testsupport.PdfBytes;
 import dev.yjimmy.printlab.testsupport.TestJobs;
 import dev.yjimmy.printlab.workflow.Document;
@@ -314,7 +315,9 @@ public class PreflightPdfStepTest {
         addPdf("not a pdf at all".getBytes(StandardCharsets.US_ASCII));
         run(defaults());
         assertThat(only().property("preflight")).isEqualTo("fail");
-        assertThat(only().property("preflightIssues")).startsWith("could not check this file: ");
+        // Plain words for the operator; the reader's byte offset stays in the log.
+        assertThat(only().property("preflightIssues"))
+                .isEqualTo("could not check this file: it is not a readable PDF");
     }
 
     @Test
@@ -332,11 +335,37 @@ public class PreflightPdfStepTest {
     }
 
     @Test
-    public void internalErrorWithoutAMessageDoesNotSayNull() {
+    public void unreadableFileMessagesNeverShowInternals() {
         assertThat(PreflightPdfStep.unreadable(new NullPointerException()))
                 .isEqualTo("could not check this file");
+        assertThat(PreflightPdfStep.unreadable(new IllegalStateException("PdfDictionary cast failed")))
+                .isEqualTo("could not check this file");
         assertThat(PreflightPdfStep.unreadable(new IOException("truncated file")))
-                .isEqualTo("could not check this file: truncated file");
+                .isEqualTo("could not check this file: it is not a readable PDF");
+        assertThat(PreflightPdfStep.unreadable(new PdfFormatException(1234, "bad xref entry")))
+                .isEqualTo("could not check this file: it is not a readable PDF");
+    }
+
+    @Test
+    public void pageSizeNamesIgnoreCase() throws Exception {
+        addPdf(onePage("1.4", "[0 0 595 842]", "").build("/Root 1 0 R"));
+        run(step(Map.of("pageSizes", List.of("A4"))));
+        assertThat(only().property("preflight")).isEqualTo("pass");
+    }
+
+    @Test
+    public void rotationOfAFullTurnIsNotARotation() throws Exception {
+        addPdf(onePage("1.4", "[0 0 612 792]", "/Rotate 360").build("/Root 1 0 R"));
+        addPdf(onePage("1.4", "[0 0 612 792]", "/Rotate -360").build("/Root 1 0 R"));
+        run(defaults());
+        assertThat(job.documents()).allSatisfy(d -> assertThat(d.property("preflight")).isEqualTo("pass"));
+    }
+
+    @Test
+    public void fractionalRotationIsNotReadAsAMultipleOf90() throws Exception {
+        addPdf(onePage("1.4", "[0 0 612 792]", "/Rotate 90.5").build("/Root 1 0 R"));
+        run(step(Map.of("allowRotate", true)));
+        assertThat(only().property("preflightIssues")).isEqualTo("page 1: /Rotate 90.5 is not a multiple of 90");
     }
 
     @Test

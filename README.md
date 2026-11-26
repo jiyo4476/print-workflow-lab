@@ -476,15 +476,16 @@ failures to `exceptions`.
 | Version | The header version, or the catalog's `/Version`, is at most `maxVersion` | `maxVersion` (`"1.7"`) |
 | Encryption | The trailer has no `/Encrypt`. An encrypted file reports only this, since its objects can't be read without the key. In the sample workflow a file that needs a password fails the job at `SplitPdf` with the same words, because it can't be split | none |
 | Fonts | Every font has `FontFile`, `FontFile2` or `FontFile3`, in page resources and in every Form XObject the page draws, nested to any depth | `allowStandard14` (`false`) |
-| Page size | Each MediaBox is within `tolerance` points per side of an allowed size | `pageSizes` (`[letter]`; `letter` and `a4`), `tolerance` (`1`) |
-| Rotation | `/Rotate` is 0. A value that isn't a multiple of 90 always fails | `allowRotate` (`false`) |
+| Page size | Each MediaBox is within `tolerance` points per side of an allowed size, in either orientation (landscape Letter passes a Letter check) | `pageSizes` (`[letter]`; `letter` and `a4`, any case), `tolerance` (`1`) |
+| Rotation | `/Rotate` doesn't turn the page: 0, or a full turn such as 360. A value that isn't a multiple of 90 always fails | `allowRotate` (`false`) |
 
 - Issues name the page, and the font where that applies: `page 3: font Arial not embedded`. A
   document lists at most 20 issues, then says how many more there are.
 - A Standard 14 font (Helvetica, Times, Courier, Symbol, ZapfDingbats, and their variants) is not
   embedded in the file, and passes only when `allowStandard14: true`. A subset name such as
   `ABCDEF+Arial` is checked as `Arial`.
-- A file that can't be read at all is a `fail` with `could not check this file: ...`. With
+- A file that can't be read at all is a `fail` with `could not check this file: it is not a
+  readable PDF`; the technical reason (byte offset, object number) goes to the log. With
   `failJob: true`, the first failing document fails the job instead, and the message names it.
 - Documents without `format: pdf` (AFP) are left alone.
 - Not checked: fonts in annotation appearance streams, colour, image resolution, transparency, and
