@@ -52,6 +52,24 @@ public class SortDocumentsStepTest {
     }
 
     @Test
+    public void tiesInASecondPresortKeepTheirInputOrder() throws Exception {
+        Path tmp = folder.getRoot().toPath();
+        Job job = TestJobs.newJob(tmp, tmp.resolve("in.pdf"));
+        job.documents().add(new Document(1, tmp.resolve("a.pdf"),
+                Map.of("zip", "90000", "tier", "x"), 1));
+        job.documents().add(new Document(2, tmp.resolve("b.pdf"),
+                Map.of("zip", "10000", "tier", "x"), 2));
+        job.documents().add(new Document(3, tmp.resolve("c.pdf"),
+                Map.of("zip", "50000", "tier", "x"), 3));
+
+        new SortDocumentsStep(Map.of("by", "zip")).execute(job);
+        new SortDocumentsStep(Map.of("by", "tier")).execute(job);
+
+        assertThat(job.documents().stream().map(Document::inputSequence).toList())
+                .containsExactly(1, 2, 3);
+    }
+
+    @Test
     public void documentsWithoutTheSortPropertyGoLast() throws Exception {
         Path tmp = folder.getRoot().toPath();
         Job job = TestJobs.newJob(tmp, tmp.resolve("in.pdf"));

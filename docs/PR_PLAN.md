@@ -700,7 +700,8 @@ expects.
   `${jobId}|${sequence}|${page}|${pageCount}|${accountNumber}`. Runs in the `print` phase, after
   `presort` and before `write-output`.
 - Presort renumbers documents 1..N in mailing order, so `${sequence}` matches the order the
-  inserter sees (this changes `documents.csv`).
+  inserter sees (this changes `documents.csv`). The input position is kept as the last
+  `documents.csv` column, `inputSequence` (PR 41).
 - Code 128 and human-readable text under the barcode are not in this PR.
 - Decisions: [Q-18](OPEN_QUESTIONS.md#q-18--draw-the-barcode-as-an-image-or-as-vector-shapes)
   to [Q-21](OPEN_QUESTIONS.md#q-21--what-units-do-the-barcode-position-and-size-use).
