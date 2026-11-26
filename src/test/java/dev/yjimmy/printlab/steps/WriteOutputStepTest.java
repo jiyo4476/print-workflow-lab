@@ -35,6 +35,32 @@ public class WriteOutputStepTest {
     }
 
     @Test
+    public void inputSequenceIsTheLastColumnAndKeepsTheInputPosition() throws Exception {
+        Path a = tmp.resolve("a.pdf");
+        Path b = tmp.resolve("b.pdf");
+        Files.writeString(a, "a");
+        Files.writeString(b, "b");
+        job.documents().add(new Document(1, b, Map.of("zip", "10001"), 2));
+        job.documents().add(new Document(2, a, Map.of("zip", "80202"), 1));
+
+        write();
+
+        assertEquals("csv", String.join(NL,
+                "position,sequence,file,zip,inputSequence",
+                "1,1,00001.pdf,10001,2",
+                "2,2,00002.pdf,80202,1") + NL, csv());
+    }
+
+    @Test
+    public void inputSequenceIsReserved() throws Exception {
+        addDocument("a", Map.of("inputSequence", "7"));
+
+        IllegalStateException e = assertThrows(IllegalStateException.class, this::write);
+
+        assertThat(e.getMessage()).contains("inputSequence");
+    }
+
+    @Test
     public void copiesDocumentsInOrderAndWritesTheCsv() throws Exception {
         addDocument("a", Map.of("zip", "80202"));
         addDocument("b", Map.of("zip", "10001", "name", "AVERY"));
@@ -45,9 +71,9 @@ public class WriteOutputStepTest {
         assertEquals("first", "a", Files.readString(jobOut.resolve("00001.pdf")));
         assertEquals("second", "b", Files.readString(jobOut.resolve("00002.pdf")));
         assertEquals("csv", String.join(NL,
-                "position,sequence,file,zip,name",
-                "1,1,00001.pdf,80202,",
-                "2,2,00002.pdf,10001,AVERY") + NL, csv());
+                "position,sequence,file,zip,name,inputSequence",
+                "1,1,00001.pdf,80202,,1",
+                "2,2,00002.pdf,10001,AVERY,2") + NL, csv());
         assertEquals("outputDir property", jobOut.toString(), job.properties().get("outputDir"));
     }
 
@@ -82,9 +108,9 @@ public class WriteOutputStepTest {
         write();
 
         assertEquals("csv", String.join(NL,
-                "position,sequence,file,name,note,lf,cr,plain,\"city, state\"",
+                "position,sequence,file,name,note,lf,cr,plain,\"city, state\",inputSequence",
                 "1,1,00001.pdf,\"NGUYEN, AVERY\",\"say \"\"hi\"\"\",\"two\nlines\","
-                        + "\"two\rlines\",ok,DENVER CO") + NL, csv());
+                        + "\"two\rlines\",ok,DENVER CO,1") + NL, csv());
     }
 
     @Test
@@ -137,7 +163,7 @@ public class WriteOutputStepTest {
     public void noDocumentsWritesJustTheHeader() throws Exception {
         write();
 
-        assertEquals("csv", "position,sequence,file" + NL, csv());
+        assertEquals("csv", "position,sequence,file,inputSequence" + NL, csv());
     }
 
     private void addDocument(String content, Map<String, String> properties) throws Exception {

@@ -72,7 +72,7 @@ a feature you can show working end to end: generate, stamp, then scan with a pho
   the box.
 - The symbol has no quiet zone of its own: the clear space around it is the designer's to leave.
 - Presort renumbering (FR-8) changes behavior for every job that presorts, not only jobs with a
-  barcode. The input order of a document is no longer recoverable from `sequence`. Check `documents.csv` tests and any golden output that records `sequence`.
+  barcode. The input order is kept in the `inputSequence` column of `documents.csv` (see the presort PR). Check `documents.csv` tests and any golden output that records `sequence`.
 
 ## Acceptance criteria
 

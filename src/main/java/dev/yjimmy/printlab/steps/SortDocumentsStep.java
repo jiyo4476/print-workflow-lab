@@ -34,7 +34,7 @@ public final class SortDocumentsStep implements Step {
         List<Document> documents = job.documents();
         for (int i = 0; i < documents.size(); i++) {
             Document d = documents.get(i);
-            documents.set(i, new Document(i + 1, d.file(), d.properties()));
+            documents.set(i, new Document(i + 1, d.file(), d.properties(), d.inputSequence()));
         }
     }
 }

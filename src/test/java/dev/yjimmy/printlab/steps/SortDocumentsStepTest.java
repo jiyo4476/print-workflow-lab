@@ -33,6 +33,22 @@ public class SortDocumentsStepTest {
                 .containsExactly(1, 2, 3);
         assertThat(job.documents().stream().map(Document::file).toList())
                 .containsExactly(tmp.resolve("2.pdf"), tmp.resolve("3.pdf"), tmp.resolve("1.pdf"));
+        assertThat(job.documents().stream().map(Document::inputSequence).toList())
+                .containsExactly(2, 3, 1);
+    }
+
+    @Test
+    public void presortTwiceKeepsTheOriginalInputSequence() throws Exception {
+        Path tmp = folder.getRoot().toPath();
+        Job job = TestJobs.newJob(tmp, tmp.resolve("in.pdf"));
+        job.documents().add(new Document(1, tmp.resolve("1.pdf"), Map.of("zip", "90000")));
+        job.documents().add(new Document(2, tmp.resolve("2.pdf"), Map.of("zip", "10000")));
+
+        new SortDocumentsStep(Map.of("by", "zip")).execute(job);
+        new SortDocumentsStep(Map.of("by", "zip")).execute(job);
+
+        assertThat(job.documents().stream().map(Document::inputSequence).toList())
+                .containsExactly(2, 1);
     }
 
     @Test

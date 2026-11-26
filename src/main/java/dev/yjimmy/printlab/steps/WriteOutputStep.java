@@ -30,8 +30,8 @@ import java.util.stream.Stream;
  *
  * <p>Output files keep the extension of the document's own file ({@code 00001.pdf},
  * {@code 00001.afp}). The CSV's first columns, {@code position}, {@code sequence} and
- * {@code file}, are reserved: a document property with one of those names fails the job rather
- * than being silently replaced.
+ * {@code file}, are reserved, and so is {@code inputSequence}, the last column: a document
+ * property with one of those names fails the job rather than being silently replaced.
  *
  * <p>Reserved names and queue names are checked before anything is copied, so a bad document
  * leaves no partial output. If {@code <jobId>/} already exists, it's left over from an earlier
@@ -43,6 +43,16 @@ public final class WriteOutputStep implements Step {
     /** The columns every row starts with; a document property can't use these names. */
     static final List<String> RESERVED_COLUMNS = List.of("position", "sequence", "file");
 
+    /**
+     * The last column: the document's position in the input before presort renumbered it. Always
+     * present (equal to {@code sequence} when nothing was renumbered), so consumers never see a
+     * missing column. Reserved like the others.
+     */
+    static final String INPUT_SEQUENCE = "inputSequence";
+
+    private static final List<String> RESERVED_NAMES =
+            List.of("position", "sequence", "file", INPUT_SEQUENCE);
+
     private final Path outputDir;
 
     public WriteOutputStep(Map<String, Object> rawParams) {
@@ -53,7 +63,7 @@ public final class WriteOutputStep implements Step {
     public void execute(Job job) throws IOException {
         // Checked before anything is copied, so a failed job leaves no partial output.
         for (Document doc : job.documents()) {
-            for (String reserved : RESERVED_COLUMNS) {
+            for (String reserved : RESERVED_NAMES) {
                 if (doc.properties().containsKey(reserved)) {
                     throw new IllegalStateException("Document " + doc.sequence() + " has a '"
                             + reserved + "' property, but documents.csv reserves that column for"
@@ -72,6 +82,7 @@ public final class WriteOutputStep implements Step {
 
         Set<String> columns = new LinkedHashSet<>(RESERVED_COLUMNS);
         job.documents().forEach(d -> columns.addAll(d.properties().keySet()));
+        columns.add(INPUT_SEQUENCE);
 
         List<String> lines = new ArrayList<>();
         lines.add(String.join(",", columns.stream().map(WriteOutputStep::csv).toList()));
@@ -89,6 +100,7 @@ public final class WriteOutputStep implements Step {
                 row.add(csv(switch (col) {
                     case "position" -> String.valueOf(position);
                     case "sequence" -> String.valueOf(doc.sequence());
+                    case INPUT_SEQUENCE -> String.valueOf(doc.inputSequence());
                     case "file" -> fileName;
                     default -> doc.properties().getOrDefault(col, "");
                 }));
