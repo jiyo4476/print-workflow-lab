@@ -34,7 +34,7 @@ public class PageSizeToleranceTest {
         Path file = folder.getRoot().toPath().resolve("doc-" + job.documents().size() + ".pdf");
         Files.write(file, bytes);
         job.documents().clear();
-        job.documents().add(new Document(1, file, Map.of("format", "pdf")));
+        job.documents().add(new Document(1, file, Map.of("format", "pdf"), 1));
         PreflightPdfStep step = PreflightPdfStepTest.step(params);
         step.execute(job);
         return job.documents().get(0).property("preflight");

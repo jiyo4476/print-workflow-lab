@@ -31,7 +31,7 @@ public class RouteDocumentsStepTest {
     private void addDocument(String zip, String pageCount) {
         int sequence = job.documents().size() + 1;
         job.documents().add(new Document(sequence, Path.of("doc-" + sequence + ".pdf"),
-                Map.of("zip", zip, "pageCount", pageCount)));
+                Map.of("zip", zip, "pageCount", pageCount), sequence));
     }
 
     private static Map<String, Object> route(String queue, Map<String, Object> when) {

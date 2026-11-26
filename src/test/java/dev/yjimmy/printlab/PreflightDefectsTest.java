@@ -30,7 +30,7 @@ public class PreflightDefectsTest {
                 new StatementDataGenerator(42).generate(2, 0);
         StatementPdfGenerator.write(statements, file, false, defects);
         Job job = TestJobs.newJob(tmp, tmp.resolve("in.pdf"));
-        job.documents().add(new Document(1, file, Map.of("format", "pdf")));
+        job.documents().add(new Document(1, file, Map.of("format", "pdf"), 1));
         new PreflightPdfStep(params).execute(job);
         return job.documents().get(0);
     }

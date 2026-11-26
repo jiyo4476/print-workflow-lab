@@ -85,7 +85,7 @@ public class SplitOutputTest {
         try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(big.toFile(), "rw")) {
             raf.setLength(60 * MB);
         }
-        job.documents().add(new Document(1, big, new LinkedHashMap<>()));
+        job.documents().add(new Document(1, big, new LinkedHashMap<>(), 1));
 
         SplitOutput.record(job, "SplitPdf");
 
@@ -99,6 +99,6 @@ public class SplitOutputTest {
 
     private void addDocument(Job job, int sequence, int bytes) throws IOException {
         Path file = Files.write(folder.newFile().toPath(), new byte[bytes]);
-        job.documents().add(new Document(sequence, file, new LinkedHashMap<>()));
+        job.documents().add(new Document(sequence, file, new LinkedHashMap<>(), sequence));
     }
 }

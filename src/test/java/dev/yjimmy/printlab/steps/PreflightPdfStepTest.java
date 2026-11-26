@@ -65,7 +65,7 @@ public class PreflightPdfStepTest {
         int sequence = job.documents().size() + 1;
         Path file = folder.getRoot().toPath().resolve("doc-" + sequence + ".pdf");
         Files.write(file, bytes);
-        Document document = new Document(sequence, file, Map.of("format", "pdf"));
+        Document document = new Document(sequence, file, Map.of("format", "pdf"), sequence);
         job.documents().add(document);
         return document;
     }
@@ -391,7 +391,7 @@ public class PreflightPdfStepTest {
     public void afpDocumentsAreLeftAlone() throws Exception {
         Path afp = folder.newFile("doc.afp").toPath();
         Files.write(afp, new byte[] {1, 2, 3});
-        job.documents().add(new Document(1, afp, Map.of("format", "afp")));
+        job.documents().add(new Document(1, afp, Map.of("format", "afp"), 1));
         run(defaults());
         assertThat(job.documents().get(0).property("preflight")).isNull();
     }

@@ -22,11 +22,6 @@ public record Document(int sequence, Path file, Map<String, String> properties,
         properties = new LinkedHashMap<>(properties);
     }
 
-    /** A document whose input position is its current sequence (not yet renumbered). */
-    public Document(int sequence, Path file, Map<String, String> properties) {
-        this(sequence, file, properties, sequence);
-    }
-
     public String property(String name) {
         return properties.get(name);
     }

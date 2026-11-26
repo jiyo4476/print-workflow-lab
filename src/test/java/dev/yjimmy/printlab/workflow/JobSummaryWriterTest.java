@@ -33,7 +33,7 @@ public class JobSummaryWriterTest {
     @Test
     public void writesJobJsonThatRoundTrips() throws Exception {
         job.properties().put("totalPages", "12");
-        job.documents().add(new Document(1, Path.of("doc-00001.pdf"), Map.of("zip", "80301")));
+        job.documents().add(new Document(1, Path.of("doc-00001.pdf"), Map.of("zip", "80301"), 1));
         job.moveTo(JobState.PROCESSING, Phase.PREPARE, "split");
         job.addStepRecord(new StepRecord("split", Phase.PREPARE, T0, T0.plusMillis(1500), StepOutcome.COMPLETED));
 

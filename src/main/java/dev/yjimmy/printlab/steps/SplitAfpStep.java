@@ -344,7 +344,7 @@ public final class SplitAfpStep implements Step {
             props.put("format", "afp");
             IndexErrors.markMissing(props, requiredProperties);
             group.problems.forEach(problem -> IndexErrors.mark(props, problem));
-            job.documents().add(new Document(group.sequence, group.file, props));
+            job.documents().add(new Document(group.sequence, group.file, props, group.sequence));
             totalPages += group.pages;
             group = null;
         }

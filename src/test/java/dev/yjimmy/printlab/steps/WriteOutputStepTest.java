@@ -169,7 +169,7 @@ public class WriteOutputStepTest {
     private void addDocument(String content, Map<String, String> properties) throws Exception {
         int sequence = job.documents().size() + 1;
         Path file = Files.writeString(tmp.resolve("doc-" + sequence + ".pdf"), content);
-        job.documents().add(new Document(sequence, file, new LinkedHashMap<>(properties)));
+        job.documents().add(new Document(sequence, file, new LinkedHashMap<>(properties), sequence));
     }
 
     private void write() throws Exception {
@@ -183,7 +183,7 @@ public class WriteOutputStepTest {
     @Test
     public void outputKeepsEachDocumentsExtension() throws Exception {
         Path afp = Files.writeString(tmp.resolve("doc-1.AFP"), "afp");
-        job.documents().add(new Document(1, afp, new LinkedHashMap<>(Map.of("queue", "mail"))));
+        job.documents().add(new Document(1, afp, new LinkedHashMap<>(Map.of("queue", "mail")), 1));
         addDocument("p", Map.of());
 
         write();

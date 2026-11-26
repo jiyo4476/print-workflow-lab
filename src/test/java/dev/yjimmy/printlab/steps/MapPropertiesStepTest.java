@@ -167,7 +167,7 @@ public class MapPropertiesStepTest {
         Path root = tmp.getRoot().toPath();
         Job job = TestJobs.newJob(root, root.resolve("in.afp"));
         job.documents().add(new Document(1, root.resolve("d.afp"),
-                Map.of("Policy Holder", "Sam", "polNo", "P-1", "x.y-z", "v", "other", "o")));
+                Map.of("Policy Holder", "Sam", "polNo", "P-1", "x.y-z", "v", "other", "o"), 1));
 
         new WorkflowEngine(WorkflowDefinition.load(yaml),
                 StepRegistry.withBuiltIns(), root.resolve("error"), TickingClock.oneSecondTicks())
@@ -191,7 +191,7 @@ public class MapPropertiesStepTest {
         }
         Path root = tmp.getRoot().toPath();
         Job job = TestJobs.newJob(root, root.resolve("in.afp"));
-        job.documents().add(new Document(1, root.resolve("d.afp"), props));
+        job.documents().add(new Document(1, root.resolve("d.afp"), props, 1));
         new MapPropertiesStep(params).execute(job);
         return job.documents().get(0).properties();
     }
