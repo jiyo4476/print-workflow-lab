@@ -68,6 +68,16 @@ public class AddBarcodeStepTest {
     }
 
     @Test
+    public void stampedCopyKeepsTheInputSequenceFromBeforePresort() throws Exception {
+        job.documents().add(new Document(1, pdf("one.pdf", 1, null),
+                Map.of("accountNumber", "1234"), 3));
+
+        stamp(TEMPLATE, X, Y, SIZE);
+
+        assertEquals("input position", 3, job.documents().get(0).inputSequence());
+    }
+
+    @Test
     public void lastPageBarcodeHasPageEqualsPageCount() throws Exception {
         job.documents().add(document(1, "1234", pdf("one.pdf", 3, null)));
 
