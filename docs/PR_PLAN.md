@@ -638,19 +638,46 @@ production print.
 - `PreflightPdf` step with configurable checks:
   - PDF version at or below a maximum
   - not encrypted
-  - every font embedded (`FontFile`/`FontFile2`/`FontFile3` in the font descriptor);
-    `allowStandard14: true|false`
+  - every font embedded (`FontFile`/`FontFile2`/`FontFile3` in the font descriptor), for fonts
+    in page resources and in every Form XObject the page draws (nested, with cycle protection);
+    `allowStandard14: true|false` (default `false`)
   - page size in an allowed list (e.g. Letter ± 1 pt), no unexpected `/Rotate`
 - Results stored as document properties `preflight=pass|fail` and `preflightIssues`; PR 2 rules
   route failures to `exceptions`, or `failJob: true` stops the job.
-- Generator options to produce failing files: A4 pages, encryption, and an embedded font (bundle
-  an openly licensed font such as Liberation Sans) to contrast with non-embedded Helvetica.
+- Generator options for failing files (`--page-size a4`, `--encrypt`, `--form-xobject-font`) are
+  in this PR. Deferred to a follow-up: switching the generator to embedded Liberation Sans (SIL
+  OFL, license checked before commit). The switch changes what PR 9's extractor reads, so PR 9's
+  Standard 14 and golden tests would need updating in the same change. Until then the sample
+  workflow uses `allowStandard14: true`.
+- Encrypted input: in a workflow that splits first, a file that needs a password never reaches
+  preflight. `SplitPdf` fails the job with the same plain words preflight uses ("file is
+  encrypted, so it cannot be printed as supplied"), not PDFBox's "the password is incorrect".
+
+**Decided in this PR**
+- A file with only an owner password (no password needed to open it) splits normally. Its split
+  documents come out unencrypted, so preflight passes them. This is intended (PRD-11 FR-2).
+- `SplitPdfByDPart` keeps its own wording for a password-protected input ("needs a password to
+  open"). It was left as it is.
+
+**Follow-ups**
+- Liberation Sans switch (above). The font files (`LiberationSans-Regular.ttf`,
+  `LiberationSans-Bold.ttf`, OFL 1.1 license text) were downloaded from the official 2.1.5
+  release into `src/test/resources/fonts/`, but are not committed. They go in with the switch.
+- Group repeated per-page issues: an A4 statement lists the same page-size issue once per page.
+  Report it once with a page range (for example `pages 1–3: page size … not allowed (letter)`).
+- Reason for every exception: documents routed to `exceptions` for a bad address show
+  `preflight=pass` and no reason, which confuses operators now that preflight failures share the
+  queue. The routing step should record why each document was routed (for example an
+  `exceptionReason` property in `documents.csv`).
 
 **Tests**
 - Unit — `PreflightPdfStepTest`, one pass and one fail case per check:
   - `encryptedFileFails` (PDFBox `StandardProtectionPolicy`)
   - `a4PageFailsLetterOnlyCheck`
   - `nonEmbeddedFontFails`, `embeddedFontPasses`
+  - `nonEmbeddedFontInFormXObjectFails`, `embeddedFontInFormXObjectPasses`
+  - `fontInNestedFormXObjectIsChecked`, `formXObjectCycleDoesNotLoop`,
+    `formNestingLimitFailsWithPlainMessage`
   - `standard14AllowedWhenConfigured`
   - `versionAboveMaximumFails`
   - `issuesListNamesPageAndFont` (useful messages for operators)

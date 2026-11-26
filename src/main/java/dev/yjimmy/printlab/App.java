@@ -85,6 +85,26 @@ public final class App {
                     rest.remove("--dpart");
                     args = rest.toArray(String[]::new);
                 }
+                // Deliberate defects for preflight tests (PRD-11 FR-8); generate only.
+                StatementPdfGenerator.Defects defects = StatementPdfGenerator.Defects.NONE;
+                if (command.equals("generate")) {
+                    List<String> rest = new ArrayList<>(Arrays.asList(args));
+                    boolean encrypt = rest.remove("--encrypt");
+                    boolean formFont = rest.remove("--form-xobject-font");
+                    boolean a4 = false;
+                    int pageSizeFlag = rest.indexOf("--page-size");
+                    if (pageSizeFlag >= 0) {
+                        String size = pageSizeFlag + 1 < rest.size() ? rest.get(pageSizeFlag + 1) : "";
+                        if (!size.equals("a4") && !size.equals("letter")) {
+                            usage();
+                            return;
+                        }
+                        a4 = size.equals("a4");
+                        rest.subList(pageSizeFlag, pageSizeFlag + 2).clear();
+                    }
+                    defects = new StatementPdfGenerator.Defects(a4, encrypt, formFont);
+                    args = rest.toArray(String[]::new);
+                }
                 StatementAfpGenerator.TleNames names = StatementAfpGenerator.TleNames.PROPERTY_NAMES;
                 int flag = Arrays.asList(args).indexOf("--tle-names");
                 if (flag >= 0) {
@@ -118,7 +138,7 @@ public final class App {
                 int bad = args.length > 3 ? Integer.parseInt(args[3]) : 0;
                 long seed = args.length > 4 ? Long.parseLong(args[4]) : System.currentTimeMillis();
                 if (command.equals("generate")) {
-                    new StatementPdfGenerator(seed).generate(count, bad, dpart, out);
+                    new StatementPdfGenerator(seed).generate(count, bad, dpart, defects, out);
                 } else {
                     new StatementAfpGenerator(seed).generate(count, bad, names, out);
                     if (framing != AfpFraming.STRICT) {
@@ -309,9 +329,13 @@ public final class App {
                   run <workflow.yaml> [glob]   one device: watch ./hotfolder and run the
                                                workflow on files matching glob (default *.pdf)
                   generate <count> <out.pdf> [badAddresses] [seed] [--dpart]
+                               [--page-size a4|letter] [--encrypt] [--form-xobject-font]
                                                write a fake statement print run, optionally
                                                with some bad addresses; --dpart adds a DPart
-                                               tree (/DPartRoot) with one document per statement
+                                               tree (/DPartRoot) with one document per statement;
+                                               the last three write deliberate preflight defects
+                                               (A4 pages, a user password, text in a Form XObject
+                                               with a non-embedded font)
                   generate-afp <count> <out.afp> [badAddresses] [seed] [--tle-names legacy]
                                [--framing padded|rdw|bdw]
                                                the same run as AFP (same seed, same

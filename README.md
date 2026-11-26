@@ -464,6 +464,33 @@ conformant file: it has no output intents or XMP metadata). `dump-pdf` shows the
 - The file is held in memory twice (this project's reader and PDFBox); see "Memory and large
   files" below for how much heap that takes.
 
+### Preflight
+
+A `PreflightPdf` step checks each PDF document for print-readiness before it is routed. It sets two
+document properties: `preflight` (`pass` or `fail`) and `preflightIssues`, the problems joined by
+`; ` (empty on a pass). `workflows/statements-preflight.yaml` runs it after the split and routes
+failures to `exceptions`.
+
+| Check | Passes when | Param (default) |
+|---|---|---|
+| Version | The header version, or the catalog's `/Version`, is at most `maxVersion` | `maxVersion` (`"1.7"`) |
+| Encryption | The trailer has no `/Encrypt`. An encrypted file reports only this, since its objects can't be read without the key. In the sample workflow a file that needs a password fails the job at `SplitPdf` with the same words, because it can't be split | none |
+| Fonts | Every font has `FontFile`, `FontFile2` or `FontFile3`, in page resources and in every Form XObject the page draws, nested to any depth | `allowStandard14` (`false`) |
+| Page size | Each MediaBox is within `tolerance` points per side of an allowed size, in either orientation (landscape Letter passes a Letter check) | `pageSizes` (`[letter]`; `letter` and `a4`, any case), `tolerance` (`1`) |
+| Rotation | `/Rotate` doesn't turn the page: 0, or a full turn such as 360. A value that isn't a multiple of 90 always fails | `allowRotate` (`false`) |
+
+- Issues name the page, and the font where that applies: `page 3: font Arial not embedded`. A
+  document lists at most 20 issues, then says how many more there are.
+- A Standard 14 font (Helvetica, Times, Courier, Symbol, ZapfDingbats, and their variants) is not
+  embedded in the file, and passes only when `allowStandard14: true`. A subset name such as
+  `ABCDEF+Arial` is checked as `Arial`.
+- A file that can't be read at all is a `fail` with `could not check this file: it is not a
+  readable PDF`; the technical reason (byte offset, object number) goes to the log. With
+  `failJob: true`, the first failing document fails the job instead, and the message names it.
+- Documents without `format: pdf` (AFP) are left alone.
+- Not checked: fonts in annotation appearance streams, colour, image resolution, transparency, and
+  PDF/X or PDF/A conformance. The check reads dictionaries only and never decodes a stream.
+
 ### Memory and large files
 
 The PDF splitters (`SplitPdf` and `SplitPdfByDPart`) turn every object of a PDF that they reach
@@ -684,7 +711,7 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
   - [x] Cross-reference streams, object streams, incremental updates
   - [x] Content streams and text positions (`dump-content`, `dump-text`, `extractor: builtin`)
   - [ ] PDF/VT document parts (DPart) indexing
-  - [ ] Preflight step
+  - [x] Preflight step
 - [x] Routing rules: send documents to an exception queue (e.g. invalid zip), flag large
       documents for a different envelope
 - [ ] Barcode step (ZXing) for inserter control

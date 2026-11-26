@@ -1,10 +1,13 @@
 package dev.yjimmy.printlab.testdata;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import dev.yjimmy.printlab.testdata.StatementLayout.TextLine;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSInteger;
@@ -13,9 +16,13 @@ import org.apache.pdfbox.cos.COSObject;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.encryption.AccessPermission;
+import org.apache.pdfbox.pdmodel.encryption.StandardProtectionPolicy;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 
 /**
  * Generates a fake "statement print run": many customer statements concatenated into one PDF,
@@ -30,7 +37,27 @@ import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
  */
 public final class StatementPdfGenerator {
 
-    static final float PAGE_HEIGHT = PDRectangle.LETTER.getHeight();
+    /** Passwords for {@link Defects#encrypt()} files; nothing here needs them to be secret. */
+    static final String OWNER_PASSWORD = "owner";
+    static final String USER_PASSWORD = "user";
+
+    /**
+     * Deliberate print-readiness defects for preflight tests (PRD-11 FR-8). Every flag is off in
+     * {@link #NONE}, which is the default output and unchanged by these options.
+     *
+     * @param a4 pages are A4 instead of Letter (a page size the Letter-only check fails)
+     * @param encrypt the file is protected with a user password, so it fails the encryption check
+     * @param formFont each page's text is drawn inside a Form XObject that uses a non-embedded
+     *     Helvetica, so the font check must look into forms to find it
+     */
+    public record Defects(boolean a4, boolean encrypt, boolean formFont) {
+
+        public static final Defects NONE = new Defects(false, false, false);
+
+        public boolean any() {
+            return a4 || encrypt || formFont;
+        }
+    }
 
     private final StatementDataGenerator data;
 
@@ -53,7 +80,13 @@ public final class StatementPdfGenerator {
     /** As {@link #generate(int, int, Path)}; with {@code dpart}, the file also gets a DPart tree. */
     public void generate(int statements, int badAddresses, boolean dpart, Path out)
             throws IOException {
-        write(data.generate(statements, badAddresses), out, dpart);
+        generate(statements, badAddresses, dpart, Defects.NONE, out);
+    }
+
+    /** As {@link #generate(int, int, boolean, Path)}, with the given deliberate {@code defects}. */
+    public void generate(int statements, int badAddresses, boolean dpart, Defects defects, Path out)
+            throws IOException {
+        write(data.generate(statements, badAddresses), out, dpart, defects);
     }
 
     /** Writes {@code statements} as one PDF. */
@@ -64,7 +97,17 @@ public final class StatementPdfGenerator {
     /** Writes {@code statements} as one PDF, with a DPart tree if {@code dpart}. */
     public static void write(List<Statement> statements, Path out, boolean dpart)
             throws IOException {
-        try (PDDocument doc = document(statements, dpart)) {
+        write(statements, out, dpart, Defects.NONE);
+    }
+
+    /** As {@link #write(List, Path, boolean)}, with the given deliberate {@code defects}. */
+    public static void write(List<Statement> statements, Path out, boolean dpart, Defects defects)
+            throws IOException {
+        try (PDDocument doc = document(statements, dpart, defects)) {
+            if (defects.encrypt()) {
+                doc.protect(new StandardProtectionPolicy(OWNER_PASSWORD, USER_PASSWORD,
+                        new AccessPermission()));
+            }
             doc.save(out.toFile());
         }
     }
@@ -85,8 +128,15 @@ public final class StatementPdfGenerator {
      * its last, with its account number, name and zip as {@code /DPM} entries.
      */
     public static PDDocument document(List<Statement> statements, boolean dpart) throws IOException {
+        return document(statements, dpart, Defects.NONE);
+    }
+
+    /** As {@link #document(List, boolean)}, with the given deliberate {@code defects}. */
+    public static PDDocument document(List<Statement> statements, boolean dpart, Defects defects)
+            throws IOException {
         PDType1Font font = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
         PDType1Font bold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
+        PDRectangle pageSize = defects.a4() ? PDRectangle.A4 : PDRectangle.LETTER;
         PDDocument doc = new PDDocument();
         try {
             List<List<PDPage>> pagesByStatement = new ArrayList<>();
@@ -94,13 +144,18 @@ public final class StatementPdfGenerator {
                 int pages = statement.pageCount();
                 List<PDPage> own = new ArrayList<>();
                 for (int p = 1; p <= pages; p++) {
-                    PDPage page = new PDPage(PDRectangle.LETTER);
+                    PDPage page = new PDPage(pageSize);
                     doc.addPage(page);
                     own.add(page);
+                    List<TextLine> lines = StatementLayout.lines(statement, p);
                     try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
-                        for (TextLine line : StatementLayout.lines(statement, p)) {
-                            text(cs, line.bold() ? bold : font, line.size(), line.x(), line.y(),
-                                    line.text());
+                        if (defects.formFont()) {
+                            drawInForm(doc, cs, pageSize, font, bold, lines);
+                        } else {
+                            for (TextLine line : lines) {
+                                text(cs, line.bold() ? bold : font, line.size(), line.x(), line.y(),
+                                        line.text(), pageSize.getHeight());
+                            }
                         }
                     }
                 }
@@ -114,6 +169,36 @@ public final class StatementPdfGenerator {
             doc.close();
             throw e;
         }
+    }
+
+    /**
+     * Draws the page's text in a Form XObject and places the form on the page: the text is the
+     * same, but a font check has to walk into the form to see the font.
+     */
+    private static void drawInForm(PDDocument doc, PDPageContentStream cs, PDRectangle pageSize,
+            PDType1Font font, PDType1Font bold, List<TextLine> lines) throws IOException {
+        PDFormXObject form = new PDFormXObject(doc);
+        form.setBBox(pageSize);
+        PDResources resources = new PDResources();
+        COSName regular = resources.add(font);
+        COSName emphasis = resources.add(bold);
+        form.setResources(resources);
+        StringBuilder ops = new StringBuilder();
+        for (TextLine line : lines) {
+            ops.append(String.format(Locale.ROOT, "BT /%s %.2f Tf 1 0 0 1 %.2f %.2f Tm (%s) Tj ET%n",
+                    (line.bold() ? emphasis : regular).getName(), (double) line.size(),
+                    (double) line.x(), (double) (pageSize.getHeight() - line.y()),
+                    escape(line.text())));
+        }
+        try (OutputStream out = form.getContentStream().createOutputStream()) {
+            out.write(ops.toString().getBytes(StandardCharsets.ISO_8859_1));
+        }
+        cs.drawForm(form);
+    }
+
+    /** Escapes the characters that end or start a PDF literal string. */
+    static String escape(String value) {
+        return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)");
     }
 
     /**
@@ -173,10 +258,10 @@ public final class StatementPdfGenerator {
 
     /** Draws text with its baseline at {@code yFromTop} points below the top of the page. */
     private static void text(PDPageContentStream cs, PDType1Font font, float size, float x,
-            float yFromTop, String value) throws IOException {
+            float yFromTop, String value, float pageHeight) throws IOException {
         cs.beginText();
         cs.setFont(font, size);
-        cs.newLineAtOffset(x, PAGE_HEIGHT - yFromTop);
+        cs.newLineAtOffset(x, pageHeight - yFromTop);
         cs.showText(value);
         cs.endText();
     }

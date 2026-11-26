@@ -110,6 +110,11 @@ report's line total rounded *down* to two decimals, in its own commit.
   Per-document index problems (`requiredProperties`, repeated TLEs, `MapProperties` rename
   conflicts) are appended to the `indexError` property through `IndexErrors`, never thrown, so
   routing sends them to `exceptions`; structural problems in the file fail the job.
+  `PreflightPdfStep` (PRD-11) checks each PDF document with `pdf/PreflightChecker`: version,
+  encryption, embedded fonts in page resources and nested Form XObjects (depth-capped at 16),
+  page size within tolerance, and rotation. It sets `preflight` (`pass|fail`) and
+  `preflightIssues`, and routing sends failures to `exceptions`. It reads dictionaries only. A
+  file that can't be read is a failed document, not a crashed job, unless `failJob: true`.
   `MapPropertiesStep` renames properties (all at once; every name comes from the YAML).
   `SetJobPropsFromTextFileStep` (first in every sample workflow's receive phase) reads the job
   ticket `<input>.jobprops` (`name=value` lines) from the work folder into job properties

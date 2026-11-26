@@ -1,0 +1,69 @@
+# Statement run with print-readiness checks: the statements workflow, plus a PreflightPdf step
+# after the split. A document that fails preflight goes to the exceptions queue with its issues in
+# documents.csv (preflight, preflightIssues). See PRD-11.
+name: statements-preflight
+description: Split, check print-readiness, index, presort, and write a customer statement run
+
+phases:
+  receive:
+    - name: set-job-props
+      type: SetJobPropsFromTextFile
+
+  prepare:
+    - name: split-and-index
+      type: SplitPdf
+      params:
+        splitOn: accountNumber
+        extractor: pdfbox
+        newDocumentWhen: { property: pageNumber, operator: matches, value: 'Page 1 of \d+' }
+        regions:
+          accountNumber: [395, 28, 130, 18]
+          name:          [70, 108, 260, 16]
+          street:        [70, 122, 260, 16]
+          cityStateZip:  [70, 136, 260, 16]
+          zip:           [495, 138, 70, 14]
+          pageNumber:    [395, 44, 130, 14]
+
+    # Check each statement file before it is routed.
+    - name: preflight
+      type: PreflightPdf
+      params:
+        maxVersion: "1.7"
+        # The statement generator draws in Helvetica, a Standard 14 font that is not embedded.
+        # Allowing Standard 14 here keeps this sample passing. Once the generator embeds its own
+        # font (PRD-11 FR-8), set this to false (the default) so the check is strict.
+        allowStandard14: true
+        pageSizes: [letter]
+        failJob: false
+
+    - name: route
+      type: RouteDocuments
+      params:
+        routes:
+          # Preflight failures can't be printed as supplied: send them to exceptions.
+          - queue: exceptions
+            when: { property: preflight, operator: matches, value: fail }
+          - queue: exceptions
+            when: { any: [ { property: zip, operator: notMatches, value: "\\d{5}" },
+                           { property: name, operator: missing } ] }
+          - queue: large-envelope
+            when: { property: pageCount, operator: greaterThan, value: 6 }
+        default: standard
+
+    - name: presort
+      type: SortDocuments
+      params:
+        by: zip
+      when: { property: presort, operator: notMatches, value: "(?i)false|no|off" }
+
+  assemble: []
+
+  print:
+    - name: write-output
+      type: WriteOutput
+      params:
+        outputDir: output
+
+  insert: []
+
+  complete: []
