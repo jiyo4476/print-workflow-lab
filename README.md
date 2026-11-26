@@ -46,7 +46,8 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 | `SplitAfpStep` | Identifying AFP documents by page groups, with TLEs as document properties |
 | `SplitPdfByDPartStep`, `pdf/DPartTree`, `generate --dpart` | PDF/VT document parts (`/DPartRoot`): the same index as AFP page groups + TLEs, carried inside the PDF |
 | `MapPropertiesStep` | Mapping input index names to document properties |
-| `SortDocumentsStep` | Sorting documents for postal presort |
+| `SortDocumentsStep` | Sorting documents for postal presort; renumbers `sequence` in mailing order |
+| `AddBarcodeStep` | Stamping a Data Matrix barcode on every PDF page, vector-drawn, for inserter control |
 | `RouteDocumentsStep` / `when:` | Connectors with rules |
 | `RunExternalProgramStep` | External steps calling other programs |
 | `documents.csv` | Document properties file |
@@ -693,7 +694,7 @@ src/main/java/dev/yjimmy/printlab/
   workflow/rules/          Condition, Rule, RuleParser: routing rules and `when:`
   steps/                   SetJobPropsFromTextFile, SplitPdf, SplitAfp, MapProperties,
                            RouteDocuments, SortDocuments,
-                           RunExternalProgram, WriteOutput
+                           RunExternalProgram, AddBarcode, WriteOutput
   input/                   input devices: config, one HotFolderWatcher per device, JobIntake
   testdata/                fake statement print runs: shared data and layout, PDF and AFP writers
   afp/                     AFP reader and writer, field names, EBCDIC, TLE decoder and encoder,
@@ -734,7 +735,7 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
   - [x] Preflight step
 - [x] Routing rules: send documents to an exception queue (e.g. invalid zip), flag large
       documents for a different envelope
-- [ ] Barcode step (ZXing) for inserter control
+- [x] Barcode step (ZXing) for inserter control
 - [x] Tomcat WAR, `/api/health`, Marionette 4 dashboard shell
 - [ ] Persist jobs and documents (PostgreSQL), REST API (servlets on Tomcat)
 - [x] Job tickets: `SetJobPropsFromTextFile` sets job properties from `<input>.jobprops`

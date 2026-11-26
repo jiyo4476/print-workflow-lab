@@ -66,6 +66,14 @@ phases:
   # "Printing" here means writing each queue's documents to the output folder, the way a
   # directory (hot-folder) printer would receive them.
   print:
+    # Stamp the inserter barcode on every page, after presort, so ${sequence} is the mailing
+    # position. The symbol sits in the bottom-left margin, clear of the regions above.
+    - name: inserter-barcode
+      type: AddBarcode
+      params:
+        template: '${jobId}|${sequence}|${page}|${pageCount}|${accountNumber}'
+        position: [72, 700]
+        size: [72, 72]
     - name: write-output
       type: WriteOutput
       params:

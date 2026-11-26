@@ -6,7 +6,7 @@
 
 ## Summary
 
-An `AddBarcode` step that stamps a Data Matrix (or Code 128) barcode on every page of each PDF
+An `AddBarcode` step that stamps a Data Matrix barcode on every page of each PDF
 document, encoding job, document and page information for mail-inserting equipment. Optional
 human-readable text goes under it.
 
@@ -26,9 +26,9 @@ a feature you can show working end to end: generate, stamp, then scan with a pho
 
 ## Goals
 
-- ZXing-based `AddBarcode` step for PDF documents, with symbology, position, size and a value
-  template.
-- Optional human-readable text.
+- ZXing-based `AddBarcode` step for PDF documents, with position, size and a value template.
+  Data Matrix only for now; Code 128 is a follow-up.
+- Optional human-readable text: a follow-up, not in this PR.
 
 ## Non-goals
 
@@ -41,7 +41,9 @@ a feature you can show working end to end: generate, stamp, then scan with a pho
 **Functional**
 - **FR-1** Template placeholders: `${jobId}`, `${sequence}`, `${page}`, `${pageCount}`, and any
   document property (`${accountNumber}`).
-- **FR-2** An unknown placeholder fails when the workflow loads.
+- **FR-2** An unknown placeholder fails the job before any output is saved, naming the placeholder
+  and the document. Document property names are only known when a job runs, so this can't be
+  checked when the workflow loads.
 - **FR-3** A value too long for the symbology and size fails the job, naming the document
   sequence.
 - **FR-4** Every page of every document gets a barcode; on the last page, page equals pageCount.
@@ -55,7 +57,8 @@ a feature you can show working end to end: generate, stamp, then scan with a pho
   Presort renumbers documents, so the `sequence` column in `documents.csv` also changes to mailing
   order ([Q-20](../OPEN_QUESTIONS.md#q-20--what-does-sequence-mean)).
 - **FR-9** `position` and `size` are in points, from the top-left of the page, like `SplitPdf`
-  regions ([Q-21](../OPEN_QUESTIONS.md#q-21--what-units-do-the-barcode-position-and-size-use)).
+  regions. `position` is the symbol's top-left corner; `size` is the box it is scaled into, with
+  square modules, so the symbol may be smaller than the box in one direction ([Q-21](../OPEN_QUESTIONS.md#q-21--what-units-do-the-barcode-position-and-size-use)).
 
 **Non-functional**
 - **NFR-1** Barcodes decode reliably from a 300 dpi render.
@@ -65,8 +68,11 @@ a feature you can show working end to end: generate, stamp, then scan with a pho
 - Use ZXing to encode the value into a module matrix, then draw each dark module as a filled
   rectangle in the page content stream. Vector keeps edges sharp at print size, which matters
   for scanner reads ([Q-18](../OPEN_QUESTIONS.md#q-18--draw-the-barcode-as-an-image-or-as-vector-shapes)).
+- Each module must print at least 1 pt square. A smaller module fails the job as too long for
+  the box.
+- The symbol has no quiet zone of its own: the clear space around it is the designer's to leave.
 - Presort renumbering (FR-8) changes behavior for every job that presorts, not only jobs with a
-  barcode. Check `documents.csv` tests and any golden output that records `sequence`.
+  barcode. The input order of a document is no longer recoverable from `sequence`. Check `documents.csv` tests and any golden output that records `sequence`.
 
 ## Acceptance criteria
 
@@ -77,12 +83,12 @@ a feature you can show working end to end: generate, stamp, then scan with a pho
 | AC-3 | No overlap with split regions; text still extractable | `barcodeDoesNotOverlapConfiguredRegions`, `existingPageTextIsStillExtractable` |
 | AC-4 | Content stream draws the modules with `re`/`f` at the configured position and size, in points (PRD-09 is merged) | `barcodeDrawnAsVectorAtConfiguredPosition` |
 | AC-6 | `${sequence}` follows mailing order after presort, and `documents.csv` matches | `sequenceIsMailingOrderAfterPresort` |
-| AC-5 | Preflight still passes after stamping (when PRD-11 is merged) | `preflightStillPassesAfterStamping` |
+| AC-5 | Preflight still passes after stamping | `preflightStillPassesAfterStamping` |
 
 ## Test plan
 
 - Unit — `BarcodeTemplateTest`: `substitutesJobDocumentAndPageValues`,
-  `unknownPlaceholderFailsAtLoad`, `valueTooLongForSymbologyFailsWithDocumentSequence`
+  `unknownPlaceholderNamesTheDocumentAndThePlaceholder`
 - Integration — `AddBarcodeStepTest` (PDFBox `PDFRenderer` + ZXing decode), listed above
 - Integration — `SortDocumentsStepTest`: `sequenceIsMailingOrderAfterPresort` (documents renumbered
   1..N in the order presort leaves them)
