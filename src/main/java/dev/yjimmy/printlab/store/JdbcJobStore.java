@@ -108,6 +108,27 @@ public final class JdbcJobStore implements JobStore {
         return read(c -> documents.findByQueue(c, queue));
     }
 
+    /** The document with this id, or empty if there's none. */
+    public Optional<StoredDocument> findDocument(long id) throws IOException {
+        return read(c -> documents.find(c, id));
+    }
+
+    /** All of a job's documents with their ids, in sequence order. */
+    public List<StoredDocument> findStoredDocuments(String jobId) throws IOException {
+        return read(c -> documents.findStoredByJob(c, jobId));
+    }
+
+    /** One page of the documents {@code filter} matches, newest job first. */
+    public List<StoredDocument> searchDocuments(DocumentSearch filter, int limit, int offset)
+            throws IOException {
+        return read(c -> documents.search(c, filter, limit, offset));
+    }
+
+    /** How many documents {@code filter} matches. */
+    public long countDocuments(DocumentSearch filter) throws IOException {
+        return read(c -> documents.count(c, filter));
+    }
+
     /** Deletes a job and, with it, its steps, properties and documents. */
     public boolean deleteJob(String jobId) throws IOException {
         savedDocuments.remove(jobId);

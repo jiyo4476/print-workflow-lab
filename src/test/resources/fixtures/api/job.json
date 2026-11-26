@@ -1,0 +1,19 @@
+{
+  "id" : "job-1",
+  "state" : "COMPLETE",
+  "phase" : "COMPLETE",
+  "currentStep" : null,
+  "errorMessage" : null,
+  "properties" : {
+    "accountNumber" : "1234567890"
+  },
+  "documentCount" : 2,
+  "steps" : [ {
+    "name" : "split",
+    "phase" : "PREPARE",
+    "startedAt" : "2026-01-01T00:00:01Z",
+    "finishedAt" : "2026-01-01T00:00:02Z",
+    "outcome" : "COMPLETED"
+  } ],
+  "createdAt" : "2026-01-01T00:00:00Z"
+}

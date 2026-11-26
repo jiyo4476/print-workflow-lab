@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * The {@code documents} and {@code document_properties} tables, in plain JDBC with parameterised
@@ -77,23 +78,61 @@ public final class DocumentRepository {
     /** Every document, in any job, whose property {@code name} has exactly {@code value}. */
     public List<StoredDocument> findByPropertyValue(Connection c, String name, String value)
             throws SQLException {
-        return query(c, """
-                SELECT d.id, d.job_id, d.doc_sequence, d.input_sequence, d.file_path
-                FROM documents d JOIN document_properties p ON p.document_id = d.id
-                WHERE p.prop_name = ? AND p.prop_value = ?
-                ORDER BY d.job_id, d.doc_sequence""",
-                ps -> {
+        return query(c, SELECT_DOCUMENT + " FROM documents d JOIN document_properties p"
+                + " ON p.document_id = d.id WHERE p.prop_name = ? AND p.prop_value = ?"
+                + " ORDER BY d.job_id, d.doc_sequence", ps -> {
                     ps.setString(1, name);
                     ps.setString(2, value);
                 });
     }
 
-    /** Every document in {@code queue}, in any job. */
+    /** Every document in {@code queue}, in any job, ordered by job id then sequence. */
     public List<StoredDocument> findByQueue(Connection c, String queue) throws SQLException {
-        return query(c, """
-                SELECT d.id, d.job_id, d.doc_sequence, d.input_sequence, d.file_path
-                FROM documents d WHERE d.queue = ? ORDER BY d.job_id, d.doc_sequence""",
-                ps -> ps.setString(1, queue));
+        return query(c, SELECT_DOCUMENT + " FROM documents d WHERE d.queue = ?"
+                + " ORDER BY d.job_id, d.doc_sequence", ps -> ps.setString(1, queue));
+    }
+
+    /**
+     * One page of the documents that match {@code filter}, newest job first, then by sequence.
+     * A null {@code limit} returns them all.
+     */
+    public List<StoredDocument> search(Connection c, DocumentSearch filter, Integer limit,
+            Integer offset) throws SQLException {
+        String sql = SELECT_DOCUMENT + " " + FROM_JOINED + filter.whereClause()
+                + " ORDER BY j.created_at DESC, j.id DESC, d.doc_sequence"
+                + (limit == null ? "" : " LIMIT ? OFFSET ?");
+        return query(c, sql, ps -> {
+            int i = filter.bind(ps, 1);
+            if (limit != null) {
+                ps.setInt(i++, limit);
+                ps.setInt(i, offset);
+            }
+        });
+    }
+
+    /** How many documents {@code filter} matches. */
+    public long count(Connection c, DocumentSearch filter) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT COUNT(*) " + FROM_JOINED + filter.whereClause())) {
+            filter.bind(ps, 1);
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getLong(1);
+            }
+        }
+    }
+
+    /** The document with this id, or empty if there's none. */
+    public Optional<StoredDocument> find(Connection c, long id) throws SQLException {
+        List<StoredDocument> found = query(c, SELECT_DOCUMENT
+                + " FROM documents d WHERE d.id = ?", ps -> ps.setLong(1, id));
+        return found.stream().findFirst();
+    }
+
+    /** All of a job's documents, with their ids, in sequence order. */
+    public List<StoredDocument> findStoredByJob(Connection c, String jobId) throws SQLException {
+        return query(c, SELECT_DOCUMENT + " FROM documents d WHERE d.job_id = ?"
+                + " ORDER BY d.doc_sequence", ps -> ps.setString(1, jobId));
     }
 
     /** Binds a query's parameters. */
@@ -101,6 +140,11 @@ public final class DocumentRepository {
     private interface Binder {
         void bind(PreparedStatement ps) throws SQLException;
     }
+
+    private static final String SELECT_DOCUMENT =
+            "SELECT d.id, d.job_id, d.doc_sequence, d.input_sequence, d.file_path";
+    private static final String FROM_JOINED =
+            "FROM documents d JOIN jobs j ON j.id = d.job_id";
 
     private static List<StoredDocument> query(Connection c, String sql, Binder binder)
             throws SQLException {
@@ -115,7 +159,8 @@ public final class DocumentRepository {
                             file == null ? null : Path.of(file),
                             properties(c, rs.getLong("id")),
                             rs.getInt("input_sequence"));
-                    found.add(new StoredDocument(rs.getString("job_id"), document));
+                    found.add(new StoredDocument(rs.getLong("id"), rs.getString("job_id"),
+                            document));
                 }
             }
         }

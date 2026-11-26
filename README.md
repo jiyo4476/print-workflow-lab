@@ -700,6 +700,36 @@ Ctrl+C. To deploy to your own Tomcat instead, copy the WAR into its `webapps/` f
   (`/webjars/...`), so there's no JavaScript build step. The app code is plain scripts in
   `src/main/webapp/js/`.
 
+### REST API
+
+The web app serves read-only JSON under `/api/` (PRD-14). Every response has
+`Cache-Control: no-store`. A refused request is `{"error": "...", "status": N}`.
+
+| Request | Returns |
+|---|---|
+| `GET /api/jobs?state=&limit=` | Jobs, newest first. `state` is one of `RECEIVED`, `PROCESSING`, `COMPLETE`, `ERROR`; `limit` defaults to 50 and is capped at 200 |
+| `GET /api/jobs/{id}` | One job: its properties, step history and `createdAt` |
+| `GET /api/jobs/{id}/documents?queue=` | The job's documents in sequence order, optionally in one queue |
+| `GET /api/documents?property=&value=&queue=&limit=&offset=` | Documents across jobs, newest job first. `X-Total-Count` gives the total. Needs `property` with its `value`, or `queue`. `limit` defaults to 50 and is capped at 500 |
+| `GET /api/documents/{id}/file` | The document's PDF or AFP file from the output folder |
+| `GET /api/documents/{id}/structure` | An AFP file's structured fields (type, offset, length), or a PDF's pages with each page's content operators |
+
+Document ids are the database's, as the job and document responses give them. A job with no
+document file in the output folder, a document id that's unknown, and a job id that's unknown
+are all 404. A bad parameter is 400. A corrupt file is 422 with the byte `offset`. Without a
+database the job and document endpoints answer 503, because the file store can't answer queries.
+
+The app reads its folders from `PRINTLAB_HOME` (default: the working directory). Each setting is
+read from an environment variable first and a context parameter of the same name second.
+
+| Setting | Meaning |
+|---|---|
+| `PRINTLAB_HOME` | Base for `hotfolder/`, `work/`, `output/`, `error/` and `config/input-devices.yaml`. Relative paths in the devices file, the workflows, and a `WriteOutput` step's `outputDir` are taken from it |
+| `PRINTLAB_DB_URL`, `PRINTLAB_DB_USER`, `PRINTLAB_DB_PASSWORD` | As in [Saving jobs to PostgreSQL](#saving-jobs-to-postgresql) |
+
+The engine and the hot folders start with the web app and stop when it's undeployed. Without
+`config/input-devices.yaml` under `PRINTLAB_HOME` the app starts with no hot folders.
+
 ### Dashboard tests
 
 The JavaScript tests are Mocha specs running in Node with jsdom, loading the same library
@@ -768,7 +798,7 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
 - [x] Barcode step (ZXing) for inserter control
 - [x] Tomcat WAR, `/api/health`, Marionette 4 dashboard shell
 - [x] Persist jobs and documents (PostgreSQL)
-- [ ] REST API (servlets on Tomcat)
+- [x] REST API (servlets on Tomcat)
 - [x] Job tickets: `SetJobPropsFromTextFile` sets job properties from `<input>.jobprops`
 - [x] Workflow phases (receive, prepare, assemble, print, insert, complete), as in
       ProcessDirector

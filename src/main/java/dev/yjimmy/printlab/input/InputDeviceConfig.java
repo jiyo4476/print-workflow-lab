@@ -22,7 +22,8 @@ import java.util.Map;
  *       glob: "*.pdf"
  *       workflow: workflows/statements.yaml
  * </pre>
- * Relative paths are resolved against the working directory, like the rest of the app's paths.
+ * Relative paths are resolved against the working directory, like the rest of the app's paths,
+ * unless the file is loaded with a base directory (the web app does, from {@code PRINTLAB_HOME}).
  * Everything is checked here, before any device starts: every field is present, names are
  * unique, no two devices share a folder, each glob is valid, and each workflow file exists.
  * Unknown keys fail too, so a typo doesn't silently drop a setting.
@@ -40,19 +41,28 @@ public final class InputDeviceConfig {
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true);
 
     public static List<InputDevice> load(Path file) throws IOException {
+        return load(file, Path.of(""));
+    }
+
+    /**
+     * Loads the devices file, resolving each relative folder and workflow against {@code base}.
+     *
+     * @param base the directory the file's relative paths are relative to
+     */
+    public static List<InputDevice> load(Path file, Path base) throws IOException {
         YamlConfig config = YAML.readValue(file.toFile(), YamlConfig.class);
         if (config == null || config.devices() == null || config.devices().isEmpty()) {
             throw new IllegalArgumentException(file + " lists no input devices under 'devices:'");
         }
         List<InputDevice> devices = new ArrayList<>();
         for (int i = 0; i < config.devices().size(); i++) {
-            devices.add(toDevice(i + 1, config.devices().get(i)));
+            devices.add(toDevice(i + 1, config.devices().get(i), base));
         }
         validate(devices);
         return devices;
     }
 
-    private static InputDevice toDevice(int number, YamlDevice d) {
+    private static InputDevice toDevice(int number, YamlDevice d, Path base) {
         if (d == null) {
             throw new IllegalArgumentException("Input device " + number + " is empty");
         }
@@ -62,8 +72,8 @@ public final class InputDeviceConfig {
         require(label, "folder", d.folder());
         require(label, "glob", d.glob());
         require(label, "workflow", d.workflow());
-        return new InputDevice(d.name().strip(), Path.of(d.folder()), d.glob(),
-                Path.of(d.workflow()));
+        return new InputDevice(d.name().strip(), base.resolve(d.folder()), d.glob(),
+                base.resolve(d.workflow()));
     }
 
     private static void require(String label, String key, String value) {
