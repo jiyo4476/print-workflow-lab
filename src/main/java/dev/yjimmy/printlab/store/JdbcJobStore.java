@@ -10,7 +10,9 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Keeps jobs and their documents in the database (PRD-13). {@link #save} writes a job's row,
@@ -23,6 +25,12 @@ public final class JdbcJobStore implements JobStore {
     private final Clock clock;
     private final JobRepository jobs = new JobRepository();
     private final DocumentRepository documents = new DocumentRepository();
+    /**
+     * The documents each unfinished job last saved. A job's documents rarely change between
+     * steps, so an unchanged list is not written again. Entries are dropped once the job is
+     * complete or failed, so the map only holds the jobs in progress.
+     */
+    private final Map<String, List<Document>> savedDocuments = new ConcurrentHashMap<>();
 
     /** @param clock gives the time a job is first saved, which orders the job lists */
     public JdbcJobStore(Database db, Clock clock) {
@@ -39,8 +47,17 @@ public final class JdbcJobStore implements JobStore {
                 jobs.upsert(c, JobSummary.of(job), clock.instant());
                 jobs.replaceProperties(c, job.id(), job.properties());
                 jobs.replaceSteps(c, job.id(), job.stepRecords());
-                documents.replaceAll(c, job.id(), job.documents());
+                boolean finished = job.state() == JobState.COMPLETE || job.state() == JobState.ERROR;
+                // A finished job's documents are always written in full, as a final record.
+                if (finished || !job.documents().equals(savedDocuments.get(job.id()))) {
+                    documents.replaceAll(c, job.id(), job.documents());
+                }
                 c.commit();
+                if (finished) {
+                    savedDocuments.remove(job.id());
+                } else {
+                    savedDocuments.put(job.id(), List.copyOf(job.documents()));
+                }
             } catch (SQLException | RuntimeException e) {
                 rollback(c, e);
                 throw e;
@@ -93,6 +110,7 @@ public final class JdbcJobStore implements JobStore {
 
     /** Deletes a job and, with it, its steps, properties and documents. */
     public boolean deleteJob(String jobId) throws IOException {
+        savedDocuments.remove(jobId);
         try (Connection c = db.connect()) {
             return jobs.delete(c, jobId);
         } catch (SQLException e) {
