@@ -19,6 +19,10 @@ public record Document(int sequence, Path file, Map<String, String> properties,
         int inputSequence) {
 
     public Document {
+        if (inputSequence < 1) {
+            throw new IllegalArgumentException(
+                    "inputSequence must be 1 or more, not " + inputSequence);
+        }
         properties = new LinkedHashMap<>(properties);
     }
 
