@@ -326,6 +326,6 @@ public final class SplitPdfByDPartStep implements Step {
             }
             doc.save(out.toFile());
         }
-        job.documents().add(new Document(sequence, out, props));
+        job.documents().add(new Document(sequence, out, props, sequence));
     }
 }

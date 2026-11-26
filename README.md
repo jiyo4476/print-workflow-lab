@@ -46,7 +46,7 @@ A billing system writes one big PDF containing hundreds of customer statements. 
 | `SplitAfpStep` | Identifying AFP documents by page groups, with TLEs as document properties |
 | `SplitPdfByDPartStep`, `pdf/DPartTree`, `generate --dpart` | PDF/VT document parts (`/DPartRoot`): the same index as AFP page groups + TLEs, carried inside the PDF |
 | `MapPropertiesStep` | Mapping input index names to document properties |
-| `SortDocumentsStep` | Sorting documents for postal presort; renumbers `sequence` in mailing order |
+| `SortDocumentsStep` | Sorting documents for postal presort; renumbers `sequence` in mailing order and keeps the input position as `inputSequence` |
 | `AddBarcodeStep` | Stamping a Data Matrix barcode on every PDF page, vector-drawn, for inserter control |
 | `RouteDocumentsStep` / `when:` | Connectors with rules |
 | `RunExternalProgramStep` | External steps calling other programs |
@@ -205,7 +205,7 @@ ticket with `presort=false` (or `no` / `off`, in any case) skips the presort ste
 |---|---|
 | `work/<jobId>/` | The input file (and its `.jobprops` ticket) while it's processed, intermediate documents, and `job.json` |
 | `output/<jobId>/<queue>/` | One queue's finished documents (`standard`, `exceptions`, ...) in presort order, from `00001.pdf` (the extension follows the document's format) |
-| `output/<jobId>/documents.csv` | One row per document with its properties, including `queue`; `file` is the path below `output/<jobId>/`. `position`, `sequence` and `file` are reserved: a property with one of those names fails the job |
+| `output/<jobId>/documents.csv` | One row per document with its properties, including `queue`; `file` is the path below `output/<jobId>/`. `position`, `sequence`, `file` and `inputSequence` are reserved (`inputSequence`, the document's position in the input before presort, is the last column): a property with one of those names fails the job |
 | `error/<jobId>/` | Only for failed jobs: the input file and `error.txt` |
 
 `job.json` is rewritten after every step, so it always shows how far a job has got: its id,

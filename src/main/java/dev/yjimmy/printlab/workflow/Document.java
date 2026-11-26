@@ -11,10 +11,18 @@ import java.util.Map;
  *     order after {@code SortDocuments} (which renumbers; see that step)
  * @param file the document's own file once it has been split out
  * @param properties document properties such as accountNumber, name, zip, pageCount
+ * @param inputSequence the position the document had in the input, before any renumbering.
+ *     Equal to {@code sequence} until {@code SortDocuments} renumbers it, and written to
+ *     {@code documents.csv} as {@code inputSequence}
  */
-public record Document(int sequence, Path file, Map<String, String> properties) {
+public record Document(int sequence, Path file, Map<String, String> properties,
+        int inputSequence) {
 
     public Document {
+        if (inputSequence < 1) {
+            throw new IllegalArgumentException(
+                    "inputSequence must be 1 or more, not " + inputSequence);
+        }
         properties = new LinkedHashMap<>(properties);
     }
 

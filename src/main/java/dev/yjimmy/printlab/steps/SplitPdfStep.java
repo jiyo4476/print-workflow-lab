@@ -224,6 +224,6 @@ public final class SplitPdfStep implements Step {
         }
         props.put("pageCount", String.valueOf(pages.size()));
         props.put("format", "pdf");
-        job.documents().add(new Document(sequence, out, props));
+        job.documents().add(new Document(sequence, out, props, sequence));
     }
 }

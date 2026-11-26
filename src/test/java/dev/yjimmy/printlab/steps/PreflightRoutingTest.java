@@ -36,7 +36,7 @@ public class PreflightRoutingTest {
         int sequence = job.documents().size() + 1;
         Path file = folder.newFile("doc-" + sequence + ".pdf").toPath();
         Files.write(file, bytes);
-        job.documents().add(new Document(sequence, file, Map.of("format", "pdf")));
+        job.documents().add(new Document(sequence, file, Map.of("format", "pdf"), sequence));
     }
 
     private RouteDocumentsStep routeFailuresToExceptions() {

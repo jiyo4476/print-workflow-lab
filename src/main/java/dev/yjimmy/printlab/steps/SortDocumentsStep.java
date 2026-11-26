@@ -14,8 +14,9 @@ import java.util.Map;
  * <p>After sorting, documents are renumbered 1..N in the new order, so {@code sequence} is the
  * document's position in mailing order (what {@code ${sequence}} in an {@code AddBarcode}
  * template reads, and the {@code sequence} column of {@code documents.csv}). The number a
- * document had before sorting is lost: a document's input order can't be recovered from the
- * output.
+ * document had before sorting is kept as {@link Document#inputSequence()}, which is written to
+ * {@code documents.csv} as {@code inputSequence}. Ties are broken by that input position, so a
+ * second presort still keeps ties in input order.
  */
 public final class SortDocumentsStep implements Step {
 
@@ -30,11 +31,11 @@ public final class SortDocumentsStep implements Step {
         job.documents().sort(Comparator
                 .comparing((Document d) -> d.property(property),
                         Comparator.nullsLast(Comparator.naturalOrder()))
-                .thenComparingInt(Document::sequence));
+                .thenComparingInt(Document::inputSequence));
         List<Document> documents = job.documents();
         for (int i = 0; i < documents.size(); i++) {
             Document d = documents.get(i);
-            documents.set(i, new Document(i + 1, d.file(), d.properties()));
+            documents.set(i, new Document(i + 1, d.file(), d.properties(), d.inputSequence()));
         }
     }
 }

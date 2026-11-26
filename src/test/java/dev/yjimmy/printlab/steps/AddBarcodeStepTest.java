@@ -68,6 +68,16 @@ public class AddBarcodeStepTest {
     }
 
     @Test
+    public void stampedCopyKeepsTheInputSequenceFromBeforePresort() throws Exception {
+        job.documents().add(new Document(1, pdf("one.pdf", 1, null),
+                Map.of("accountNumber", "1234"), 3));
+
+        stamp(TEMPLATE, X, Y, SIZE);
+
+        assertEquals("input position", 3, job.documents().get(0).inputSequence());
+    }
+
+    @Test
     public void lastPageBarcodeHasPageEqualsPageCount() throws Exception {
         job.documents().add(document(1, "1234", pdf("one.pdf", 3, null)));
 
@@ -180,7 +190,7 @@ public class AddBarcodeStepTest {
         // Preflight checks only documents the splitter marked as PDF (format=pdf). The input is
         // a blank page: a page's own non-embedded font would fail preflight before stamping too.
         job.documents().add(new Document(1, pdf("one.pdf", 2, null),
-                Map.of("accountNumber", "1234", "format", "pdf")));
+                Map.of("accountNumber", "1234", "format", "pdf"), 1));
         assertEquals("before stamping", "pass", preflight());
 
         stamp(TEMPLATE, X, Y, SIZE);
@@ -277,7 +287,7 @@ public class AddBarcodeStepTest {
     }
 
     private static Document document(int sequence, String accountNumber, Path file) {
-        return new Document(sequence, file, Map.of("accountNumber", accountNumber));
+        return new Document(sequence, file, Map.of("accountNumber", accountNumber), sequence);
     }
 
     /** A Letter PDF with {@code pages} pages, the first carrying {@code text} if given. */

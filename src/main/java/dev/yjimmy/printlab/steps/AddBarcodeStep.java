@@ -109,7 +109,7 @@ public final class AddBarcodeStep implements Step {
             }
             pdf.save(out.toFile());
         }
-        return new Document(doc.sequence(), out, doc.properties());
+        return new Document(doc.sequence(), out, doc.properties(), doc.inputSequence());
     }
 
     /** Draws the symbol on {@code page}, top-left at ({@link #x}, {@link #y}). */
