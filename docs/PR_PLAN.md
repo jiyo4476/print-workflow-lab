@@ -657,7 +657,7 @@ production print.
   open"). It was left as it is.
 
 **Follow-ups**
-- **Liberation Sans switch** (branch `feature/11b-liberation-sans`, stacked on PR 36). The
+- **Liberation Sans switch** (branch `feature/11b-liberation-sans`, after PR 36 merged). The
   generator embeds Liberation Sans 2.1.5 (SIL OFL 1.1; unmodified release files and license in
   `src/main/resources/fonts/`) as a per-document subset, a simple TrueType font with
   `/WinAnsiEncoding` that PR 9's extractor reads. The sample workflow is back to the strict
