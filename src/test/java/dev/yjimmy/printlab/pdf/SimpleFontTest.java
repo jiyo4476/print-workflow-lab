@@ -37,7 +37,7 @@ public class SimpleFontTest {
         }
     }
 
-    /** Helvetica (the statements' font) and the other non-symbolic Standard 14 fonts, code by code. */
+    /** The non-symbolic Standard 14 fonts, code by code. */
     @Test
     public void standard14WidthsMatchPdfBox() throws IOException {
         for (Standard14Fonts.FontName name : Standard14Fonts.FontName.values()) {
