@@ -76,10 +76,12 @@ public class StatementWorkflowTest {
         JobSummary summary = JobSummaryWriter.read(job.workDir().resolve(JobSummaryWriter.FILE_NAME));
         assertEquals(JobState.COMPLETE, summary.state());
         assertEquals(25, summary.documentCount());
-        assertEquals(List.of("set-job-props", "split-and-index", "route", "presort", "write-output"),
+        assertEquals(List.of("set-job-props", "split-and-index", "route", "presort",
+                        "inserter-barcode", "write-output"),
                 summary.steps().stream().map(StepRecord::name).toList());
         assertEquals("each step's phase", List.of(Phase.RECEIVE, Phase.PREPARE, Phase.PREPARE,
-                Phase.PREPARE, Phase.PRINT), summary.steps().stream().map(StepRecord::phase).toList());
+                Phase.PREPARE, Phase.PRINT, Phase.PRINT),
+                summary.steps().stream().map(StepRecord::phase).toList());
         assertEquals("finished job's phase", Phase.COMPLETE, summary.phase());
     }
 

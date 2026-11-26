@@ -15,6 +15,7 @@
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <pdfbox.version>3.0.3</pdfbox.version>
+    <zxing.version>3.5.3</zxing.version>
     <jackson.version>2.18.1</jackson.version>
     <junit.version>4.13.2</junit.version>
     <assertj.version>3.26.3</assertj.version>
@@ -39,6 +40,12 @@
       <groupId>org.apache.pdfbox</groupId>
       <artifactId>pdfbox</artifactId>
       <version>${pdfbox.version}</version>
+    </dependency>
+    <!-- Encodes the Data Matrix symbol for AddBarcode (and decodes it in the tests). -->
+    <dependency>
+      <groupId>com.google.zxing</groupId>
+      <artifactId>core</artifactId>
+      <version>${zxing.version}</version>
     </dependency>
     <dependency>
       <groupId>com.fasterxml.jackson.dataformat</groupId>

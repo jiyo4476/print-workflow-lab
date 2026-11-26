@@ -1,5 +1,6 @@
 package dev.yjimmy.printlab.workflow;
 
+import dev.yjimmy.printlab.steps.AddBarcodeStep;
 import dev.yjimmy.printlab.steps.MapPropertiesStep;
 import dev.yjimmy.printlab.steps.PreflightPdfStep;
 import dev.yjimmy.printlab.steps.RouteDocumentsStep;
@@ -30,6 +31,7 @@ public final class StepRegistry {
         registry.register("SortDocuments", SortDocumentsStep::new);
         registry.register("RouteDocuments", RouteDocumentsStep::new);
         registry.register("RunExternalProgram", RunExternalProgramStep::new);
+        registry.register("AddBarcode", AddBarcodeStep::new);
         registry.register("WriteOutput", WriteOutputStep::new);
         return registry;
     }

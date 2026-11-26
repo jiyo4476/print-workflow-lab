@@ -695,21 +695,20 @@ production print.
 **Goal:** stamp an inserter-control barcode on every page, the way mail-finishing equipment
 expects.
 
-- Add ZXing. `AddBarcode` step for PDF documents: Data Matrix (or Code 128) drawn as vector
+- Add ZXing. `AddBarcode` step for PDF documents: Data Matrix drawn as vector
   shapes at a configured position/size in points, encoding a template such as
   `${jobId}|${sequence}|${page}|${pageCount}|${accountNumber}`. Runs in the `print` phase, after
   `presort` and before `write-output`.
 - Presort renumbers documents 1..N in mailing order, so `${sequence}` matches the order the
   inserter sees (this changes `documents.csv`).
-- Optional human-readable text under the barcode.
+- Code 128 and human-readable text under the barcode are not in this PR.
 - Decisions: [Q-18](OPEN_QUESTIONS.md#q-18--draw-the-barcode-as-an-image-or-as-vector-shapes)
   to [Q-21](OPEN_QUESTIONS.md#q-21--what-units-do-the-barcode-position-and-size-use).
 
 **Tests**
 - Unit — `BarcodeTemplateTest`
   - `substitutesJobDocumentAndPageValues`
-  - `unknownPlaceholderFailsAtLoad`
-  - `valueTooLongForSymbologyFailsWithDocumentSequence`
+  - `unknownPlaceholderNamesTheDocumentAndThePlaceholder`
 - Unit — `SortDocumentsStepTest`
   - `sequenceIsMailingOrderAfterPresort`
 - Integration — `AddBarcodeStepTest` (render page with PDFBox `PDFRenderer`, decode with ZXing)
@@ -718,9 +717,11 @@ expects.
   - `everyPageOfEveryDocumentHasABarcode`
   - `barcodeDoesNotOverlapConfiguredRegions` (compare rectangles with the split regions)
   - `existingPageTextIsStillExtractable` (stamping doesn't break `SplitPdf` regions)
-  - `barcodeDrawnAsVectorAtConfiguredPosition` — uses PR 9's content-stream parser to check the
-    `re`/`f` operators at the configured position and size
-  - `preflightStillPassesAfterStamping` (if PR 11 is merged)
+  - `barcodeDrawnAsVectorAtConfiguredPosition` — reads the page's operators with PDFBox's
+    `PDFStreamParser` to check the `re`/`f` operators at the configured position and size
+  - `preflightStillPassesAfterStamping` (runs `PreflightPdf` on the stamped document)
+  - `unknownPlaceholderFailsBeforeAnythingIsSaved`, `valueTooLongForSymbologyFailsWithDocumentSequence`,
+    `valueTooLongForSizeFailsWithDocumentSequence`, `afpDocumentIsRejected`
 - Manual: print or zoom a page and scan the barcode with a phone app.
 
 ---
