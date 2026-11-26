@@ -9,8 +9,13 @@ containers on a `docker:dind` sidecar that Jenkins reaches over TLS at `tcp://do
 1. **Checkout:** clones `main` (or the `BRANCH` parameter).
 2. **Java build and tests:** `./mvnw verify` (compile, unit tests, WAR, JaCoCo gate) in
    `eclipse-temurin:21.0.13_9-jdk-noble`.
-3. **Dashboard tests:** `npm ci --ignore-scripts && npm test` in `node:26.13.1-alpine`.
-4. **Build image, Deploy, Smoke test** (when `DEPLOY` is on): packages the WAR into a Tomcat
+3. **Start PostgreSQL:** starts a throwaway `postgres:17-alpine` on its own network on the dind
+   daemon, with a random password per build, and waits until it accepts connections.
+4. **PostgreSQL repository tests:** runs the persistence tests (PRD-13) against that database
+   in the JDK image, joined to the network. Each test gets its own schema, dropped when the tests
+   finish. The container and network are removed after every build.
+5. **Dashboard tests:** `npm ci --ignore-scripts && npm test` in `node:26.13.1-alpine`.
+6. **Build image, Deploy, Smoke test** (when `DEPLOY` is on): packages the WAR into a Tomcat
    image, runs it on the dind daemon at `HOST_PORT`, and waits for `/api/health` to report
    `UP`. A failed smoke test restarts the previous version.
 

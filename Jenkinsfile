@@ -49,6 +49,11 @@ pipeline {
         // user (1000:1000), which owns the workspace but can't write to the image's home folder.
         MAVEN_USER_HOME = "${WORKSPACE}/.cache/maven"
         npm_config_cache = "${WORKSPACE}/.cache/npm"
+        // PRD-13: a throwaway PostgreSQL on its own network, for the repository tests. The name
+        // is fixed because builds don't run concurrently (disableConcurrentBuilds).
+        PG_CONTAINER = 'pwl-postgres-test'
+        PG_NETWORK = 'pwl-postgres-test'
+        PG_IMAGE = 'postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193'
     }
 
     options {
@@ -78,6 +83,54 @@ pipeline {
             steps {
                 // verify = compile, unit tests, the WAR, the JaCoCo report and its coverage gate.
                 sh './mvnw -B -Dmaven.repo.local="$MAVEN_USER_HOME/repository" verify'
+            }
+        }
+
+        stage('Start PostgreSQL') {
+            steps {
+                // The password is random per build and lives in the workspace, which is cleaned up.
+                sh '''
+                    docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
+                    docker network rm "$PG_NETWORK" >/dev/null 2>&1 || true
+                    docker network create "$PG_NETWORK" >/dev/null
+                    head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \\n' > .pg-password
+                    docker run -d --name "$PG_CONTAINER" --network "$PG_NETWORK"                         -e POSTGRES_PASSWORD="$(cat .pg-password)" -e POSTGRES_DB=pwl                         "$PG_IMAGE" >/dev/null
+                    for attempt in $(seq 1 30); do
+                        # Over TCP inside the container: the server the image starts first, while
+                        # it sets up the database, listens only on its socket, so it doesn't count.
+                        if docker exec "$PG_CONTAINER" pg_isready -h 127.0.0.1 -U postgres -d pwl                                 >/dev/null 2>&1; then
+                            echo "PostgreSQL ready after $attempt attempt(s)"
+                            exit 0
+                        fi
+                        sleep 2
+                    done
+                    echo "PostgreSQL did not become ready"
+                    docker logs --tail 50 "$PG_CONTAINER" || true
+                    exit 1
+                '''
+            }
+        }
+
+        stage('PostgreSQL repository tests') {
+            agent {
+                docker {
+                    image 'eclipse-temurin:21.0.13_9-jdk-noble@sha256:bc12ebd88ffa6dda0092940e179365b05aef8d813b867f9df5a1f168c9a44feb'
+                    // Joins the network the Start PostgreSQL stage created (PG_NETWORK).
+                    args '--network pwl-postgres-test'
+                    reuseNode true
+                }
+            }
+            environment {
+                PRINTLAB_TEST_POSTGRES_URL = 'jdbc:postgresql://pwl-postgres-test:5432/pwl'
+                PRINTLAB_TEST_POSTGRES_USER = 'postgres'
+            }
+            steps {
+                // The same repository tests the H2 build runs, now against real PostgreSQL. Each
+                // test gets its own schema, which the JVM drops when the tests finish.
+                sh '''
+                    export PRINTLAB_TEST_POSTGRES_PASSWORD="$(cat .pg-password)"
+                    ./mvnw -B -Dmaven.repo.local="$MAVEN_USER_HOME/repository"                         -Dtest='MigrationTest,JobRepositoryTest,DocumentRepositoryTest,JdbcJobStoreTest,PersistentWorkflowTest'                         -DfailIfNoTests=false test
+                '''
             }
         }
 
@@ -187,6 +240,10 @@ pipeline {
         always {
             junit testResults: 'target/surefire-reports/*.xml', allowEmptyResults: true
             archiveArtifacts artifacts: 'target/site/jacoco/**', allowEmptyArchive: true
+            sh '''
+                docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
+                docker network rm "$PG_NETWORK" >/dev/null 2>&1 || true
+            '''
         }
         success {
             // The project builds a WAR, not a JAR.

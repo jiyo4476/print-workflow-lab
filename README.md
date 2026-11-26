@@ -761,7 +761,7 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
   - [x] Object reader, cross-reference table, page tree and `dump-pdf`
   - [x] Cross-reference streams, object streams, incremental updates
   - [x] Content streams and text positions (`dump-content`, `dump-text`, `extractor: builtin`)
-  - [ ] PDF/VT document parts (DPart) indexing
+  - [x] PDF/VT document parts (DPart) indexing
   - [x] Preflight step
 - [x] Routing rules: send documents to an exception queue (e.g. invalid zip), flag large
       documents for a different envelope
