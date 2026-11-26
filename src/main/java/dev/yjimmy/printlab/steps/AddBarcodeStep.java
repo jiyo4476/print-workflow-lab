@@ -10,6 +10,7 @@ import com.google.zxing.datamatrix.DataMatrixWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -72,9 +73,15 @@ public final class AddBarcodeStep implements Step {
 
     @Override
     public void execute(Job job) throws IOException {
+        // Stamp everything first, then swap the stamped copies in: if one document fails, the
+        // job's document list is left exactly as it was.
+        List<Document> stamped = new ArrayList<>();
+        for (Document doc : job.documents()) {
+            stamped.add(stamp(job, doc));
+        }
         List<Document> documents = job.documents();
         for (int i = 0; i < documents.size(); i++) {
-            documents.set(i, stamp(job, documents.get(i)));
+            documents.set(i, stamped.get(i));
         }
     }
 
@@ -83,8 +90,11 @@ public final class AddBarcodeStep implements Step {
             throw new IllegalStateException("Document " + doc.sequence() + " is not a PDF; "
                     + "AddBarcode stamps PDF documents only");
         }
-        Path out = job.workDir().resolve("barcode").resolve(doc.file().getFileName());
-        Files.createDirectories(out.getParent());
+        // A new file each time, so a second AddBarcode in the same job reads the first stamped
+        // copy and writes its own, never over the file it is reading.
+        Path dir = job.workDir().resolve("barcode");
+        Files.createDirectories(dir);
+        Path out = Files.createTempFile(dir, String.format("%05d-", doc.sequence()), ".pdf");
         try (PDDocument pdf = Loader.loadPDF(doc.file().toFile())) {
             int pageCount = pdf.getNumberOfPages();
             for (int page = 1; page <= pageCount; page++) {

@@ -19,6 +19,14 @@ final class BarcodeTemplate {
         if (template.isEmpty()) {
             throw new IllegalArgumentException("Step param 'template' must not be empty");
         }
+        // Every "${" must start a well-formed placeholder. Otherwise a typo such as ${account-number}
+        // would be encoded literally, and the barcode would carry the placeholder's text.
+        long opened = template.split("\\$\\{", -1).length - 1;
+        long wellFormed = PLACEHOLDER.matcher(template).results().count();
+        if (opened != wellFormed) {
+            throw new IllegalArgumentException("Step param 'template' has a malformed placeholder;"
+                    + " placeholders are ${name} with letters, digits and underscores only");
+        }
         this.template = template;
     }
 

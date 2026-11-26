@@ -39,6 +39,17 @@ public class BarcodeTemplateTest {
     }
 
     @Test
+    public void malformedPlaceholdersFailAtLoad() {
+        for (String bad : new String[] {"${account-number}", "${ accountNumber }",
+                "${account.number}", "${unclosed", "${}"}) {
+            IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                    () -> new BarcodeTemplate(bad));
+
+            assertThat(e.getMessage()).contains("malformed placeholder");
+        }
+    }
+
+    @Test
     public void emptyTemplateIsRejected() {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> new BarcodeTemplate(""));

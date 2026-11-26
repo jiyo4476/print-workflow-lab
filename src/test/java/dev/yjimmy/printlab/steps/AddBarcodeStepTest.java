@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.contentstream.operator.Operator;
 import org.apache.pdfbox.cos.COSNumber;
 import org.apache.pdfbox.pdfparser.PDFStreamParser;
@@ -63,7 +64,7 @@ public class AddBarcodeStepTest {
 
         stamp(TEMPLATE, X, Y, SIZE);
 
-        assertEquals("test0001|1|1|2|1234", decodeFirstPage(job.documents().get(0).file(), 0));
+        assertEquals("test0001|1|1|2|1234", decode(job.documents().get(0).file(), 0));
     }
 
     @Test
@@ -94,31 +95,10 @@ public class AddBarcodeStepTest {
 
         stamp(TEMPLATE, X, Y, SIZE);
 
-        List<double[]> rects = new ArrayList<>();
-        boolean usesImage = false;
-        try (PDDocument pdf = org.apache.pdfbox.Loader.loadPDF(
-                job.documents().get(0).file().toFile())) {
-            PDFStreamParser parser = new PDFStreamParser(pdf.getPage(0));
-            List<Object> tokens = parser.parse();
-            List<Object> operands = new ArrayList<>();
-            for (Object token : tokens) {
-                if (token instanceof Operator op) {
-                    if (op.getName().equals("re")) {
-                        double[] rect = new double[4];
-                        for (int i = 0; i < 4; i++) {
-                            rect[i] = ((COSNumber) operands.get(i)).floatValue();
-                        }
-                        rects.add(rect);
-                    }
-                    usesImage |= op.getName().equals("Do");
-                    operands.clear();
-                } else {
-                    operands.add(token);
-                }
-            }
-        }
+        Drawn drawn = drawn(job.documents().get(0).file());
+        List<double[]> rects = drawn.rects();
 
-        assertTrue("the barcode is vector shapes, not an image XObject", !usesImage);
+        assertTrue("the barcode is vector shapes, not an image XObject", !drawn.usesImage());
         assertThat(rects).isNotEmpty();
         // Page is 792 pt tall; the box's top edge is 700 pt below the top, so PDF y = 92.
         double left = rects.stream().mapToDouble(r -> r[0]).min().orElseThrow();
@@ -129,6 +109,36 @@ public class AddBarcodeStepTest {
             assertTrue("rectangle inside the box", r[0] >= X - 0.01 && r[0] + r[2] <= X + SIZE + 0.01);
             assertTrue("rectangle inside the box", r[1] >= 792 - Y - SIZE - 0.01 && r[1] + r[3] <= top + 0.01);
         }
+    }
+
+    @Test
+    public void positionIsMeasuredFromTheCropBoxCorner() throws Exception {
+        Path file = pdf("cropped.pdf", 1, null);
+        try (PDDocument doc = Loader.loadPDF(file.toFile())) {
+            // Lower-left at (50, 40): the crop box's top-left corner is (50, 752).
+            // PDRectangle takes x, y, width, height: this box spans x 50..612 and y 40..752.
+            doc.getPage(0).setCropBox(new PDRectangle(50, 40, 562, 712));
+            doc.save(file.toFile());
+        }
+        job.documents().add(document(1, "1234", file));
+
+        stamp(TEMPLATE, X, 600, SIZE);
+
+        List<double[]> rects = drawn(job.documents().get(0).file()).rects();
+        double left = rects.stream().mapToDouble(r -> r[0]).min().orElseThrow();
+        double top = rects.stream().mapToDouble(r -> r[1] + r[3]).max().orElseThrow();
+        assertEquals("left edge: crop box x + position x", 50 + X, left, 0.01);
+        assertEquals("top edge: crop box top - position y", 752 - 600, top, 0.01);
+    }
+
+    @Test
+    public void secondAddBarcodeInTheJobKeepsTheFirstBarcode() throws Exception {
+        job.documents().add(document(1, "1234", pdf("one.pdf", 1, null)));
+
+        stamp(TEMPLATE, X, Y, SIZE);
+        stamp(TEMPLATE, 300, 100, SIZE);
+
+        assertEquals("test0001|1|1|1|1234", decode(job.documents().get(0).file(), 0));
     }
 
     @Test
@@ -292,8 +302,33 @@ public class AddBarcodeStepTest {
         return file;
     }
 
-    private static String decodeFirstPage(Path file, int pageIndex) throws Exception {
-        return decode(file, pageIndex);
+    /** What a document's first page draws: each {@code re} rectangle, and whether an image is drawn. */
+    private record Drawn(List<double[]> rects, boolean usesImage) {
+    }
+
+    private static Drawn drawn(Path file) throws IOException {
+        List<double[]> rects = new ArrayList<>();
+        boolean usesImage = false;
+        try (PDDocument pdf = Loader.loadPDF(file.toFile())) {
+            List<Object> tokens = new PDFStreamParser(pdf.getPage(0)).parse();
+            List<Object> operands = new ArrayList<>();
+            for (Object token : tokens) {
+                if (token instanceof Operator op) {
+                    if (op.getName().equals("re")) {
+                        double[] rect = new double[4];
+                        for (int i = 0; i < 4; i++) {
+                            rect[i] = ((COSNumber) operands.get(i)).floatValue();
+                        }
+                        rects.add(rect);
+                    }
+                    usesImage |= op.getName().equals("Do");
+                    operands.clear();
+                } else {
+                    operands.add(token);
+                }
+            }
+        }
+        return new Drawn(rects, usesImage);
     }
 
     /**

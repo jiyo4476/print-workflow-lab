@@ -36,6 +36,19 @@ public class SortDocumentsStepTest {
     }
 
     @Test
+    public void documentsWithoutTheSortPropertyGoLast() throws Exception {
+        Path tmp = folder.getRoot().toPath();
+        Job job = TestJobs.newJob(tmp, tmp.resolve("in.pdf"));
+        job.documents().add(new Document(1, tmp.resolve("a.pdf"), Map.of()));
+        job.documents().add(new Document(2, tmp.resolve("b.pdf"), Map.of("zip", "10000")));
+
+        new SortDocumentsStep(Map.of("by", "zip")).execute(job);
+
+        assertThat(job.documents().stream().map(d -> d.file().getFileName().toString()).toList())
+                .containsExactly("b.pdf", "a.pdf");
+    }
+
+    @Test
     public void tiesKeepInputOrderAndGetTheirNewNumbers() throws Exception {
         Path tmp = folder.getRoot().toPath();
         Job job = TestJobs.newJob(tmp, tmp.resolve("in.pdf"));

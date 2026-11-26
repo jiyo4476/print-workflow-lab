@@ -6,7 +6,7 @@
 
 ## Summary
 
-An `AddBarcode` step that stamps a Data Matrix (or Code 128) barcode on every page of each PDF
+An `AddBarcode` step that stamps a Data Matrix barcode on every page of each PDF
 document, encoding job, document and page information for mail-inserting equipment. Optional
 human-readable text goes under it.
 
@@ -83,7 +83,7 @@ a feature you can show working end to end: generate, stamp, then scan with a pho
 | AC-3 | No overlap with split regions; text still extractable | `barcodeDoesNotOverlapConfiguredRegions`, `existingPageTextIsStillExtractable` |
 | AC-4 | Content stream draws the modules with `re`/`f` at the configured position and size, in points (PRD-09 is merged) | `barcodeDrawnAsVectorAtConfiguredPosition` |
 | AC-6 | `${sequence}` follows mailing order after presort, and `documents.csv` matches | `sequenceIsMailingOrderAfterPresort` |
-| AC-5 | Preflight still passes after stamping (when PRD-11 is merged) | `preflightStillPassesAfterStamping` |
+| AC-5 | Preflight still passes after stamping | `preflightStillPassesAfterStamping` |
 
 ## Test plan
 
