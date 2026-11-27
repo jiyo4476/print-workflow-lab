@@ -91,8 +91,9 @@ run is the headline of the demo.
   - `afp/PageBuilder`: the `MCF`, `PGD`, `PTD` and PTOCA text encoders, moved out of
     `StatementAfpGenerator` (where they're private today) so the generator and the reprint mark
     share them. PRD-21's overlay reuses them too.
-  - `afp/AfpRewriter`: reads structured fields with `AfpReader`, lets a transformer insert
-    fields before or after any field, and writes with `AfpWriter`. PRD-21 reuses it.
+  - `afp/AfpReprintMark`: reads structured fields with `AfpReader`, buffers each page, and writes
+    with `AfpWriter`, inserting the `Reprint` TLE and the per-page text object. It was built as a
+    single-purpose rewriter, not a general one; PRD-21 will need a generic version of it.
   - A `PGD` decoder, to read each page's units and size.
 - **Why a text object per page now, and an overlay later:** a separate text object is the
   smallest change that gives a visible mark, and it builds the rewriter and PTOCA helpers that
