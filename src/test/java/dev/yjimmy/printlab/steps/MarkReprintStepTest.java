@@ -115,15 +115,80 @@ public class MarkReprintStepTest {
     }
 
     @Test
-    public void afpDocumentFailsTheJobRatherThanGoingOutUnmarked() throws Exception {
-        Path afp = Files.writeString(tmp.resolve("a.afp"), "afp");
+    public void afpDocumentIsMarkedWithTheReprintTleAndAPagePerMark() throws Exception {
+        Path afp = afpFile(tmp.resolve("a.afp"));
+        byte[] original = Files.readAllBytes(afp);
         job.documents().add(new Document(1, afp, Map.of(), 1));
+        job.properties().put("parentJobId", "job-parent");
+
+        new MarkReprintStep(Map.of()).execute(job);
+
+        Path marked = job.documents().get(0).file();
+        assertThat(marked).isNotEqualTo(afp);
+        assertThat(Files.readAllBytes(afp)).as("the original is not written over")
+                .isEqualTo(original);
+        assertThat(job.documents().get(0).property("reprintMarked")).isEqualTo("yes");
+        assertThat(marked.getFileName().toString()).endsWith(".afp");
+        long reprintTles = reprintTles(Files.readAllBytes(marked));
+        assertThat(reprintTles).isEqualTo(1);
+    }
+
+    @Test
+    public void markingAfpAgainDoesNotMarkItTwice() throws Exception {
+        job.documents().add(new Document(1, afpFile(tmp.resolve("a.afp")), Map.of(), 1));
+        job.properties().put("parentJobId", "job-parent");
+        MarkReprintStep step = new MarkReprintStep(Map.of());
+        step.execute(job);
+        Path once = job.documents().get(0).file();
+
+        step.execute(job);
+
+        assertThat(job.documents().get(0).file()).isEqualTo(once);
+    }
+
+    @Test
+    public void afpReprintWithoutAParentJobFails() throws Exception {
+        job.documents().add(new Document(1, afpFile(tmp.resolve("a.afp")), Map.of(), 1));
 
         IllegalStateException e = assertThrows(IllegalStateException.class,
                 () -> new MarkReprintStep(Map.of()).execute(job));
 
-        assertThat(e.getMessage()).contains("AFP");
-        assertThat(job.documents().get(0).file()).isEqualTo(afp);
+        assertThat(e.getMessage()).contains("parent");
+    }
+
+    @Test
+    public void documentThatIsNeitherPdfNorAfpIsRefused() throws Exception {
+        job.documents().add(new Document(1, Files.writeString(tmp.resolve("a.txt"), "x"),
+                Map.of(), 1));
+
+        assertThrows(IllegalStateException.class,
+                () -> new MarkReprintStep(Map.of()).execute(job));
+    }
+
+    /** How many Reprint TLEs the AFP bytes hold. */
+    private static long reprintTles(byte[] afp) throws java.io.IOException {
+        long count = 0;
+        try (dev.yjimmy.printlab.afp.AfpReader reader = new dev.yjimmy.printlab.afp.AfpReader(
+                new java.io.ByteArrayInputStream(afp))) {
+            while (reader.hasNext()) {
+                var field = reader.next();
+                if (field.type() == dev.yjimmy.printlab.afp.FieldType.TLE
+                        && dev.yjimmy.printlab.afp.TleDecoder.decode(field).name()
+                                .equals("Reprint")) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    /** A one-statement AFP document, as the generator writes it. */
+    private static Path afpFile(Path file) throws IOException {
+        try (java.io.OutputStream out = Files.newOutputStream(file)) {
+            dev.yjimmy.printlab.testdata.StatementAfpGenerator.write(
+                    new dev.yjimmy.printlab.testdata.StatementDataGenerator(5).generate(1, 0), out);
+        }
+        return file;
     }
 
     @Test
