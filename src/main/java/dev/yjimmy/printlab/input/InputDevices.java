@@ -222,16 +222,34 @@ public final class InputDevices implements AutoCloseable {
     public void retry(Job job, String deviceName, String step, Runnable done) {
         WorkflowEngine engine = engineFor(deviceName);
         engine.checkCanResume(step);
+        queue(engine, job, step, done, "the retry");
+    }
+
+    /**
+     * Queues a job that was built outside the hot folders (a reprint, PRD-15) to run through
+     * {@code engine} on the shared job queue, so it runs one at a time with the other jobs.
+     * {@code done} runs on the job thread once the job has finished.
+     *
+     * @throws IllegalStateException if the app is stopping
+     */
+    public void submit(Job job, WorkflowEngine engine, Runnable done) {
+        queue(engine, job, null, done, "the job");
+    }
+
+    /** Queues a job, or resumes it from {@code resumeFrom} when that is set. */
+    private void queue(WorkflowEngine engine, Job job, String resumeFrom, Runnable done,
+            String what) {
         try {
             jobs.execute(() -> {
                 try {
-                    process(engine, job, step);
+                    process(engine, job, resumeFrom);
                 } finally {
                     done.run();
                 }
             });
         } catch (RejectedExecutionException stopping) {
-            throw new IllegalStateException("the app is stopping and can't start the retry", stopping);
+            throw new IllegalStateException("the app is stopping and can't start " + what,
+                    stopping);
         }
     }
 

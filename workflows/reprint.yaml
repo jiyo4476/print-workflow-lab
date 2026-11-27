@@ -1,0 +1,15 @@
+# Reprint: a child job made from documents already split and indexed by an earlier run (PRD-15).
+# The documents arrive with the job, so there is no split, no route and no presort: each document
+# keeps the queue it had in the run it came from, and is written to the output folder again.
+name: reprint
+description: Write selected documents from an earlier run to the output folder again
+
+phases:
+  receive: []
+  prepare: []
+  assemble: []
+  print:
+    - name: write-output
+      type: WriteOutput
+      params:
+        outputDir: output

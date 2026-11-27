@@ -4,13 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.yjimmy.printlab.store.Database;
+import dev.yjimmy.printlab.store.JdbcJobStore;
 import dev.yjimmy.printlab.testsupport.TestDatabases;
+import dev.yjimmy.printlab.workflow.Document;
 import dev.yjimmy.printlab.workflow.Job;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
+import java.time.Clock;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -110,7 +113,7 @@ public class WorkflowContextListenerTest {
         // The operator fixes the ticket in the error folder, then asks for a retry.
         Files.writeString(home.resolve("error").resolve(id).resolve("statement.txt.jobprops"),
                 "statementNumber=7\n");
-        var accepted = post("/api/jobs/" + id + "/retry");
+        var accepted = post("/api/jobs/" + id + "/retry", "");
         assertThat(accepted.statusCode()).isEqualTo(202);
         assertThat(accepted.body()).contains("\"step\":\"set-job-props\"");
 
@@ -121,6 +124,75 @@ public class WorkflowContextListenerTest {
         assertThat(job.get("properties").get("statementNumber").asText()).isEqualTo("7");
         assertThat(job.get("steps").toString()).contains("RETRIED");
         assertThat(Files.exists(home.resolve("error").resolve(id))).isFalse();
+    }
+
+    @Test
+    public void reprintRunsThroughTheReprintWorkflowOnTheDeviceThread() throws Exception {
+        Path home = folder.newFolder("home").toPath();
+        writeDevices(home, "*.txt");
+        Files.writeString(home.resolve("workflows").resolve("reprint.yaml"), """
+                name: reprint
+                description: Write documents again
+                phases:
+                  print:
+                    - name: write-output
+                      type: WriteOutput
+                """);
+        Database db = TestDatabases.fresh();
+        JdbcJobStore store = new JdbcJobStore(db, Clock.systemUTC());
+        // An earlier run: one statement in the statements queue, with its output file.
+        Path written = home.resolve("output").resolve("parent1").resolve("statements");
+        Files.createDirectories(written);
+        Files.writeString(written.resolve("00001.pdf"), "statement");
+        Job parent = new Job("parent1", home.resolve("in.pdf"),
+                Files.createDirectories(home.resolve("work").resolve("parent1")));
+        parent.documents().add(new Document(1, written.resolve("00001.pdf"),
+                Map.of("format", "pdf", "queue", "statements"), 1));
+        store.save(parent);
+        long documentId = store.findStoredDocuments("parent1").get(0).id();
+
+        BlockingQueue<Job> done = new LinkedBlockingQueue<>();
+        WorkflowContextListener listener = new WorkflowContextListener(Map.of(
+                "PRINTLAB_HOME", home.toString(),
+                "PRINTLAB_DB_URL", db.url(),
+                "PRINTLAB_DB_USER", "sa")::get, done::add);
+        server = new TomcatTestServer(folder.getRoot().toPath())
+                .listener(listener)
+                .servlet("jobs", new JobsServlet(), "/api/jobs/*")
+                .servlet("documents", new DocumentsServlet(), "/api/documents/*")
+                .start();
+
+        var accepted = post("/api/documents/reprint", "{\"documentIds\": [" + documentId + "]}");
+
+        assertThat(accepted.statusCode()).isEqualTo(201);
+        String child = ApiJson.MAPPER.readTree(accepted.body()).get("jobId").asText();
+        assertThat(done.poll(60, TimeUnit.SECONDS)).isNotNull();
+        JsonNode job = ApiJson.MAPPER.readTree(get("/api/jobs/" + child).body());
+        assertThat(job.get("state").asText()).isEqualTo("COMPLETE");
+        assertThat(job.get("properties").get("parentJobId").asText()).isEqualTo("parent1");
+        assertThat(Files.readString(home.resolve("output").resolve(child)
+                .resolve("statements").resolve("00001.pdf"))).isEqualTo("statement");
+    }
+
+    @Test
+    public void reprintIsUnavailableWithoutAReprintWorkflow() throws Exception {
+        Path home = folder.newFolder("home").toPath();
+        writeDevices(home, "*.txt");
+        Database db = TestDatabases.fresh();
+        WorkflowContextListener listener = new WorkflowContextListener(Map.of(
+                "PRINTLAB_HOME", home.toString(),
+                "PRINTLAB_DB_URL", db.url(),
+                "PRINTLAB_DB_USER", "sa")::get, job -> { });
+        server = new TomcatTestServer(folder.getRoot().toPath())
+                .listener(listener)
+                .servlet("documents", new DocumentsServlet(), "/api/documents/*")
+                .start();
+
+        var response = post("/api/documents/reprint", "{\"documentIds\": [1]}");
+
+
+        assertThat(response.statusCode()).isEqualTo(503);
+        assertThat(response.body()).contains("reprint.yaml");
     }
 
     @Test
@@ -177,9 +249,9 @@ public class WorkflowContextListenerTest {
                 HttpResponse.BodyHandlers.ofString());
     }
 
-    private HttpResponse<String> post(String path) throws Exception {
+    private HttpResponse<String> post(String path, String body) throws Exception {
         return HttpClient.newHttpClient().send(HttpRequest.newBuilder(server.uri(path))
-                .POST(HttpRequest.BodyPublishers.noBody()).build(),
+                .POST(HttpRequest.BodyPublishers.ofString(body)).build(),
                 HttpResponse.BodyHandlers.ofString());
     }
 }
