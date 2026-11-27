@@ -702,7 +702,7 @@ Ctrl+C. To deploy to your own Tomcat instead, copy the WAR into its `webapps/` f
 
 ### REST API
 
-The web app serves read-only JSON under `/api/` (PRD-14). Every response has
+The web app serves JSON under `/api/` (PRD-14, and the actions of PRD-15). Every response has
 `Cache-Control: no-store`. A refused request is `{"error": "...", "status": N}`.
 
 | Request | Returns |
@@ -713,11 +713,15 @@ The web app serves read-only JSON under `/api/` (PRD-14). Every response has
 | `GET /api/documents?property=&value=&queue=&limit=&offset=` | Documents across jobs, newest job first. `X-Total-Count` gives the total. Needs `property` with its `value`, or `queue`. `limit` defaults to 50 and is capped at 500 |
 | `GET /api/documents/{id}/file` | The document's PDF or AFP file from the output folder |
 | `GET /api/documents/{id}/structure` | An AFP file's structured fields (type, offset, length), or a PDF's pages with each page's content operators. A response holds at most 100,000 fields or operators and sets `truncated` when it stops there |
+| `POST /api/documents/reprint` with `{"documentIds": [...]}` | Makes a child job from those documents and queues it, answering 201 with `jobId` and `parentJobId`. The child runs `workflows/reprint.yaml`: each page gets a REPRINT mark (PDF: drawn on the page; AFP: a `Reprint` TLE and a text object per page). All the documents must come from one job |
+| `POST /api/jobs/{id}/retry` | Queues a failed job to run again from the step that failed, answering 202. Earlier steps are not run again. The input is moved back from `error/` first. Refused (409) for a job that isn't failed, is already queued, or whose input is gone |
 
 Document ids are the database's, as the job and document responses give them. A job with no
 document file in the output folder, a document id that's unknown, and a job id that's unknown
 are all 404. A bad parameter is 400. A corrupt file is 422 with the byte `offset`. Without a
 database the job and document endpoints answer 503, because the file store can't answer queries.
+The actions also answer 503 when the input devices aren't running, since the job runs on their
+job thread, and reprint needs `workflows/reprint.yaml` under `PRINTLAB_HOME`.
 
 The app reads its folders from `PRINTLAB_HOME` (default: the working directory). Each setting is
 read from an environment variable first and a context parameter of the same name second.
@@ -799,6 +803,8 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
 - [x] Tomcat WAR, `/api/health`, Marionette 4 dashboard shell
 - [x] Persist jobs and documents (PostgreSQL)
 - [x] REST API (servlets on Tomcat)
+- [x] Reprint and retry: a reprinted document as a child job (AFP: a `Reprint` TLE and a REPRINT text
+      object on each page), and a failed job retried from the step that failed
 - [x] Job tickets: `SetJobPropsFromTextFile` sets job properties from `<input>.jobprops`
 - [x] Workflow phases (receive, prepare, assemble, print, insert, complete), as in
       ProcessDirector
