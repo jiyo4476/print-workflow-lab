@@ -79,8 +79,26 @@ public final class WorkflowContextListener implements ServletContextListener {
             log.warn("PRINTLAB_DB_URL is not set: jobs are kept in job.json files and the API"
                     + " answers 503");
         }
-        context.setAttribute(ApiServices.ATTRIBUTE, new ApiServices(jobs, config.outputRoot()));
-        startDevices(config, clock, store);
+        InputDevices devices = startDevices(config, clock, store);
+        RetryService retries = devices == null || jobs == null ? null
+                : new RetryService(jobs, runnerFor(devices), config.workRoot(), config.errorDir());
+        context.setAttribute(ApiServices.ATTRIBUTE,
+                new ApiServices(jobs, config.outputRoot(), retries));
+    }
+
+    /** Retries run on the input devices' job thread, like every other job. */
+    private static RetryRunner runnerFor(InputDevices devices) {
+        return new RetryRunner() {
+            @Override
+            public void check(String device, String step) {
+                devices.checkRetry(device, step);
+            }
+
+            @Override
+            public void start(Job job, String device, String step, Runnable done) {
+                devices.retry(job, device, step, done);
+            }
+        };
     }
 
     @Override
@@ -109,11 +127,12 @@ public final class WorkflowContextListener implements ServletContextListener {
         }
     }
 
-    private void startDevices(PrintLabConfig config, Clock clock, JobStore store) {
+    /** Starts the input devices, or returns {@code null} when there is no devices file. */
+    private InputDevices startDevices(PrintLabConfig config, Clock clock, JobStore store) {
         if (!Files.exists(config.devicesFile())) {
             log.warn("No input devices file at {}: no hot folders are watched",
                     config.devicesFile());
-            return;
+            return null;
         }
         List<InputDevice> devices = devices(config);
         StepRegistry registry = StepRegistry.withBuiltIns();
@@ -128,6 +147,7 @@ public final class WorkflowContextListener implements ServletContextListener {
         }
         running.start();
         log.info("Watching {} input device(s) under {}", devices.size(), config.home());
+        return running;
     }
 
     /** The devices from the file, with their folders and workflows under {@code PRINTLAB_HOME}. */

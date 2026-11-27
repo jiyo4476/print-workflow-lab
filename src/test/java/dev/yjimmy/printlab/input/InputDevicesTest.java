@@ -7,6 +7,7 @@ import static org.junit.Assert.assertThrows;
 
 import dev.yjimmy.printlab.testdata.StatementAfpGenerator;
 import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
+import dev.yjimmy.printlab.testsupport.TestJobs;
 import dev.yjimmy.printlab.testsupport.TestWorkflows;
 import dev.yjimmy.printlab.testsupport.TickingClock;
 import dev.yjimmy.printlab.workflow.Job;
@@ -253,5 +254,21 @@ public class InputDevicesTest {
                         StepRegistry.withBuiltIns(), root.resolve("work"), root.resolve("error"),
                         TickingClock.oneSecondTicks(), job -> { })).getMessage())
                 .contains("both use the folder");
+    }
+
+    @Test
+    public void retryOnAnUnknownDeviceIsRefusedBeforeAnythingRuns() throws Exception {
+        create(device("statements", "*.pdf", "statements"));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> devices.checkRetry("no-such-device", "split-and-index"));
+        assertThrows(IllegalArgumentException.class, () -> devices.retry(
+                job(), "no-such-device", "split-and-index", () -> { }));
+    }
+
+    /** A job that is not running: nothing is queued for it in these tests. */
+    private Job job() throws Exception {
+        Path input = Files.writeString(root.resolve("unused.pdf"), "x");
+        return TestJobs.newJob(root, input);
     }
 }

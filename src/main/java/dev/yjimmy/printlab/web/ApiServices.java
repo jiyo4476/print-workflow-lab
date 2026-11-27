@@ -10,8 +10,9 @@ import java.nio.file.Path;
  * @param jobs the database the API reads, or {@code null} when no database is configured; the
  *     job and document endpoints then answer 503
  * @param outputRoot the output folder the document files are read from
+ * @param retries the retry action, or {@code null} when no input devices are running to retry on
  */
-record ApiServices(JdbcJobStore jobs, Path outputRoot) {
+record ApiServices(JdbcJobStore jobs, Path outputRoot, RetryService retries) {
 
     /** The attribute name the listener stores this under. */
     static final String ATTRIBUTE = "dev.yjimmy.printlab.api";

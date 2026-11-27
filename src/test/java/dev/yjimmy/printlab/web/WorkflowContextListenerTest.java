@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.yjimmy.printlab.store.Database;
 import dev.yjimmy.printlab.testsupport.TestDatabases;
+import dev.yjimmy.printlab.workflow.Job;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -14,7 +15,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import org.junit.After;
 import org.junit.Rule;
@@ -80,6 +83,47 @@ public class WorkflowContextListenerTest {
     }
 
     @Test
+    public void failedJobIsRetriedThroughTheApiOnTheDeviceThread() throws Exception {
+        Path home = folder.newFolder("home").toPath();
+        writeDevices(home, "*.txt");
+        Path hot = home.resolve("hotfolder");
+        Database db = TestDatabases.fresh();
+        BlockingQueue<Job> done = new LinkedBlockingQueue<>();
+        WorkflowContextListener listener = new WorkflowContextListener(Map.of(
+                "PRINTLAB_HOME", home.toString(),
+                "PRINTLAB_DB_URL", db.url(),
+                "PRINTLAB_DB_USER", "sa")::get, done::add);
+        server = new TomcatTestServer(folder.getRoot().toPath())
+                .listener(listener)
+                .servlet("jobs", new JobsServlet(), "/api/jobs/*")
+                .start();
+        // A ticket line with no '=' fails the job's first step.
+        Files.writeString(hot.resolve("statement.txt.jobprops"), "not a property line\n");
+        Files.writeString(hot.resolve("statement.txt"), "x");
+
+        Job failed = done.poll(60, TimeUnit.SECONDS);
+        assertThat(failed).isNotNull();
+        String id = failed.id();
+        assertThat(ApiJson.MAPPER.readTree(get("/api/jobs/" + id).body()).get("state").asText())
+                .isEqualTo("ERROR");
+
+        // The operator fixes the ticket in the error folder, then asks for a retry.
+        Files.writeString(home.resolve("error").resolve(id).resolve("statement.txt.jobprops"),
+                "statementNumber=7\n");
+        var accepted = post("/api/jobs/" + id + "/retry");
+        assertThat(accepted.statusCode()).isEqualTo(202);
+        assertThat(accepted.body()).contains("\"step\":\"set-job-props\"");
+
+        Job retried = done.poll(60, TimeUnit.SECONDS);
+        assertThat(retried).isNotNull();
+        JsonNode job = ApiJson.MAPPER.readTree(get("/api/jobs/" + id).body());
+        assertThat(job.get("state").asText()).isEqualTo("COMPLETE");
+        assertThat(job.get("properties").get("statementNumber").asText()).isEqualTo("7");
+        assertThat(job.get("steps").toString()).contains("RETRIED");
+        assertThat(Files.exists(home.resolve("error").resolve(id))).isFalse();
+    }
+
+    @Test
     public void apiAnswers503WithoutDatabase() throws Exception {
         Path home = folder.newFolder("home").toPath();
         WorkflowContextListener listener = new WorkflowContextListener(
@@ -130,6 +174,12 @@ public class WorkflowContextListenerTest {
 
     private HttpResponse<String> get(String path) throws Exception {
         return HttpClient.newHttpClient().send(HttpRequest.newBuilder(server.uri(path)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> post(String path) throws Exception {
+        return HttpClient.newHttpClient().send(HttpRequest.newBuilder(server.uri(path))
+                .POST(HttpRequest.BodyPublishers.noBody()).build(),
                 HttpResponse.BodyHandlers.ofString());
     }
 }

@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * The jobs endpoints (PRD-14):
@@ -41,6 +42,28 @@ public class JobsServlet extends JsonServlet {
             one(resp, jobs, parts[0]);
         } else if (parts.length == 2 && parts[1].equals("documents")) {
             documents(req, resp, jobs, parts[0]);
+        } else {
+            throw ApiException.notFound("there is no API resource at " + req.getPathInfo());
+        }
+    }
+
+    /**
+     * {@code POST /api/jobs/{id}/retry}: queues a failed job to run again from the step that
+     * failed. Answers 202 with the step it resumes from; the job runs after the jobs ahead of it.
+     */
+    @Override
+    protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        ApiDatabase.require(getServletContext());
+        String[] parts = segments(req.getPathInfo());
+        if (parts.length == 2 && parts[1].equals("retry")) {
+            RetryService retries = ApiServices.of(getServletContext()).retries();
+            if (retries == null) {
+                throw new ApiException(503, "retrying needs the input devices running: set"
+                        + " PRINTLAB_HOME and an input devices file");
+            }
+            RetryService.Accepted accepted = retries.retry(parts[0]);
+            writeJson(resp, 202, Map.of("jobId", accepted.jobId(), "step", accepted.step(),
+                    "status", "queued"));
         } else {
             throw ApiException.notFound("there is no API resource at " + req.getPathInfo());
         }

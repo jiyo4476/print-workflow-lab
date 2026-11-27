@@ -98,13 +98,27 @@ public final class WorkflowEngine {
      * @throws IllegalStateException if that step is not {@linkplain Step#resumable() resumable}
      */
     public void resume(Job job, String step) {
-        int index = indexOf(step);
-        if (!steps.get(index).step().resumable()) {
+        checkCanResume(step);
+        NamedStep s = steps.get(indexOf(step));
+        log.info("{} resuming workflow '{}' at step '{}'", job, definition.name(), step);
+        Instant now = clock.instant();
+        job.addStepRecord(new StepRecord(s.name(), s.phase(), now, now, StepOutcome.RETRIED));
+        saveJob(job);
+        runFrom(job, indexOf(step));
+    }
+
+    /**
+     * Says whether {@link #resume} could run from {@code step}, without running anything, so a
+     * retry can refuse before it moves any files.
+     *
+     * @throws IllegalArgumentException if the workflow has no step called {@code step}
+     * @throws IllegalStateException if that step is not resumable
+     */
+    public void checkCanResume(String step) {
+        if (!steps.get(indexOf(step)).step().resumable()) {
             throw new IllegalStateException("step '" + step + "' cannot be run again on its own;"
                     + " resubmit the input to run the job from the start");
         }
-        log.info("{} resuming workflow '{}' at step '{}'", job, definition.name(), step);
-        runFrom(job, index);
     }
 
     private int indexOf(String step) {
