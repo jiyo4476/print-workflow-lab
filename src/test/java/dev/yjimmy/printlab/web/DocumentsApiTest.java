@@ -9,7 +9,9 @@ import dev.yjimmy.printlab.workflow.Document;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.Assume;
 import org.junit.Test;
 
@@ -114,8 +116,14 @@ public class DocumentsApiTest extends ApiTestBase {
         try {
             Files.createSymbolicLink(queue, outside);
         } catch (IOException | UnsupportedOperationException e) {
-            // Creating symlinks on Windows needs privilege; the check is covered on Unix.
-            Assume.assumeNoException(e);
+            // Windows only lets a process make symlinks when it is elevated or Developer Mode is
+            // on. An elevated process always can, so a failure there is a real failure. Otherwise
+            // the test is skipped, and the reason is reported with it.
+            if (isAdministrator()) {
+                throw e;
+            }
+            Assume.assumeNoException("skipped: this process is not Administrator and cannot "
+                    + "create symlinks (turn on Developer Mode or run elevated)", e);
         }
 
         var response = get("/api/documents/" + documentId("job-a") + "/file");
@@ -188,6 +196,25 @@ public class DocumentsApiTest extends ApiTestBase {
 
         assertThat(response.statusCode()).isEqualTo(422);
         assertThat(response.body()).contains("\"status\":422").contains("\"offset\":");
+    }
+
+    /**
+     * Whether this process is elevated. On Windows, {@code net session} succeeds only for an
+     * administrator, so its exit code tells. Other systems are not checked and return false.
+     */
+    static boolean isAdministrator() throws IOException, InterruptedException {
+        if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows")) {
+            return false;
+        }
+        Process net = new ProcessBuilder("net", "session")
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start();
+        if (!net.waitFor(10, TimeUnit.SECONDS)) {
+            net.destroyForcibly();
+            return false;
+        }
+        return net.exitValue() == 0;
     }
 
     /** The id of the job's first document, as the API numbers it. */
