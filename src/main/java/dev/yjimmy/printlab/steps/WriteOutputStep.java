@@ -128,7 +128,7 @@ public final class WriteOutputStep implements Step {
      * The document file's extension with its dot, lowercased ({@code .pdf}, {@code .afp}), or
      * nothing if it has none: output keeps the format the split step wrote.
      */
-    static String extension(Path file) {
+    public static String extension(Path file) {
         String name = file.getFileName().toString();
         int dot = name.lastIndexOf('.');
         return dot <= 0 ? "" : name.substring(dot).toLowerCase(java.util.Locale.ROOT);
