@@ -700,6 +700,18 @@ Ctrl+C. To deploy to your own Tomcat instead, copy the WAR into its `webapps/` f
   (`/webjars/...`), so there's no JavaScript build step. The app code is plain scripts in
   `src/main/webapp/js/`.
 
+The dashboard's hash routes (PRD-16):
+
+| Route | Shows |
+|---|---|
+| `#jobs` (also `#` and any unknown route) | The jobs list: state, phase, current step and document count. It refreshes every 5 seconds, keeps the selected job selected, and stops when you leave it. A failed refresh shows **Retry** |
+| `#jobs/{id}` | One job: properties, the step timeline and its documents. The **queue** tabs filter the documents already loaded, without another request |
+| `#search?property=&value=&offset=` | Documents matching an account number, name or zip, 50 a page with Previous and Next. The page is in the URL, so back, forward and bookmarks return to it |
+| `#documents/{id}/structure` | An AFP file's page groups and fields, or a PDF's pages and operators, with nodes that collapse and expand |
+
+Every value is shown as text (`<%- %>` in the templates; `security.test.mjs` checks for `<%=`).
+The five-second refresh suits a demo. A production console would use push or a longer interval.
+
 ### REST API
 
 The web app serves read-only JSON under `/api/` (PRD-14). Every response has
@@ -802,6 +814,7 @@ The step-by-step plan is in [`docs/PR_PLAN.md`](docs/PR_PLAN.md), with a require
 - [x] Job tickets: `SetJobPropsFromTextFile` sets job properties from `<input>.jobprops`
 - [x] Workflow phases (receive, prepare, assemble, print, insert, complete), as in
       ProcessDirector
-- [ ] Marionette dashboard: jobs by phase and step, document search, single-document reprint
+- [x] Marionette dashboard: jobs by phase and step, document search, structure view
+- [ ] Dashboard actions: reprint selected documents, retry a failed job, exception queue (PRD-17)
 - [ ] Docker Compose setup
 - [ ] CI/CD: Jenkins running locally in Docker, deploying to a k3s server on ARM
