@@ -80,7 +80,9 @@ run is the headline of the demo.
   add a second one.
 
 **Non-functional**
-- **NFR-1** Actions are safe to double-submit from the dashboard.
+- **NFR-1** Actions are safe to double-submit from the dashboard. Retry is guarded (FR-7). Reprint
+  is not yet: a repeat request creates a second child job. Fixed in plan PR 17 by an idempotency
+  key on `POST /api/documents/reprint` ([PR_PLAN](../PR_PLAN.md), PR 17).
 
 ## Design notes
 
@@ -111,37 +113,52 @@ run is the headline of the demo.
 
 | # | Criterion | Verified by |
 |---|---|---|
-| AC-1 | The child job has only the selected documents and records its parent; the original is untouched | `ReprintServiceTest.*` |
-| AC-2 | Unknown ids reject the whole request | `unknownDocumentIdFailsWholeRequest` |
-| AC-3 | Retry resumes at the failed step and is recorded; completed jobs are rejected | `RetryServiceTest.*` |
-| AC-4 | HTTP status codes and idempotency | `ActionsApiTest.*` |
-| AC-5 | Reprinted PDFs show the marker on every page | `ReprintWorkflowTest.reprintedPdfHasReprintMarkerOnEveryPage` |
-| AC-6 | Reprinted AFP has the `Reprint` TLE and one "REPRINT" text object on every page, positioned in the page's units | `ReprintAfpTest.*` |
-| AC-7 | Reprinted AFP reads back cleanly and its original page content is unchanged | `ReprintAfpTest.reprintedAfpReadsBackCleanly`, `originalPageFieldsAreUnchanged` |
-| AC-8 | The mark shows on the page in a real viewer | Manual: Papyrus AFP Viewer screenshot in the PR |
+| AC-1 | The child job has only the selected documents and records its parent; the original is untouched | `ActionsApiTest.reprintMakesAChildJobWithOnlyTheSelectedDocuments`, `reprintLeavesTheOriginalJobUnchanged` |
+| AC-2 | Unknown ids reject the whole request | `ActionsApiTest.reprintWithAnUnknownIdFailsTheWholeRequest` |
+| AC-3 | Retry resumes at the failed step and is recorded; completed jobs are rejected | `WorkflowEngineTest.resume*`, `ActionsApiTest.retry*`, `WorkflowContextListenerTest.failedJobIsRetriedThroughTheApiOnTheDeviceThread` |
+| AC-4 | HTTP status codes and idempotency | `ActionsApiTest.*` (retry double submit: `doubleSubmitRetryDoesNotRunTwice`; reprint double submit: plan PR 17) |
+| AC-5 | Reprinted PDFs show the marker on every page | `ReprintWorkflowTest.reprintedPdfHasReprintMarkerOnEveryPage`, `MarkReprintStepTest` |
+| AC-6 | Reprinted AFP has the `Reprint` TLE and one "REPRINT" text object on every page, positioned in the page's units | `AfpReprintMarkTest.reprintedAfpHasReprintTleOnEveryDocument`, `everyPageGetsOneReprintTextObject`, `markPositionUsesPageUnitsFromPgd` |
+| AC-7 | Reprinted AFP reads back cleanly and its original page content is unchanged | `AfpReprintMarkTest.reprintedAfpReadsBackCleanly`, `originalPageFieldsAreUnchanged` |
+| AC-8 | The mark shows on the page in a real viewer | Manual: Papyrus AFP Viewer screenshot in the PR. **Open:** the viewer lacked the fonts the files name, so the text was not legible |
 
 ## Test plan
 
-- Unit — `ReprintServiceTest`: `createsChildJobWithOnlySelectedDocuments`,
-  `childJobRecordsParentId`, `originalJobIsUnchanged`,
-  `documentsFromDifferentJobsAreRejected`,
-  `unknownDocumentIdFailsWholeRequest`
-- Unit — `RetryServiceTest`: `retriesFromFailedStepNotFromStart`,
-  `retryingCompletedJobIsRejected`, `retryIsRecordedInStepHistory`,
-  `retryMovesTheInputBackFromTheErrorFolder`, `retryWithTheInputGoneIsRefused`,
-  `retryAfterPartialOutputReplacesIt`
-- Integration — `ActionsApiTest`: `reprintReturns201WithChildJobId`,
-  `reprintWithEmptyListReturns400`, `retryUnknownJobReturns404`,
-  `doubleSubmitRetryDoesNotRunTwice`
-- Workflow — `ReprintWorkflowTest.reprintedPdfHasReprintMarkerOnEveryPage`
-- Unit — `ReprintAfpTest`: `reprintedAfpHasReprintTleOnEveryDocument`,
-  `everyPageGetsOneReprintTextObject`, `markPositionUsesPageUnitsFromPgd`,
-  `pageWithoutFontMappingGetsMcfEntry`, `reprintingTwiceDoesNotDuplicateTheMark`,
-  `reprintedAfpReadsBackCleanly`, `originalPageFieldsAreUnchanged`
-- Unit — `AfpRewriterTest`: `copiesUnchangedFieldsByteForByte`, `insertsBeforeAndAfterAField`
-- Unit — `PageBuilderTest`: `generatorOutputIsUnchangedAfterExtraction` (same seed, same bytes as
-  before the refactor)
-- Manual: open a reprinted AFP document in Papyrus AFP Viewer and confirm "REPRINT" shows.
+As built. Names that differ from the first draft of this plan are noted.
+
+- Unit: `WorkflowEngineTest` (in the workflow package): `resumeRunsFromTheNamedStepOnly`,
+  `resumeKeepsDocumentsTheCompletedStepsMade`, `failedStepLeavesDocumentsAndPropertiesAsTheLastCompletedStepDid`,
+  `resumeRefusesAStepThatIsNotResumable`, `resumeRefusesAStepTheWorkflowDoesNotHave`
+- HTTP: `ActionsApiTest` covers both services with a fake queue, in place of `ReprintServiceTest`
+  and `RetryServiceTest` (no separate service classes are unit-tested):
+  - reprint: `reprintMakesAChildJobWithOnlyTheSelectedDocuments`, `reprintLeavesTheOriginalJobUnchanged`,
+    `reprintWithAnUnknownIdFailsTheWholeRequest`, `reprintAcrossJobsIsRefusedAndNamesTheJobs`,
+    `reprintWithNoDocumentsOrBadBodyIs400`, `reprintOfADocumentWithoutAFileIs409`,
+    `reprintThatCannotBeQueuedLeavesNoChildJob`
+  - retry: `retryOfUnknownJobReturns404`, `retryOfCompletedJobIsRejected`,
+    `retryRunsFromTheFailedStepAndRecordsIt`, `retryPassesTheDeviceToTheRunner`,
+    `doubleSubmitRetryDoesNotRunTwice`, `retryMovesTheInputBackFromTheErrorFolder`,
+    `retryWithTheInputGoneIsRefused`, `retryFromAStepThatCannotRunAgainIsRefusedAndMovesNothing`
+  - not yet: a reprint double-submit test (plan PR 17)
+- Device thread: `WorkflowContextListenerTest.failedJobIsRetriedThroughTheApiOnTheDeviceThread`,
+  `reprintRunsThroughTheReprintWorkflowOnTheDeviceThread`, `reprintIsUnavailableWithoutAReprintWorkflow`
+- `InputDevicesTest.retryOnAnUnknownDeviceIsRefusedBeforeAnythingRuns`
+- `WriteOutputStepTest.rerunReplacesAnEarlierRunsPartialOutput`
+- Workflow: `ReprintWorkflowTest.reprintedPdfHasReprintMarkerOnEveryPage`,
+  `ReprintWorkflowTest.reprintedAfpHasReprintTleAndMarkOnEveryPage`
+- Unit: `MarkReprintStepTest` (PDF and AFP marks, rerun, original not written over, bad input refused)
+- Unit: `AfpReprintMarkTest` (in place of `ReprintAfpTest`): `reprintedAfpHasReprintTleOnEveryDocument`,
+  `everyPageGetsOneReprintTextObject`, `theMarkSitsInItsOwnObjectBeforeEachPagesEpg`,
+  `markPositionUsesPageUnitsFromPgd`, `pageWithoutFontMappingGetsMcfEntry`,
+  `reprintedAfpReadsBackCleanly`, `originalPageFieldsAreUnchanged`, `documentWithoutAPageGroupIsRefused`.
+  Reprinting twice is covered at the step level (`MarkReprintStepTest.markingAgainDoesNotStampTheDocumentTwice`,
+  `markingAfpAgainDoesNotMarkItTwice`); not in `AfpReprintMarkTest`.
+- Unit: `PageBuilderTest` (descriptors, unit bases, font map, PTOCA). The generator's output is
+  unchanged after the move, checked by the existing `StatementAfpGeneratorTest` and the AFP workflow
+  parity tests, in place of a new `generatorOutputIsUnchangedAfterExtraction`. There is no separate
+  `AfpRewriter`: `AfpReprintMark` streams the document itself.
+- Manual: open a reprinted AFP document in Papyrus AFP Viewer and confirm "REPRINT" shows, with the
+  viewer's fonts loaded (AC-8).
 
 ## Risks and open questions
 
