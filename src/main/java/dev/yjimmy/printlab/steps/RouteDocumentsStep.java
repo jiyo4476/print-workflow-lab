@@ -75,6 +75,12 @@ public final class RouteDocumentsStep implements Step {
         return queue;
     }
 
+    /** Sets each document's queue from its properties, so a rerun gives the same queues. */
+    @Override
+    public boolean resumable() {
+        return true;
+    }
+
     @Override
     public void execute(Job job) {
         for (Document doc : job.documents()) {

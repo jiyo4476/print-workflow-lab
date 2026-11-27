@@ -7,7 +7,9 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -83,16 +85,51 @@ public final class WorkflowEngine {
 
     public void run(Job job) {
         log.info("{} starting workflow '{}'", job, definition.name());
-        for (NamedStep s : steps) {
+        runFrom(job, 0);
+    }
+
+    /**
+     * Runs a failed job again from {@code step}, the step that failed (PRD-15). The steps before
+     * it are not run again: the job keeps the documents and properties its last completed step
+     * left. The job's documents and properties are rolled back to that state when a step fails,
+     * so this works on what was saved.
+     *
+     * @throws IllegalArgumentException if the workflow has no step called {@code step}
+     * @throws IllegalStateException if that step is not {@linkplain Step#resumable() resumable}
+     */
+    public void resume(Job job, String step) {
+        int index = indexOf(step);
+        if (!steps.get(index).step().resumable()) {
+            throw new IllegalStateException("step '" + step + "' cannot be run again on its own;"
+                    + " resubmit the input to run the job from the start");
+        }
+        log.info("{} resuming workflow '{}' at step '{}'", job, definition.name(), step);
+        runFrom(job, index);
+    }
+
+    private int indexOf(String step) {
+        for (int i = 0; i < steps.size(); i++) {
+            if (steps.get(i).name().equals(step)) {
+                return i;
+            }
+        }
+        throw new IllegalArgumentException("workflow '" + definition.name() + "' has no step '"
+                + step + "'");
+    }
+
+    private void runFrom(Job job, int start) {
+        for (int i = start; i < steps.size(); i++) {
+            NamedStep s = steps.get(i);
             if (s.phase() != job.phase()) {
                 log.info("{} entered phase '{}'", job.id(), s.phase().yamlName());
             }
             job.moveTo(JobState.PROCESSING, s.phase(), s.name());
             Instant startedAt = clock.instant();
+            Snapshot before = Snapshot.of(job);
             if (Thread.interrupted()) {
                 // Interrupted between steps: don't start another one.
                 fail(job, s, startedAt, "interrupted before the step started; resubmit"
-                        + " the input to run it again", null);
+                        + " the input to run it again", null, before);
                 Thread.currentThread().interrupt();
                 return;
             }
@@ -124,7 +161,7 @@ public final class WorkflowEngine {
                         ? "interrupted before the step finished (" + describe(e)
                                 + "); resubmit the input to run it again"
                         : describe(e);
-                fail(job, s, startedAt, message, e);
+                fail(job, s, startedAt, message, e, before);
                 if (interrupted) {
                     Thread.currentThread().interrupt();
                 }
@@ -140,8 +177,15 @@ public final class WorkflowEngine {
         log.info("{} complete: {} documents", job, job.documents().size());
     }
 
-    private void fail(Job job, NamedStep s, Instant startedAt, String message, Throwable e) {
+    /**
+     * Records the failure. The job goes back to its state before the failed step, so the record
+     * (and a retry, PRD-15) has the documents and properties the last completed step left; the
+     * failed step's partial changes are dropped.
+     */
+    private void fail(Job job, NamedStep s, Instant startedAt, String message, Throwable e,
+            Snapshot before) {
         Instant failedAt = clock.instant();
+        before.restoreTo(job);
         job.fail(s.name(), message);
         job.addStepRecord(
                 new StepRecord(s.name(), s.phase(), startedAt, failedAt, StepOutcome.FAILED));
@@ -154,6 +198,28 @@ public final class WorkflowEngine {
         } catch (IOException ioe) {
             log.error("{} could not be moved to the error folder {}: {}",
                     job.id(), errorFolder.root(), ioe.toString());
+        }
+    }
+
+    /**
+     * The job's documents and properties as they were before a step, copied so that changes the
+     * step makes to them don't show here. Documents are copied one by one, since a document's
+     * properties map is mutable.
+     */
+    private record Snapshot(List<Document> documents, Map<String, String> properties) {
+
+        static Snapshot of(Job job) {
+            List<Document> docs = job.documents().stream().map(d ->
+                    new Document(d.sequence(), d.file(), d.properties(), d.inputSequence()))
+                    .toList();
+            return new Snapshot(docs, new LinkedHashMap<>(job.properties()));
+        }
+
+        void restoreTo(Job job) {
+            job.documents().clear();
+            job.documents().addAll(documents);
+            job.properties().clear();
+            job.properties().putAll(properties);
         }
     }
 

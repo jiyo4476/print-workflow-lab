@@ -24,6 +24,7 @@ public final class RecordingStep implements Step {
     private final List<Call> calls = new ArrayList<>();
     private int failOnCall;
     private Exception failure;
+    private boolean resumable;
 
     public RecordingStep(String name) {
         this(name, new ArrayList<>());
@@ -42,6 +43,17 @@ public final class RecordingStep implements Step {
         this.failOnCall = n;
         this.failure = failure;
         return this;
+    }
+
+    /** Lets a retry run this step again (see {@link Step#resumable()}). */
+    public RecordingStep asResumable() {
+        this.resumable = true;
+        return this;
+    }
+
+    @Override
+    public boolean resumable() {
+        return resumable;
     }
 
     /** For {@code StepRegistry.register(type, step.factory())}: always returns this instance. */

@@ -44,6 +44,27 @@ public final class Job {
         properties.put("inputFileName", inputFile.getFileName().toString());
     }
 
+    /**
+     * A job rebuilt from its saved state, so a retry can resume it (PRD-15). The job's documents
+     * and properties are copied; the step history is kept as it was.
+     *
+     * @param state the job's state as saved; a retry sets it to processing again
+     */
+    public static Job restore(String id, Path inputFile, Path workDir,
+            Map<String, String> properties, List<Document> documents, List<StepRecord> steps,
+            JobState state, Phase phase, String currentStep, String errorMessage) {
+        Job job = new Job(id, inputFile, workDir);
+        job.properties.clear();
+        job.properties.putAll(properties);
+        job.documents.addAll(documents);
+        job.stepRecords.addAll(steps);
+        job.state = state;
+        job.phase = phase;
+        job.currentStep = currentStep;
+        job.errorMessage = errorMessage;
+        return job;
+    }
+
     public String id() { return id; }
     public Path inputFile() { return inputFile; }
     public Path workDir() { return workDir; }

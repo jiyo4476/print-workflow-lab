@@ -59,6 +59,12 @@ public final class WriteOutputStep implements Step {
         this.outputDir = Path.of(new Params(rawParams).string("outputDir", "output"));
     }
 
+    /** Replaces the job's own output folder, so a rerun after partial output is clean. */
+    @Override
+    public boolean resumable() {
+        return true;
+    }
+
     @Override
     public void execute(Job job) throws IOException {
         // Checked before anything is copied, so a failed job leaves no partial output.

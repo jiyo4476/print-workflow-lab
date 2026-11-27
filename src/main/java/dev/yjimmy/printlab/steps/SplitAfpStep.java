@@ -112,6 +112,12 @@ public final class SplitAfpStep implements Step {
         }
     }
 
+    /** Splits the input in the work folder. A rerun starts from the documents the last step left. */
+    @Override
+    public boolean resumable() {
+        return true;
+    }
+
     @Override
     public void execute(Job job) throws IOException {
         Path docsDir = Files.createDirectories(job.workDir().resolve("documents"));

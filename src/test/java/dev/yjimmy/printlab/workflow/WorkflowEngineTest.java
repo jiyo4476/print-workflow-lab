@@ -556,4 +556,90 @@ public class WorkflowEngineTest {
         assertThat(Job.newId()).matches("[0-9a-f]{12}");
         assertThat(Job.newId()).isNotEqualTo(Job.newId());
     }
+
+    @Test
+    public void resumeRunsFromTheNamedStepOnly() throws Exception {
+        registry.register("A", new RecordingStep("A", trace).factory());
+        registry.register("B", new RecordingStep("B", trace).asResumable()
+                .failingOnCall(1, new IllegalStateException("disk full")).factory());
+        registry.register("C", new RecordingStep("C", trace).factory());
+        WorkflowDefinition workflow = TestWorkflows.of(
+                step("a", "A"), step("b", "B"), step("c", "C"));
+        Job job = newJob("job-resume");
+        run(job, workflow);
+        assertEquals(JobState.ERROR, job.state());
+        trace.clear();
+
+        new WorkflowEngine(workflow, registry, errorDir, TickingClock.oneSecondTicks())
+                .resume(job, "b");
+
+        assertEquals("A is not run again", List.of("B", "C"), trace);
+        assertEquals(JobState.COMPLETE, job.state());
+    }
+
+    @Test
+    public void resumeKeepsDocumentsTheCompletedStepsMade() throws Exception {
+        registry.register("Split", params -> job -> job.documents().add(
+                new Document(1, tmp.resolve("one.pdf"), Map.of("accountNumber", "111"), 1)));
+        registry.register("Preflight", new RecordingStep("Preflight", trace).asResumable()
+                .failingOnCall(1, new IllegalStateException("unreadable")).factory());
+        WorkflowDefinition workflow = TestWorkflows.of(
+                step("split", "Split"), step("preflight", "Preflight"));
+        Job job = newJob("job-keep");
+        run(job, workflow);
+
+        new WorkflowEngine(workflow, registry, errorDir, TickingClock.oneSecondTicks())
+                .resume(job, "preflight");
+
+        assertEquals("the split is not run again, so its document is not doubled",
+                1, job.documents().size());
+    }
+
+    @Test
+    public void failedStepLeavesDocumentsAndPropertiesAsTheLastCompletedStepDid() throws Exception {
+        registry.register("Split", params -> job -> job.documents().add(
+                new Document(1, tmp.resolve("one.pdf"), Map.of("accountNumber", "111"), 1)));
+        registry.register("Partial", params -> job -> {
+            job.documents().add(new Document(2, tmp.resolve("two.pdf"), Map.of(), 2));
+            job.properties().put("halfDone", "yes");
+            throw new IllegalStateException("half done");
+        });
+        Job job = newJob("job-partial");
+
+        run(job, TestWorkflows.of(step("split", "Split"), step("partial", "Partial")));
+
+        assertEquals(JobState.ERROR, job.state());
+        assertEquals("only the completed step's document is kept", 1, job.documents().size());
+        assertEquals("111", job.documents().get(0).property("accountNumber"));
+        assertThat(job.properties()).doesNotContainKey("halfDone");
+    }
+
+    @Test
+    public void resumeRefusesAStepThatIsNotResumable() throws Exception {
+        registry.register("A", new RecordingStep("A", trace).factory());
+        registry.register("B", new RecordingStep("B", trace)
+                .failingOnCall(1, new IllegalStateException("boom")).factory());
+        WorkflowDefinition workflow = TestWorkflows.of(step("a", "A"), step("b", "B"));
+        Job job = newJob("job-refused");
+        run(job, workflow);
+        trace.clear();
+
+        WorkflowEngine engine = new WorkflowEngine(
+                workflow, registry, errorDir, TickingClock.oneSecondTicks());
+        assertThrows(IllegalStateException.class, () -> engine.resume(job, "b"));
+
+        assertEquals("nothing ran", List.of(), trace);
+        assertEquals(JobState.ERROR, job.state());
+    }
+
+    @Test
+    public void resumeRefusesAStepTheWorkflowDoesNotHave() throws Exception {
+        registry.register("A", new RecordingStep("A", trace).factory());
+        WorkflowDefinition workflow = TestWorkflows.of(step("a", "A"));
+        Job job = newJob("job-unknown");
+        WorkflowEngine engine = new WorkflowEngine(
+                workflow, registry, errorDir, TickingClock.oneSecondTicks());
+
+        assertThrows(IllegalArgumentException.class, () -> engine.resume(job, "nope"));
+    }
 }
