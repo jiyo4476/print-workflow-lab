@@ -36,3 +36,18 @@ describe('router', () => {
     assert.ok(window.document.querySelector('#app .shell-main .jobs-list'));
   });
 });
+
+describe('focus', () => {
+  it('navigationMovesFocusToTheNewPage', () => {
+    const window = loadDashboard({ ajax: routedAjax({
+      'api/health': { body: { status: 'UP' } },
+      'api/jobs': { body: [] },
+    }) });
+    const app = new window.PrintLab.DashboardApp();
+    app.start();
+
+    app.router.navigate('search', { trigger: true });
+
+    assert.equal(window.document.activeElement.className, 'shell-main');
+  });
+});

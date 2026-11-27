@@ -46,6 +46,11 @@
 
     showMain(view) {
       this.shell.showChildView('main', view);
+      // Focus moves to the new page, so keyboard users start at its content. Refreshes don't
+      // come through here, so polling never moves focus.
+      const main = this.shell.el.querySelector('.shell-main');
+      main.setAttribute('tabindex', '-1');
+      main.focus();
       return view;
     },
 
