@@ -6,7 +6,12 @@ description: Write selected documents from an earlier run to the output folder a
 
 phases:
   receive: []
-  prepare: []
+  prepare:
+    # Every page of every document gets a REPRINT mark, so a reprint can't pass for an original.
+    - name: mark-reprint
+      type: MarkReprint
+      params:
+        text: REPRINT
   assemble: []
   print:
     - name: write-output
