@@ -83,6 +83,23 @@ public class JobsApiTest extends ApiTestBase {
     }
 
     @Test
+    public void offsetSkipsNewerJobs() throws Exception {
+        savedJob("job-a");
+        completedJob("job-b");
+        failedJob("job-c");
+
+        assertThat(ids(get("/api/jobs?limit=1&offset=1").body())).containsExactly("job-b");
+        assertThat(ids(get("/api/jobs?state=complete&offset=1").body())).isEmpty();
+        assertThat(ids(get("/api/jobs?offset=10").body())).isEmpty();
+    }
+
+    @Test
+    public void invalidOffsetReturns400() throws Exception {
+        assertThat(get("/api/jobs?offset=-1").statusCode()).isEqualTo(400);
+        assertThat(get("/api/jobs?offset=abc").statusCode()).isEqualTo(400);
+    }
+
+    @Test
     public void invalidLimitReturns400() throws Exception {
         assertThat(get("/api/jobs?limit=0").statusCode()).isEqualTo(400);
         assertThat(get("/api/jobs?limit=many").statusCode()).isEqualTo(400);

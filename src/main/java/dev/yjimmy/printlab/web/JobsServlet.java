@@ -15,7 +15,8 @@ import java.util.Objects;
 /**
  * The jobs endpoints (PRD-14):
  * <ul>
- *   <li>{@code GET /api/jobs?state=&limit=}: the newest jobs first, {@code limit} capped at 200</li>
+ *   <li>{@code GET /api/jobs?state=&limit=&offset=}: the newest jobs first, {@code limit} capped at
+ *   200, {@code offset} skipping that many jobs</li>
  *   <li>{@code GET /api/jobs/{id}}: one job, with its properties and step history</li>
  *   <li>{@code GET /api/jobs/{id}/documents?queue=}: the job's documents, optionally in one queue</li>
  * </ul>
@@ -44,10 +45,11 @@ public class JobsServlet extends JsonServlet {
     private static void list(HttpServletRequest req, HttpServletResponse resp, JdbcJobStore jobs)
             throws IOException {
         int limit = Params.integer(req, "limit", DEFAULT_LIMIT, 1, MAX_LIMIT);
+        int offset = Params.integer(req, "offset", 0, 0, Integer.MAX_VALUE);
         String state = Params.text(req, "state");
         List<StoredJob> found = state == null
-                ? jobs.listNewestFirst(limit, 0)
-                : jobs.listByState(parseState(state), limit, 0);
+                ? jobs.listNewestFirst(limit, offset)
+                : jobs.listByState(parseState(state), limit, offset);
         writeJson(resp, 200, found.stream().map(JobResponse::of).toList());
     }
 
