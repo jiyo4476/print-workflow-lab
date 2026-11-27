@@ -4,7 +4,7 @@ A small production-print workflow engine in Java, built to learn how high-volume
 workflows operate: hot-folder intake with job tickets, configurable workflows in
 ProcessDirector's six phases (receive, prepare, assemble, print, insert, complete), splitting a
 print run into documents, indexing them with document properties, presorting, AFP print files
-split on their page groups and indexed from TLEs, and (coming next) single-document reprint.
+split on their page groups and indexed from TLEs, and reprint and retry of documents and failed jobs.
 
 It's a learning project, not a product. The concepts follow the way enterprise print workflow
 systems model jobs, documents and steps.
