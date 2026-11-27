@@ -120,6 +120,31 @@ public class JobsApiTest extends ApiTestBase {
     }
 
     @Test
+    public void jobDocumentsArePagedWithTotalAndQueueFilter() throws Exception {
+        completedJob("job-p", document("job-p", 1, "statements", "1"),
+                document("job-p", 2, "statements", "2"),
+                document("job-p", 3, "exceptions", "3"));
+
+        var page = get("/api/jobs/job-p/documents?limit=2&offset=1");
+        var queued = get("/api/jobs/job-p/documents?queue=statements&limit=1");
+
+        assertThat(page.headers().firstValue("X-Total-Count")).hasValue("3");
+        assertThat(sequences(page.body())).containsExactly(2, 3);
+        assertThat(queued.headers().firstValue("X-Total-Count")).hasValue("2");
+        assertThat(sequences(queued.body())).containsExactly(1);
+    }
+
+    @Test
+    public void jobDocumentsRejectBadLimitAndOffset() throws Exception {
+        completedJob("job-q", document("job-q", 1, "statements", "1"));
+
+        assertThat(get("/api/jobs/job-q/documents?limit=0").statusCode()).isEqualTo(400);
+        assertThat(get("/api/jobs/job-q/documents?offset=-1").statusCode()).isEqualTo(400);
+        // Over the cap is not an error: the limit is brought down to the cap, as for the search.
+        assertThat(get("/api/jobs/job-q/documents?limit=100000").statusCode()).isEqualTo(200);
+    }
+
+    @Test
     public void documentsOfUnknownJobReturn404() throws Exception {
         assertThat(get("/api/jobs/nope/documents").statusCode()).isEqualTo(404);
     }
@@ -130,6 +155,15 @@ public class JobsApiTest extends ApiTestBase {
 
         assertThat(response.statusCode()).isEqualTo(404);
         assertThat(response.body()).contains("\"status\":404");
+    }
+
+    /** The sequence numbers in a JSON array of documents, in order. */
+    static List<Integer> sequences(String json) throws IOException {
+        List<Integer> sequences = new ArrayList<>();
+        for (JsonNode doc : ApiJson.MAPPER.readTree(json)) {
+            sequences.add(doc.get("sequence").asInt());
+        }
+        return sequences;
     }
 
     /** The job ids in a JSON array of jobs, in order. */

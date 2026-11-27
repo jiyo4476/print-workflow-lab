@@ -2,7 +2,9 @@ package dev.yjimmy.printlab.web;
 
 import dev.yjimmy.printlab.steps.WriteOutputStep;
 import dev.yjimmy.printlab.store.StoredDocument;
+import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
@@ -23,7 +25,7 @@ final class OutputFiles {
      * @return the file, or empty if it isn't under the output folder or isn't written
      */
     static Optional<Path> locate(Path outputRoot, StoredDocument doc,
-            List<StoredDocument> jobDocuments) {
+            List<StoredDocument> jobDocuments) throws IOException {
         if (doc.document().file() == null) {
             return Optional.empty();
         }
@@ -45,9 +47,19 @@ final class OutputFiles {
         Path jobFolder = root.resolve(doc.jobId()).normalize();
         Path file = jobFolder.resolve(name).normalize();
         if (!jobFolder.startsWith(root) || !file.startsWith(jobFolder)
-                || !Files.isRegularFile(file)) {
+                || !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)
+                || !insideJobFolder(jobFolder, file)) {
             return Optional.empty();
         }
         return Optional.of(file);
+    }
+
+    /**
+     * Whether the file's real location, with every symlink followed, is inside the job's real
+     * folder. The file itself is checked without following links, so a symlinked queue folder
+     * that points elsewhere is caught here. Only called once the file exists.
+     */
+    private static boolean insideJobFolder(Path jobFolder, Path file) throws IOException {
+        return file.toRealPath().startsWith(jobFolder.toRealPath());
     }
 }

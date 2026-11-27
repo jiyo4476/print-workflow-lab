@@ -1,7 +1,7 @@
 package dev.yjimmy.printlab.web;
 
+import dev.yjimmy.printlab.store.DocumentPage;
 import dev.yjimmy.printlab.store.JdbcJobStore;
-import dev.yjimmy.printlab.store.StoredDocument;
 import dev.yjimmy.printlab.store.StoredJob;
 import dev.yjimmy.printlab.workflow.JobState;
 import jakarta.servlet.annotation.WebServlet;
@@ -10,7 +10,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
 
 /**
  * The jobs endpoints (PRD-14):
@@ -18,7 +17,9 @@ import java.util.Objects;
  *   <li>{@code GET /api/jobs?state=&limit=&offset=}: the newest jobs first, {@code limit} capped at
  *   200, {@code offset} skipping that many jobs</li>
  *   <li>{@code GET /api/jobs/{id}}: one job, with its properties and step history</li>
- *   <li>{@code GET /api/jobs/{id}/documents?queue=}: the job's documents, optionally in one queue</li>
+ *   <li>{@code GET /api/jobs/{id}/documents?queue=&limit=&offset=}: the job's documents in sequence
+ *   order, optionally in one queue, paged like the document search ({@code limit} capped at 500),
+ *   with {@code X-Total-Count}</li>
  * </ul>
  */
 @WebServlet(name = "jobs", urlPatterns = "/api/jobs/*")
@@ -26,6 +27,9 @@ public class JobsServlet extends JsonServlet {
 
     static final int DEFAULT_LIMIT = 50;
     static final int MAX_LIMIT = 200;
+    /** The job's documents are paged like the document search: the same default and cap. */
+    static final int DOCUMENT_LIMIT = 50;
+    static final int MAX_DOCUMENT_LIMIT = 500;
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
@@ -65,11 +69,12 @@ public class JobsServlet extends JsonServlet {
         if (jobs.findJob(id).isEmpty()) {
             throw ApiException.notFound("there is no job with id " + id);
         }
+        int limit = Params.integer(req, "limit", DOCUMENT_LIMIT, 1, MAX_DOCUMENT_LIMIT);
+        int offset = Params.integer(req, "offset", 0, 0, Integer.MAX_VALUE);
         String queue = Params.text(req, "queue");
-        List<StoredDocument> found = jobs.findStoredDocuments(id).stream()
-                .filter(d -> queue == null || Objects.equals(queue, d.document().property("queue")))
-                .toList();
-        writeJson(resp, 200, found.stream().map(DocumentResponse::of).toList());
+        DocumentPage page = jobs.documentPageOfJob(id, queue, limit, offset);
+        resp.setHeader("X-Total-Count", String.valueOf(page.total()));
+        writeJson(resp, 200, page.documents().stream().map(DocumentResponse::of).toList());
     }
 
     private static JobState parseState(String state) {

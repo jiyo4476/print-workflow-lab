@@ -118,15 +118,21 @@ public final class JdbcJobStore implements JobStore {
         return read(c -> documents.findStoredByJob(c, jobId));
     }
 
-    /** One page of the documents {@code filter} matches, newest job first. */
-    public List<StoredDocument> searchDocuments(DocumentSearch filter, int limit, int offset)
+    /**
+     * One page of the documents {@code filter} matches, newest job first, with the total. Both
+     * are read in one snapshot, so a save between them can't make the total and the page disagree.
+     */
+    public DocumentPage searchDocumentPage(DocumentSearch filter, int limit, int offset)
             throws IOException {
-        return read(c -> documents.search(c, filter, limit, offset));
+        return readSnapshot(c -> new DocumentPage(documents.count(c, filter),
+                documents.search(c, filter, limit, offset)));
     }
 
-    /** How many documents {@code filter} matches. */
-    public long countDocuments(DocumentSearch filter) throws IOException {
-        return read(c -> documents.count(c, filter));
+    /** One page of a job's documents in sequence order, optionally in one queue, with the total. */
+    public DocumentPage documentPageOfJob(String jobId, String queue, int limit, int offset)
+            throws IOException {
+        return readSnapshot(c -> new DocumentPage(documents.countByJob(c, jobId, queue),
+                documents.pageByJob(c, jobId, queue, limit, offset)));
     }
 
     /** Deletes a job and, with it, its steps, properties and documents. */
@@ -148,6 +154,32 @@ public final class JdbcJobStore implements JobStore {
     private <T> T read(Query<T> query) throws IOException {
         try (Connection c = db.connect()) {
             return query.run(c);
+        } catch (SQLException e) {
+            throw new IOException("could not read from " + db.url() + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Runs several reads in one transaction at repeatable-read isolation, so they all see the
+     * same data. Under the default isolation each statement could see a different save.
+     */
+    private <T> T readSnapshot(Query<T> query) throws IOException {
+        try (Connection c = db.connect()) {
+            boolean autoCommit = c.getAutoCommit();
+            int isolation = c.getTransactionIsolation();
+            c.setAutoCommit(false);
+            c.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            try {
+                T result = query.run(c);
+                c.commit();
+                return result;
+            } catch (SQLException | RuntimeException e) {
+                rollback(c, e);
+                throw e;
+            } finally {
+                c.setTransactionIsolation(isolation);
+                c.setAutoCommit(autoCommit);
+            }
         } catch (SQLException e) {
             throw new IOException("could not read from " + db.url() + ": " + e.getMessage(), e);
         }

@@ -707,12 +707,12 @@ The web app serves read-only JSON under `/api/` (PRD-14). Every response has
 
 | Request | Returns |
 |---|---|
-| `GET /api/jobs?state=&limit=` | Jobs, newest first. `state` is one of `RECEIVED`, `PROCESSING`, `COMPLETE`, `ERROR`; `limit` defaults to 50 and is capped at 200 |
-| `GET /api/jobs/{id}` | One job: its properties, step history and `createdAt` |
-| `GET /api/jobs/{id}/documents?queue=` | The job's documents in sequence order, optionally in one queue |
+| `GET /api/jobs?state=&limit=&offset=` | Jobs, newest first. `state` is one of `RECEIVED`, `PROCESSING`, `COMPLETE`, `ERROR`; `limit` defaults to 50 and is capped at 200; `offset` skips that many jobs |
+| `GET /api/jobs/{id}` | One job: its properties, step history and `createdAt`. An error message has server file paths replaced with `<path>` |
+| `GET /api/jobs/{id}/documents?queue=&limit=&offset=` | The job's documents in sequence order, optionally in one queue. `X-Total-Count` gives the total. `limit` defaults to 50 and is capped at 500 |
 | `GET /api/documents?property=&value=&queue=&limit=&offset=` | Documents across jobs, newest job first. `X-Total-Count` gives the total. Needs `property` with its `value`, or `queue`. `limit` defaults to 50 and is capped at 500 |
 | `GET /api/documents/{id}/file` | The document's PDF or AFP file from the output folder |
-| `GET /api/documents/{id}/structure` | An AFP file's structured fields (type, offset, length), or a PDF's pages with each page's content operators |
+| `GET /api/documents/{id}/structure` | An AFP file's structured fields (type, offset, length), or a PDF's pages with each page's content operators. A response holds at most 100,000 fields or operators and sets `truncated` when it stops there |
 
 Document ids are the database's, as the job and document responses give them. A job with no
 document file in the output folder, a document id that's unknown, and a job id that's unknown

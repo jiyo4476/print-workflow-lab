@@ -27,7 +27,17 @@ public abstract class JsonServlet extends HttpServlet {
             super.service(req, resp);
         } catch (ApiException e) {
             writeError(resp, e.status(), e.getMessage(), e.offset());
-        } catch (IOException | RuntimeException e) {
+        } catch (IOException e) {
+            if (resp.isCommitted()) {
+                // Usually the client went away mid-download: not a server fault, so no stack trace.
+                log.warn("{} {} ended early: {}", req.getMethod(), req.getRequestURI(),
+                        e.getMessage());
+            } else {
+                log.error("{} {} failed", req.getMethod(), req.getRequestURI(), e);
+                resp.resetBuffer();
+                writeError(resp, 500, "internal server error", null);
+            }
+        } catch (RuntimeException e) {
             log.error("{} {} failed", req.getMethod(), req.getRequestURI(), e);
             if (!resp.isCommitted()) {
                 resp.resetBuffer();
@@ -51,6 +61,7 @@ public abstract class JsonServlet extends HttpServlet {
         resp.setContentType("application/json");
         resp.setCharacterEncoding("UTF-8");
         resp.setHeader("Cache-Control", "no-store");
+        resp.setHeader("X-Content-Type-Options", "nosniff");
         ApiJson.MAPPER.writeValue(resp.getWriter(), body);
     }
 

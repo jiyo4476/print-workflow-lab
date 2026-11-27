@@ -6,9 +6,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import dev.yjimmy.printlab.testdata.StatementAfpGenerator;
 import dev.yjimmy.printlab.testdata.StatementPdfGenerator;
 import dev.yjimmy.printlab.workflow.Document;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import org.junit.Assume;
 import org.junit.Test;
 
 /** The documents endpoints over HTTP: search, the file, and the structure. */
@@ -97,7 +99,29 @@ public class DocumentsApiTest extends ApiTestBase {
 
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(response.headers().firstValue("Content-Type")).hasValue("application/pdf");
+        assertThat(response.headers().firstValue("X-Content-Type-Options")).hasValue("nosniff");
         assertThat(response.body()).isEqualTo(pdf);
+    }
+
+    @Test
+    public void fileEndpointRefusesSymlinkThatPointsOutsideJobFolder() throws Exception {
+        completedJob("job-a", document("job-a", 1, "linked", "111"));
+        Path outside = tmp.resolve("outside");
+        Files.createDirectories(outside);
+        Files.write(outside.resolve("00001.pdf"), new byte[] {1, 2, 3});
+        Path queue = output.resolve("job-a").resolve("linked");
+        Files.createDirectories(output.resolve("job-a"));
+        try {
+            Files.createSymbolicLink(queue, outside);
+        } catch (IOException | UnsupportedOperationException e) {
+            // Creating symlinks on Windows needs privilege; the check is covered on Unix.
+            Assume.assumeNoException(e);
+        }
+
+        var response = get("/api/documents/" + documentId("job-a") + "/file");
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertThat(response.body()).contains("has no file in the output folder");
     }
 
     @Test
@@ -133,6 +157,7 @@ public class DocumentsApiTest extends ApiTestBase {
                 get("/api/documents/" + documentId("job-afp") + "/structure").body());
 
         assertThat(fields.get("format").asText()).isEqualTo("afp");
+        assertThat(fields.get("truncated").asBoolean()).isFalse();
         assertThat(fields.get("fields").size()).isGreaterThan(10);
         assertThat(fields.get("fields").get(0).get("type").asText()).isEqualTo("BDT");
 

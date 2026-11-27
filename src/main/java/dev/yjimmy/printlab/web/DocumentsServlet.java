@@ -1,5 +1,6 @@
 package dev.yjimmy.printlab.web;
 
+import dev.yjimmy.printlab.store.DocumentPage;
 import dev.yjimmy.printlab.store.DocumentSearch;
 import dev.yjimmy.printlab.store.JdbcJobStore;
 import dev.yjimmy.printlab.store.StoredDocument;
@@ -10,7 +11,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
@@ -62,11 +62,10 @@ public class DocumentsServlet extends JsonServlet {
         int limit = Params.integer(req, "limit", DEFAULT_LIMIT, 1, MAX_LIMIT);
         int offset = Params.integer(req, "offset", 0, 0, Integer.MAX_VALUE);
 
-        DocumentSearch filter = new DocumentSearch(property, value, queue);
-        long total = jobs.countDocuments(filter);
-        List<StoredDocument> found = jobs.searchDocuments(filter, limit, offset);
-        resp.setHeader("X-Total-Count", String.valueOf(total));
-        writeJson(resp, 200, found.stream().map(DocumentResponse::of).toList());
+        DocumentPage page = jobs.searchDocumentPage(
+                new DocumentSearch(property, value, queue), limit, offset);
+        resp.setHeader("X-Total-Count", String.valueOf(page.total()));
+        writeJson(resp, 200, page.documents().stream().map(DocumentResponse::of).toList());
     }
 
     private static void file(HttpServletResponse resp, JdbcJobStore jobs, Path outputRoot,
@@ -76,6 +75,7 @@ public class DocumentsServlet extends JsonServlet {
         resp.setContentType(contentType(file));
         resp.setContentLengthLong(Files.size(file));
         resp.setHeader("Cache-Control", "no-store");
+        resp.setHeader("X-Content-Type-Options", "nosniff");
         try (OutputStream out = resp.getOutputStream()) {
             Files.copy(file, out);
         }

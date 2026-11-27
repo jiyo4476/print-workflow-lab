@@ -8,6 +8,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -135,51 +137,106 @@ public final class DocumentRepository {
                 + " ORDER BY d.doc_sequence", ps -> ps.setString(1, jobId));
     }
 
+    /** One page of a job's documents in sequence order, optionally only those in {@code queue}. */
+    public List<StoredDocument> pageByJob(Connection c, String jobId, String queue, int limit,
+            int offset) throws SQLException {
+        String sql = SELECT_DOCUMENT + " FROM documents d WHERE d.job_id = ?"
+                + (queue == null ? "" : " AND d.queue = ?")
+                + " ORDER BY d.doc_sequence LIMIT ? OFFSET ?";
+        return query(c, sql, ps -> {
+            int i = 1;
+            ps.setString(i++, jobId);
+            if (queue != null) {
+                ps.setString(i++, queue);
+            }
+            ps.setInt(i++, limit);
+            ps.setInt(i, offset);
+        });
+    }
+
+    /** How many of a job's documents are in {@code queue}, or in the job at all if null. */
+    public long countByJob(Connection c, String jobId, String queue) throws SQLException {
+        String sql = "SELECT COUNT(*) FROM documents d WHERE d.job_id = ?"
+                + (queue == null ? "" : " AND d.queue = ?");
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, jobId);
+            if (queue != null) {
+                ps.setString(2, queue);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getLong(1);
+            }
+        }
+    }
+
     /** Binds a query's parameters. */
     @FunctionalInterface
     private interface Binder {
         void bind(PreparedStatement ps) throws SQLException;
     }
 
+    /** The most ids in one IN (...) list, well under the database's parameter limits. */
+    private static final int IN_CHUNK = 500;
+
     private static final String SELECT_DOCUMENT =
             "SELECT d.id, d.job_id, d.doc_sequence, d.input_sequence, d.file_path";
     private static final String FROM_JOINED =
             "FROM documents d JOIN jobs j ON j.id = d.job_id";
 
+    /** One documents row, before its properties are read. */
+    private record Row(long id, String jobId, int sequence, int inputSequence, String file) {}
+
     private static List<StoredDocument> query(Connection c, String sql, Binder binder)
             throws SQLException {
-        List<StoredDocument> found = new ArrayList<>();
+        List<Row> rows = new ArrayList<>();
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             binder.bind(ps);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    String file = rs.getString("file_path");
-                    Document document = new Document(
-                            rs.getInt("doc_sequence"),
-                            file == null ? null : Path.of(file),
-                            properties(c, rs.getLong("id")),
-                            rs.getInt("input_sequence"));
-                    found.add(new StoredDocument(rs.getLong("id"), rs.getString("job_id"),
-                            document));
+                    rows.add(new Row(rs.getLong("id"), rs.getString("job_id"),
+                            rs.getInt("doc_sequence"), rs.getInt("input_sequence"),
+                            rs.getString("file_path")));
                 }
             }
+        }
+        // One query for all the rows' properties, not one per document.
+        Map<Long, Map<String, String>> properties = properties(c,
+                rows.stream().map(Row::id).toList());
+        List<StoredDocument> found = new ArrayList<>(rows.size());
+        for (Row r : rows) {
+            Document document = new Document(
+                    r.sequence(),
+                    r.file() == null ? null : Path.of(r.file()),
+                    properties.getOrDefault(r.id(), new LinkedHashMap<>()),
+                    r.inputSequence());
+            found.add(new StoredDocument(r.id(), r.jobId(), document));
         }
         return found;
     }
 
-    private static Map<String, String> properties(Connection c, long documentId)
+    /** The properties of each document, by document id, read in chunks of {@link #IN_CHUNK}. */
+    private static Map<Long, Map<String, String>> properties(Connection c, List<Long> ids)
             throws SQLException {
-        Map<String, String> properties = new LinkedHashMap<>();
-        try (PreparedStatement ps = c.prepareStatement("""
-                SELECT prop_name, prop_value FROM document_properties WHERE document_id = ?
-                ORDER BY prop_name""")) {
-            ps.setLong(1, documentId);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    properties.put(rs.getString("prop_name"), rs.getString("prop_value"));
+        Map<Long, Map<String, String>> byId = new HashMap<>();
+        for (int from = 0; from < ids.size(); from += IN_CHUNK) {
+            List<Long> chunk = ids.subList(from, Math.min(ids.size(), from + IN_CHUNK));
+            String marks = String.join(",", Collections.nCopies(chunk.size(), "?"));
+            try (PreparedStatement ps = c.prepareStatement(
+                    "SELECT document_id, prop_name, prop_value FROM document_properties"
+                            + " WHERE document_id IN (" + marks + ")"
+                            + " ORDER BY document_id, prop_name")) {
+                for (int i = 0; i < chunk.size(); i++) {
+                    ps.setLong(i + 1, chunk.get(i));
+                }
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        byId.computeIfAbsent(rs.getLong("document_id"), k -> new LinkedHashMap<>())
+                                .put(rs.getString("prop_name"), rs.getString("prop_value"));
+                    }
                 }
             }
         }
-        return properties;
+        return byId;
     }
 }
