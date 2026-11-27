@@ -1,6 +1,7 @@
 package dev.yjimmy.printlab.web;
 
 import dev.yjimmy.printlab.store.JdbcJobStore;
+import dev.yjimmy.printlab.steps.WriteOutputStep;
 import dev.yjimmy.printlab.testsupport.RecordingStep;
 import dev.yjimmy.printlab.testsupport.TestDatabases;
 import dev.yjimmy.printlab.testsupport.TestJobs;
@@ -41,6 +42,10 @@ abstract class ApiTestBase {
     protected JdbcJobStore store;
     protected StepRegistry registry;
     protected TomcatTestServer server;
+    protected FakeRetryRunner runner;
+    protected RetryService retries;
+    protected FakeJobQueue reprintQueue;
+    protected ReprintService reprints;
 
     @Before
     public void startServer() throws Exception {
@@ -51,8 +56,17 @@ abstract class ApiTestBase {
         registry.register("Ok", new RecordingStep("Ok").factory());
         registry.register("Boom", new RecordingStep("Boom")
                 .failingOnCall(1, new IllegalStateException("bad page")).factory());
+        runner = new FakeRetryRunner();
+        retries = new RetryService(store, runner, tmp.resolve("work"), tmp.resolve("error"));
+        registry.register("WriteOutput",
+                params -> new WriteOutputStep(Map.of("outputDir", output.toString())));
+        reprintQueue = new FakeJobQueue();
+        reprintQueue.engine = new WorkflowEngine(
+                TestWorkflows.of(TestWorkflows.step("write-output", "WriteOutput")), registry,
+                tmp.resolve("error"), TickingClock.oneSecondTicks(), store);
+        reprints = new ReprintService(store, reprintQueue, tmp.resolve("work"), output);
         server = new TomcatTestServer(tmp)
-                .listener(new Services(new ApiServices(store, output)))
+                .listener(new Services(new ApiServices(store, output, retries, reprints)))
                 .servlet("jobs", new JobsServlet(), "/api/jobs/*")
                 .servlet("documents", new DocumentsServlet(), "/api/documents/*")
                 .start();
@@ -65,6 +79,12 @@ abstract class ApiTestBase {
 
     protected HttpResponse<String> get(String path) throws Exception {
         return HttpClient.newHttpClient().send(HttpRequest.newBuilder(server.uri(path)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    protected HttpResponse<String> post(String path) throws Exception {
+        return HttpClient.newHttpClient().send(HttpRequest.newBuilder(server.uri(path))
+                .POST(HttpRequest.BodyPublishers.noBody()).build(),
                 HttpResponse.BodyHandlers.ofString());
     }
 

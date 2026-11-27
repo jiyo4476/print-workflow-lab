@@ -11,12 +11,14 @@ import dev.yjimmy.printlab.workflow.Job;
 import dev.yjimmy.printlab.workflow.JobStore;
 import dev.yjimmy.printlab.workflow.StepRegistry;
 import dev.yjimmy.printlab.workflow.WorkflowDefinition;
+import dev.yjimmy.printlab.workflow.WorkflowEngine;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletContextEvent;
 import jakarta.servlet.ServletContextListener;
 import jakarta.servlet.annotation.WebListener;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.ZoneOffset;
@@ -79,8 +81,58 @@ public final class WorkflowContextListener implements ServletContextListener {
             log.warn("PRINTLAB_DB_URL is not set: jobs are kept in job.json files and the API"
                     + " answers 503");
         }
-        context.setAttribute(ApiServices.ATTRIBUTE, new ApiServices(jobs, config.outputRoot()));
-        startDevices(config, clock, store);
+        StepRegistry registry = registry(config);
+        InputDevices devices = startDevices(config, clock, store, registry);
+        RetryService retries = devices == null || jobs == null ? null
+                : new RetryService(jobs, runnerFor(devices), config.workRoot(), config.errorDir());
+        ReprintService reprints = reprints(config, clock, store, registry, devices, jobs);
+        context.setAttribute(ApiServices.ATTRIBUTE,
+                new ApiServices(jobs, config.outputRoot(), retries, reprints));
+    }
+
+    /** The built-in steps, with WriteOutput writing under {@code PRINTLAB_HOME}'s output folder. */
+    private static StepRegistry registry(PrintLabConfig config) {
+        StepRegistry registry = StepRegistry.withBuiltIns();
+        registry.register("WriteOutput",
+                params -> new WriteOutputStep(relativeTo(config, params)));
+        return registry;
+    }
+
+    /**
+     * The reprint action, or {@code null} when it can't run: it needs the input devices (their
+     * job thread runs the reprint), the database, and {@code workflows/reprint.yaml} under
+     * {@code PRINTLAB_HOME}. A reprint workflow that is there but invalid fails startup.
+     */
+    private ReprintService reprints(PrintLabConfig config, Clock clock, JobStore store,
+            StepRegistry registry, InputDevices devices, JdbcJobStore jobs) {
+        Path file = config.home().resolve("workflows").resolve("reprint.yaml");
+        if (devices == null || jobs == null || !Files.exists(file)) {
+            return null;
+        }
+        WorkflowEngine engine;
+        try {
+            engine = new WorkflowEngine(WorkflowDefinition.load(file), registry,
+                    config.errorDir(), clock, store);
+        } catch (IOException e) {
+            throw new IllegalStateException("could not load " + file + ": " + e.getMessage(), e);
+        }
+        JobQueue queue = (job, done) -> devices.submit(job, engine, done);
+        return new ReprintService(jobs, queue, config.workRoot(), config.outputRoot());
+    }
+
+    /** Retries run on the input devices' job thread, like every other job. */
+    private static RetryRunner runnerFor(InputDevices devices) {
+        return new RetryRunner() {
+            @Override
+            public void check(String device, String step) {
+                devices.checkRetry(device, step);
+            }
+
+            @Override
+            public void start(Job job, String device, String step, Runnable done) {
+                devices.retry(job, device, step, done);
+            }
+        };
     }
 
     @Override
@@ -109,16 +161,15 @@ public final class WorkflowContextListener implements ServletContextListener {
         }
     }
 
-    private void startDevices(PrintLabConfig config, Clock clock, JobStore store) {
+    /** Starts the input devices, or returns {@code null} when there is no devices file. */
+    private InputDevices startDevices(PrintLabConfig config, Clock clock, JobStore store,
+            StepRegistry registry) {
         if (!Files.exists(config.devicesFile())) {
             log.warn("No input devices file at {}: no hot folders are watched",
                     config.devicesFile());
-            return;
+            return null;
         }
         List<InputDevice> devices = devices(config);
-        StepRegistry registry = StepRegistry.withBuiltIns();
-        registry.register("WriteOutput",
-                params -> new WriteOutputStep(relativeTo(config, params)));
         try {
             running = new InputDevices(devices, WorkflowDefinition::load, registry,
                     config.workRoot(), config.errorDir(), clock, onJobDone, store);
@@ -128,6 +179,7 @@ public final class WorkflowContextListener implements ServletContextListener {
         }
         running.start();
         log.info("Watching {} input device(s) under {}", devices.size(), config.home());
+        return running;
     }
 
     /** The devices from the file, with their folders and workflows under {@code PRINTLAB_HOME}. */

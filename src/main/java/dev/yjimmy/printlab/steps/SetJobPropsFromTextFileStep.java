@@ -87,6 +87,12 @@ public final class SetJobPropsFromTextFileStep implements Step {
         return path.getNameCount() == 1 && path.getRoot() == null;
     }
 
+    /** Reads the ticket from the work folder, which the claim left it in. */
+    @Override
+    public boolean resumable() {
+        return true;
+    }
+
     @Override
     public void execute(Job job) throws IOException {
         String name = fileName != null ? fileName : job.inputFile().getFileName() + EXTENSION;

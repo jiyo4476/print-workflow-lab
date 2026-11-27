@@ -176,7 +176,7 @@ public final class InputDevices implements AutoCloseable {
                 device.name());
         try {
             // execute, not submit: submit would park anything thrown in a Future nobody reads.
-            jobs.execute(() -> process(running.engine(), job));
+            jobs.execute(() -> process(running.engine(), job, null));
         } catch (RejectedExecutionException stopping) {
             try {
                 intake.unclaim(job, file.getParent());
@@ -201,9 +201,72 @@ public final class InputDevices implements AutoCloseable {
         onWatcherFailed = listener;
     }
 
-    private void process(WorkflowEngine engine, Job job) {
+    /**
+     * Says whether a job that ran on {@code deviceName} can be retried from {@code step} (PRD-15),
+     * without queueing anything.
+     *
+     * @throws IllegalArgumentException if there is no such device
+     * @throws IllegalStateException if the device's workflow can't run that step again
+     */
+    public void checkRetry(String deviceName, String step) {
+        engineFor(deviceName).checkCanResume(step);
+    }
+
+    /**
+     * Queues a failed job to run again from {@code step} on the job thread, after the one-at-a-
+     * time queue reaches it. {@code done} runs on that thread once the retry has finished, so
+     * the caller can stop refusing a second retry of the job.
+     *
+     * @throws IllegalStateException if the app is stopping, or the step can't be resumed
+     */
+    public void retry(Job job, String deviceName, String step, Runnable done) {
+        WorkflowEngine engine = engineFor(deviceName);
+        engine.checkCanResume(step);
+        queue(engine, job, step, done, "the retry");
+    }
+
+    /**
+     * Queues a job that was built outside the hot folders (a reprint, PRD-15) to run through
+     * {@code engine} on the shared job queue, so it runs one at a time with the other jobs.
+     * {@code done} runs on the job thread once the job has finished.
+     *
+     * @throws IllegalStateException if the app is stopping
+     */
+    public void submit(Job job, WorkflowEngine engine, Runnable done) {
+        queue(engine, job, null, done, "the job");
+    }
+
+    /** Queues a job, or resumes it from {@code resumeFrom} when that is set. */
+    private void queue(WorkflowEngine engine, Job job, String resumeFrom, Runnable done,
+            String what) {
         try {
-            engine.run(job);
+            jobs.execute(() -> {
+                try {
+                    process(engine, job, resumeFrom);
+                } finally {
+                    done.run();
+                }
+            });
+        } catch (RejectedExecutionException stopping) {
+            throw new IllegalStateException("the app is stopping and can't start " + what,
+                    stopping);
+        }
+    }
+
+    private WorkflowEngine engineFor(String deviceName) {
+        return devices.stream().filter(r -> r.device().name().equals(deviceName)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("there is no input device named '"
+                        + deviceName + "'")).engine();
+    }
+
+    /** Runs the job, or, when {@code resumeFrom} is set, runs it again from that step. */
+    private void process(WorkflowEngine engine, Job job, String resumeFrom) {
+        try {
+            if (resumeFrom == null) {
+                engine.run(job);
+            } else {
+                engine.resume(job, resumeFrom);
+            }
         } catch (RuntimeException e) {
             // The engine fails jobs cleanly for step errors; this is for a bug in the engine.
             log.error("{} stopped unexpectedly; its files are in {}", job,

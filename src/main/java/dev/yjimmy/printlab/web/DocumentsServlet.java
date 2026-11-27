@@ -1,5 +1,6 @@
 package dev.yjimmy.printlab.web;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import dev.yjimmy.printlab.store.DocumentPage;
 import dev.yjimmy.printlab.store.DocumentSearch;
 import dev.yjimmy.printlab.store.JdbcJobStore;
@@ -11,7 +12,10 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -43,6 +47,49 @@ public class DocumentsServlet extends JsonServlet {
         } else {
             throw ApiException.notFound("there is no API resource at " + req.getPathInfo());
         }
+    }
+
+    /**
+     * {@code POST /api/documents/reprint} with the JSON body {@code {"documentIds": [...]}}: a new
+     * child job with just those documents, answered 201 with its id (PRD-15).
+     */
+    @Override
+    protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        ApiDatabase.require(getServletContext());
+        String[] parts = segments(req.getPathInfo());
+        if (parts.length != 1 || !parts[0].equals("reprint")) {
+            throw ApiException.notFound("there is no API resource at " + req.getPathInfo());
+        }
+        ReprintService reprints = ApiServices.of(getServletContext()).reprints();
+        if (reprints == null) {
+            throw new ApiException(503, "reprinting needs the input devices running and a"
+                    + " workflows/reprint.yaml");
+        }
+        ReprintService.Accepted accepted = reprints.reprint(documentIds(req));
+        writeJson(resp, 201, Map.of("jobId", accepted.jobId(),
+                "parentJobId", accepted.parentJobId(), "documents", accepted.documents()));
+    }
+
+    /** The {@code documentIds} array in the request's JSON body. */
+    private static List<Long> documentIds(HttpServletRequest req) throws IOException {
+        JsonNode body;
+        try {
+            body = ApiJson.MAPPER.readTree(req.getInputStream());
+        } catch (IOException e) {
+            throw ApiException.badRequest("the body must be JSON like {\"documentIds\": [1, 2]}");
+        }
+        JsonNode ids = body == null ? null : body.get("documentIds");
+        if (ids == null || !ids.isArray()) {
+            throw ApiException.badRequest("the body must be JSON like {\"documentIds\": [1, 2]}");
+        }
+        List<Long> result = new ArrayList<>();
+        for (JsonNode id : ids) {
+            if (!id.isIntegralNumber() || !id.canConvertToLong()) {
+                throw ApiException.badRequest("a document id is a whole number, not " + id);
+            }
+            result.add(id.asLong());
+        }
+        return result;
     }
 
     private void search(HttpServletRequest req, HttpServletResponse resp, JdbcJobStore jobs)

@@ -105,6 +105,12 @@ public final class SplitPdfStep implements Step {
         return new Rectangle2D.Double(n[0], n[1], n[2], n[3]);
     }
 
+    /** Splits the input in the work folder. A rerun starts from the documents the last step left. */
+    @Override
+    public boolean resumable() {
+        return true;
+    }
+
     @Override
     public void execute(Job job) throws Exception {
         HeapLimit.run(job.inputFile(), "SplitPdf", maxHeap, () -> split(job));

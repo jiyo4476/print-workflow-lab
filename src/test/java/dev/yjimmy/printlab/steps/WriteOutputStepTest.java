@@ -176,6 +176,21 @@ public class WriteOutputStepTest {
         new WriteOutputStep(Map.of("outputDir", outputDir.toString())).execute(job);
     }
 
+    @Test
+    public void rerunReplacesAnEarlierRunsPartialOutput() throws Exception {
+        // A run that failed while writing left a file the rerun would not write again.
+        Path jobOut = outputDir.resolve(job.id());
+        Files.createDirectories(jobOut.resolve("standard"));
+        Files.writeString(jobOut.resolve("standard").resolve("00009.pdf"), "stale");
+        addDocument("a", Map.of("zip", "80202"));
+
+        write();
+
+        assertThat(jobOut.resolve("standard")).as("the earlier run's file is gone")
+                .doesNotExist();
+        assertEquals("a", Files.readString(jobOut.resolve("00001.pdf")));
+    }
+
     private String csv() throws Exception {
         return Files.readString(outputDir.resolve(job.id()).resolve("documents.csv"));
     }

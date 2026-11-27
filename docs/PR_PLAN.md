@@ -837,34 +837,29 @@ inside it.
   `StatementAfpGenerator`) and `AfpRewriter` for streaming field-by-field edits. A page overlay
   comes later, in PR 21.
 
-**Tests**
-- Unit — `ReprintServiceTest`
-  - `createsChildJobWithOnlySelectedDocuments`
-  - `childJobRecordsParentId`
-  - `originalJobIsUnchanged`
-  - `documentsFromDifferentJobsAreRejected` (one source job per reprint, Q-06; extending
-    across jobs is a noted follow-up)
-  - `unknownDocumentIdFailsWholeRequest` (no partial reprint)
-- Unit — `RetryServiceTest`
-  - `retriesFromFailedStepNotFromStart` (`RecordingStep` shows steps 1 was not re-run)
-  - `retryingCompletedJobIsRejected`
-  - `retryIsRecordedInStepHistory`
+**Tests** (as built; see [PRD-15](prd/PRD-15-reprint-and-retry.md) for the full plan)
+- Unit — `WorkflowEngineTest`: `resumeRunsFromTheNamedStepOnly`,
+  `failedStepLeavesDocumentsAndPropertiesAsTheLastCompletedStepDid`,
+  `resumeRefusesAStepThatIsNotResumable`
+- Integration — `ActionsApiTest` (reprint and retry over HTTP, with a fake queue; there are no
+  separate `ReprintServiceTest` or `RetryServiceTest` classes)
+  - `reprintMakesAChildJobWithOnlyTheSelectedDocuments`, `reprintLeavesTheOriginalJobUnchanged`
+  - `reprintWithAnUnknownIdFailsTheWholeRequest`, `reprintAcrossJobsIsRefusedAndNamesTheJobs`
+    (one source job per reprint, Q-06; extending across jobs is a noted follow-up)
+  - `reprintWithNoDocumentsOrBadBodyIs400`, `reprintThatCannotBeQueuedLeavesNoChildJob`
+  - `retryOfUnknownJobReturns404`, `retryOfCompletedJobIsRejected`,
+    `retryRunsFromTheFailedStepAndRecordsIt`, `doubleSubmitRetryDoesNotRunTwice`
   - `retryMovesTheInputBackFromTheErrorFolder`, `retryWithTheInputGoneIsRefused`
-  - `retryAfterPartialOutputReplacesIt`
-- Integration — `ActionsApiTest`
-  - `reprintReturns201WithChildJobId`
-  - `reprintWithEmptyListReturns400`
-  - `retryUnknownJobReturns404`
-  - `doubleSubmitRetryDoesNotRunTwice` (idempotency)
-- Workflow — `ReprintWorkflowTest`
-  - `reprintedPdfHasReprintMarkerOnEveryPage`
-- Unit — `ReprintAfpTest`
-  - `reprintedAfpHasReprintTleOnEveryDocument`
-  - `everyPageGetsOneReprintTextObject`, `markPositionUsesPageUnitsFromPgd`
-  - `pageWithoutFontMappingGetsMcfEntry`
-  - `reprintingTwiceDoesNotDuplicateTheMark`
-  - `reprintedAfpReadsBackCleanly`, `originalPageFieldsAreUnchanged`
-- Unit — `AfpRewriterTest`, `PageBuilderTest`
+- Device thread — `WorkflowContextListenerTest`: `failedJobIsRetriedThroughTheApiOnTheDeviceThread`,
+  `reprintRunsThroughTheReprintWorkflowOnTheDeviceThread`
+- Workflow — `ReprintWorkflowTest`: `reprintedPdfHasReprintMarkerOnEveryPage`,
+  `reprintedAfpHasReprintTleAndMarkOnEveryPage`
+- Unit — `MarkReprintStepTest`, `WriteOutputStepTest.rerunReplacesAnEarlierRunsPartialOutput`
+- Unit — `AfpReprintMarkTest` (in place of `ReprintAfpTest`): `reprintedAfpHasReprintTleOnEveryDocument`,
+  `everyPageGetsOneReprintTextObject`, `markPositionUsesPageUnitsFromPgd`,
+  `pageWithoutFontMappingGetsMcfEntry`, `reprintedAfpReadsBackCleanly`, `originalPageFieldsAreUnchanged`
+- Unit — `PageBuilderTest` (no separate `AfpRewriterTest`: `AfpReprintMark` streams the document)
+- Known gap: reprint double submit is not guarded until PR 17 (see there)
 - Manual: "REPRINT" shows in Papyrus AFP Viewer (screenshot in the PR).
 
 ### PR 21 — Mark AFP reprints with a page overlay `M` (any time after PR 15)
@@ -971,6 +966,12 @@ DOM and Ajax. Served by Tomcat from the WAR (`src/main/webapp/`); no build step.
   (`MnObject`) makes the `POST`, then refreshes the affected collection and navigates to the new
   child job.
 - Confirmation before actions, inline result, buttons disabled while a request is in flight.
+- **Reprint double submit (PRD-15 NFR-1, deferred from PR 15):** `POST /api/documents/reprint`
+  accepts an `Idempotency-Key` header. A repeat with the same key and body returns the child job
+  already made (201, same `jobId`) instead of creating another; the same key with a different
+  body is a 409. Keys are kept with the child job so they survive a restart. The API test is
+  `reprintWithSameIdempotencyKeyReturnsTheSameChild`; the dashboard test is
+  `buttonsDisabledWhileRequestInFlight` below.
 
 **Tests**
 - `actions.test.mjs`

@@ -65,6 +65,12 @@ public final class PreflightPdfStep implements Step {
         this.failJob = params.bool("failJob", false);
     }
 
+    /** Reads the documents' files and sets their properties; a rerun gives the same result. */
+    @Override
+    public boolean resumable() {
+        return true;
+    }
+
     @Override
     public void execute(Job job) {
         for (Document document : job.documents()) {
